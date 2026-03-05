@@ -8,6 +8,8 @@ services:
     volumes:
       - ./backend:/app
       - ./storage:/app/storage
+    environment:
+      - PYTHONUNBUFFERED=1
 
   frontend:
     build:
@@ -17,5 +19,7 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend:/app
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://backend:8000
     depends_on:
       - backend

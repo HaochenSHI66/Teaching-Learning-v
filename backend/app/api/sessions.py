@@ -40,3 +40,21 @@ def create_session(
         follow_current_page=learning_session.follow_current_page,
         created_at=learning_session.created_at,
     )
+
+
+@router.get("/{session_id}", response_model=SessionRead)
+def get_session(
+    session_id: str,
+    session: Session = Depends(get_db_session),
+) -> SessionRead:
+    learning_session = session.get(LearningSession, session_id)
+    if not learning_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return SessionRead(
+        id=learning_session.id,
+        document_id=learning_session.document_id,
+        current_slide_id=learning_session.current_slide_id,
+        follow_current_page=learning_session.follow_current_page,
+        created_at=learning_session.created_at,
+    )
