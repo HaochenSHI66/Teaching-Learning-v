@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { QuizQuestion } from "@/lib/api";
+import type { QuizQuestion, ReviewItem, SessionAnalyticsPayload } from "@/lib/api";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -21,6 +21,8 @@ type AIPanelProps = {
   quizQuestions: QuizQuestion[];
   quizAnswers: Record<string, string>;
   quizFeedback: string;
+  reviewItems: ReviewItem[];
+  analytics: SessionAnalyticsPayload | null;
   onModeChange: (mode: "slide" | "global") => void;
   onChatInputChange: (value: string) => void;
   onSendChat: () => void;
@@ -30,6 +32,8 @@ type AIPanelProps = {
   onGenerateQuiz: () => void;
   onQuizAnswerChange: (questionId: string, answer: string) => void;
   onSubmitQuiz: () => void;
+  onRefreshReview: () => void;
+  onCompleteReview: (reviewId: string) => void;
 };
 
 const TABS = [
@@ -37,6 +41,7 @@ const TABS = [
   { key: "chat", label: "问答" },
   { key: "notes", label: "笔记" },
   { key: "quiz", label: "练习" },
+  { key: "review", label: "复习" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -53,6 +58,8 @@ export function AIPanel({
   quizQuestions,
   quizAnswers,
   quizFeedback,
+  reviewItems,
+  analytics,
   onModeChange,
   onChatInputChange,
   onSendChat,
@@ -62,6 +69,8 @@ export function AIPanel({
   onGenerateQuiz,
   onQuizAnswerChange,
   onSubmitQuiz,
+  onRefreshReview,
+  onCompleteReview,
 }: AIPanelProps) {
   const [tab, setTab] = useState<TabKey>("explain");
 
@@ -242,6 +251,58 @@ export function AIPanel({
           <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
             {quizFeedback || "批改结果将显示在这里。"}
           </p>
+        </div>
+      )}
+
+      {tab === "review" && (
+        <div className="flex h-full flex-col gap-3">
+          <button
+            className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={disabled || loading}
+            onClick={onRefreshReview}
+            type="button"
+          >
+            {loading ? "刷新中..." : "刷新复习队列与分析"}
+          </button>
+
+          <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+            <div className="rounded-lg bg-emerald-50 p-2 text-emerald-700">
+              <div>提问次数</div>
+              <div className="text-lg font-semibold">{analytics?.user_messages ?? 0}</div>
+            </div>
+            <div className="rounded-lg bg-cyan-50 p-2 text-cyan-700">
+              <div>回答次数</div>
+              <div className="text-lg font-semibold">{analytics?.assistant_messages ?? 0}</div>
+            </div>
+            <div className="rounded-lg bg-violet-50 p-2 text-violet-700">
+              <div>测验次数</div>
+              <div className="text-lg font-semibold">{analytics?.quiz_attempts ?? 0}</div>
+            </div>
+            <div className="rounded-lg bg-amber-50 p-2 text-amber-700">
+              <div>平均掌握度</div>
+              <div className="text-lg font-semibold">{analytics?.avg_quiz_score_percent ?? 0}%</div>
+            </div>
+          </div>
+
+          <div className="flex-1 space-y-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+            {reviewItems.length === 0 ? (
+              <p className="text-sm text-slate-500">暂无待复习项。做题后错题会自动进入这里。</p>
+            ) : (
+              reviewItems.map((item) => (
+                <article className="rounded-lg border border-slate-200 bg-white p-3" key={item.id}>
+                  <p className="text-sm font-medium text-slate-700">{item.prompt}</p>
+                  <p className="mt-1 text-xs text-slate-500">slide: {item.slide_id} | 到期: {item.due_at}</p>
+                  <button
+                    className="mt-2 rounded-md bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700"
+                    onClick={() => onCompleteReview(item.id)}
+                    type="button"
+                  >
+                    标记已复习
+                  </button>
+                </article>
+              ))
+            )}
+          </div>
         </div>
       )}
     </section>

@@ -7,13 +7,18 @@ import { SlideViewer } from "@/components/slide-viewer";
 import {
   askRoiQuestion,
   askSlideQuestion,
+  completeReviewItem,
   createSession,
   exportNotes,
+  fetchReviewQueue,
+  fetchSessionAnalytics,
   fetchSlides,
   generateQuiz,
   gradeQuiz,
   type QuizQuestion,
+  type ReviewItem,
   type RoiBox,
+  type SessionAnalyticsPayload,
   type Slide,
   uploadDocument,
 } from "@/lib/api";
@@ -40,6 +45,9 @@ export default function Page() {
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
   const [quizFeedback, setQuizFeedback] = useState("");
+
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
+  const [analytics, setAnalytics] = useState<SessionAnalyticsPayload | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("请先上传 PDF/图片开始学习。");
@@ -68,6 +76,8 @@ export default function Page() {
       setQuizQuestions([]);
       setQuizAnswers({});
       setQuizFeedback("");
+      setReviewItems([]);
+      setAnalytics(null);
 
       if (fetchedSlides.length > 0) {
         const session = await createSession(upload.document.id, fetchedSlides[0].id);
@@ -97,6 +107,18 @@ export default function Page() {
     return session.id;
   }
 
+  async function refreshLearningInsights() {
+    try {
+      const sid = await ensureSession();
+      const [queue, stats] = await Promise.all([fetchReviewQueue(sid), fetchSessionAnalytics(sid)]);
+      setReviewItems(queue.items);
+      setAnalytics(stats);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误";
+      setStatusText(`刷新学习分析失败：${message}`);
+    }
+  }
+
   async function ask(message: string) {
     const question = message.trim();
     if (!question) {
@@ -118,6 +140,7 @@ export default function Page() {
 
       setExplanation(response.answer);
       setChatMessages((prev) => [...prev, { role: "assistant", content: response.answer }]);
+      await refreshLearningInsights();
       setStatusText(response.degraded ? "回答完成（降级模式）" : "回答完成");
     } catch (error) {
       const messageText = error instanceof Error ? error.message : "未知错误";
@@ -148,6 +171,7 @@ export default function Page() {
 
       setExplanation(response.answer);
       setChatMessages((prev) => [...prev, { role: "assistant", content: response.answer }]);
+      await refreshLearningInsights();
       setStatusText("区域解释完成");
     } catch (error) {
       const messageText = error instanceof Error ? error.message : "未知错误";
@@ -194,10 +218,26 @@ export default function Page() {
     try {
       const graded = await gradeQuiz({ quizId, answers: quizAnswers });
       setQuizFeedback(graded.feedback);
+      await refreshLearningInsights();
       setStatusText(`批改完成：${graded.score}/${graded.total}`);
     } catch (error) {
       const messageText = error instanceof Error ? error.message : "未知错误";
       setStatusText(`批改失败：${messageText}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCompleteReviewItem(reviewId: string) {
+    setLoading(true);
+    setStatusText("正在更新复习状态...");
+    try {
+      await completeReviewItem(reviewId);
+      await refreshLearningInsights();
+      setStatusText("复习项已标记完成");
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : "未知错误";
+      setStatusText(`更新复习状态失败：${messageText}`);
     } finally {
       setLoading(false);
     }
@@ -261,6 +301,7 @@ export default function Page() {
           slides={slides}
         />
         <AIPanel
+          analytics={analytics}
           chatInput={chatInput}
           chatMessages={chatMessages}
           disabled={!currentSlide}
@@ -269,6 +310,9 @@ export default function Page() {
           mode={mode}
           notesMarkdown={notesMarkdown}
           onChatInputChange={setChatInput}
+          onCompleteReview={(reviewId) => {
+            void handleCompleteReviewItem(reviewId);
+          }}
           onExplainRoi={() => {
             void handleExplainRoi();
           }}
@@ -285,6 +329,9 @@ export default function Page() {
           onQuizAnswerChange={(questionId, answer) => {
             setQuizAnswers((prev) => ({ ...prev, [questionId]: answer }));
           }}
+          onRefreshReview={() => {
+            void refreshLearningInsights();
+          }}
           onSendChat={() => {
             const message = chatInput;
             setChatInput("");
@@ -296,6 +343,7 @@ export default function Page() {
           quizAnswers={quizAnswers}
           quizFeedback={quizFeedback}
           quizQuestions={quizQuestions}
+          reviewItems={reviewItems}
           roiReady={Boolean(roi)}
         />
       </section>

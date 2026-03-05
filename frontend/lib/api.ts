@@ -61,6 +61,33 @@ export type QuizGradePayload = {
   }[];
 };
 
+export type ReviewItem = {
+  id: string;
+  session_id: string;
+  slide_id: string;
+  source_ref: string;
+  prompt: string;
+  due_at: string;
+  status: string;
+};
+
+export type ReviewQueuePayload = {
+  session_id: string;
+  items: ReviewItem[];
+};
+
+export type SessionAnalyticsPayload = {
+  session_id: string;
+  user_messages: number;
+  assistant_messages: number;
+  quiz_attempts: number;
+  avg_quiz_score_percent: number;
+  hot_slides: {
+    slide_id: string;
+    message_count: number;
+  }[];
+};
+
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -185,6 +212,20 @@ export async function gradeQuiz(params: {
     },
     body: JSON.stringify({ answers: params.answers }),
   });
+}
+
+export async function fetchReviewQueue(sessionId: string): Promise<ReviewQueuePayload> {
+  return request<ReviewQueuePayload>(`/api/v1/review/${sessionId}/queue`);
+}
+
+export async function completeReviewItem(reviewId: string): Promise<{ id: string; status: string }> {
+  return request<{ id: string; status: string }>(`/api/v1/review/${reviewId}/complete`, {
+    method: "POST",
+  });
+}
+
+export async function fetchSessionAnalytics(sessionId: string): Promise<SessionAnalyticsPayload> {
+  return request<SessionAnalyticsPayload>(`/api/v1/analytics/${sessionId}`);
 }
 
 export async function exportNotes(params: {
