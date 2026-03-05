@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
@@ -95,7 +95,7 @@ def grade_slide_quiz(
                 slide_id=quiz.slide_id,
                 source_ref=f"{quiz.id}:{question_id}",
                 prompt=prompt,
-                due_at=datetime.utcnow() + timedelta(days=1),
+                due_at=datetime.now(timezone.utc) + timedelta(days=1),
             )
         )
 

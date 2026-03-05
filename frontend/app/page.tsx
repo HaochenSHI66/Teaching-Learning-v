@@ -3,350 +3,306 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { AIPanel } from "@/components/ai-panel";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { SlideViewer } from "@/components/slide-viewer";
-import {
-  askRoiQuestion,
-  askSlideQuestion,
-  completeReviewItem,
-  createSession,
-  exportNotes,
-  fetchReviewQueue,
-  fetchSessionAnalytics,
-  fetchSlides,
-  generateQuiz,
-  gradeQuiz,
-  type QuizQuestion,
-  type ReviewItem,
-  type RoiBox,
-  type SessionAnalyticsPayload,
-  type Slide,
-  uploadDocument,
-} from "@/lib/api";
+import { useChat } from "@/hooks/useChat";
+import { useQuiz } from "@/hooks/useQuiz";
+import { useReview } from "@/hooks/useReview";
+import { useUpload } from "@/hooks/useUpload";
+import { autogenNotes, exportDocumentExplanations, exportNotes, type RoiBox } from "@/lib/api";
 
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
+function downloadMarkdown(filename: string, markdown: string) {
+  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function formatNotesMarkdown(input: string) {
+  const trimmed = input.replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (!trimmed) {
+    return "# 学习笔记\n\n- [ ] 补充核心结论\n- [ ] 补充易错点\n- [ ] 补充一题练习\n";
+  }
+  if (trimmed.startsWith("#")) {
+    return `${trimmed}\n`;
+  }
+  return `# 学习笔记\n\n${trimmed}\n`;
+}
 
 export default function Page() {
-  const [documentId, setDocumentId] = useState<string | null>(null);
-  const [slides, setSlides] = useState<Slide[]>([]);
+  const upload = useUpload();
+  const chat = useChat();
+  const { setExplanation } = chat;
+
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-
-  const [mode, setMode] = useState<"slide" | "global">("slide");
   const [roi, setRoi] = useState<RoiBox | null>(null);
-  const [explanation, setExplanation] = useState("");
-  const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [notesMarkdown, setNotesMarkdown] = useState("");
+  const [globalStatus, setGlobalStatus] = useState("");
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const [quizId, setQuizId] = useState<string | null>(null);
-  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
-  const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
-  const [quizFeedback, setQuizFeedback] = useState("");
+  const review = useReview(setGlobalStatus);
 
-  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
-  const [analytics, setAnalytics] = useState<SessionAnalyticsPayload | null>(null);
+  async function refreshInsights() {
+    if (upload.sessionId) {
+      await review.refresh(upload.sessionId);
+    }
+  }
 
-  const [loading, setLoading] = useState(false);
-  const [statusText, setStatusText] = useState("请先上传 PDF/图片开始学习。");
+  const quiz = useQuiz(setGlobalStatus, refreshInsights);
 
-  const currentSlide = useMemo(() => slides[currentSlideIndex], [slides, currentSlideIndex]);
+  const currentSlide = useMemo(
+    () => upload.slides[currentSlideIndex],
+    [upload.slides, currentSlideIndex],
+  );
+
+  useEffect(() => {
+    if (upload.sessionId) {
+      void review.refresh(upload.sessionId);
+    }
+  }, [upload.sessionId]);
+
+  useEffect(() => {
+    setCurrentSlideIndex(0);
+    setRoi(null);
+    setNotesMarkdown("");
+    setGlobalStatus("");
+    quiz.reset();
+    chat.setChatInput("");
+    chat.clearStatus();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upload.documentId]);
 
   useEffect(() => {
     setRoi(null);
   }, [currentSlideIndex]);
 
-  async function handleUpload(file: File) {
-    setLoading(true);
-    setStatusText("正在上传并切页...");
-    try {
-      const upload = await uploadDocument(file);
-      const fetchedSlides = await fetchSlides(upload.document.id);
-      setDocumentId(upload.document.id);
-      setSlides(fetchedSlides);
-      setCurrentSlideIndex(0);
-      setExplanation("");
-      setChatMessages([]);
-      setNotesMarkdown("");
-      setChatInput("");
-      setRoi(null);
-      setQuizId(null);
-      setQuizQuestions([]);
-      setQuizAnswers({});
-      setQuizFeedback("");
-      setReviewItems([]);
-      setAnalytics(null);
-
-      if (fetchedSlides.length > 0) {
-        const session = await createSession(upload.document.id, fetchedSlides[0].id);
-        setSessionId(session.id);
-      } else {
-        setSessionId(null);
-      }
-
-      setStatusText(`上传成功，共 ${fetchedSlides.length} 页。`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "未知错误";
-      setStatusText(`上传失败：${message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function ensureSession(): Promise<string> {
-    if (sessionId) {
-      return sessionId;
-    }
-    if (!documentId) {
-      throw new Error("请先上传文档");
-    }
-    const session = await createSession(documentId, currentSlide?.id);
-    setSessionId(session.id);
-    return session.id;
-  }
-
-  async function refreshLearningInsights() {
-    try {
-      const sid = await ensureSession();
-      const [queue, stats] = await Promise.all([fetchReviewQueue(sid), fetchSessionAnalytics(sid)]);
-      setReviewItems(queue.items);
-      setAnalytics(stats);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "未知错误";
-      setStatusText(`刷新学习分析失败：${message}`);
-    }
-  }
-
-  async function ask(message: string) {
-    const question = message.trim();
-    if (!question) {
-      return;
-    }
-
-    setLoading(true);
-    setStatusText("AI 正在生成回答...");
-    setChatMessages((prev) => [...prev, { role: "user", content: question }]);
-
-    try {
-      const sid = await ensureSession();
-      const response = await askSlideQuestion({
-        sessionId: sid,
-        message: question,
-        slideId: mode === "slide" ? currentSlide?.id : undefined,
-        mode,
-      });
-
-      setExplanation(response.answer);
-      setChatMessages((prev) => [...prev, { role: "assistant", content: response.answer }]);
-      await refreshLearningInsights();
-      setStatusText(response.degraded ? "回答完成（降级模式）" : "回答完成");
-    } catch (error) {
-      const messageText = error instanceof Error ? error.message : "未知错误";
-      setChatMessages((prev) => [...prev, { role: "assistant", content: `请求失败：${messageText}` }]);
-      setStatusText(`提问失败：${messageText}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleExplainRoi() {
-    if (!currentSlide || !roi) {
-      return;
-    }
-
-    setLoading(true);
-    setStatusText("正在解释框选区域...");
-    setChatMessages((prev) => [...prev, { role: "user", content: "请解释我框选的区域" }]);
-
-    try {
-      const sid = await ensureSession();
-      const response = await askRoiQuestion({
-        sessionId: sid,
-        slideId: currentSlide.id,
-        message: "请解释我框选的区域",
-        roi,
-      });
-
-      setExplanation(response.answer);
-      setChatMessages((prev) => [...prev, { role: "assistant", content: response.answer }]);
-      await refreshLearningInsights();
-      setStatusText("区域解释完成");
-    } catch (error) {
-      const messageText = error instanceof Error ? error.message : "未知错误";
-      setStatusText(`区域解释失败：${messageText}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleGenerateQuiz() {
+  useEffect(() => {
     if (!currentSlide) {
+      setExplanation("");
       return;
     }
+    setExplanation(upload.cachedExplanations[currentSlide.id] ?? "");
+  }, [currentSlide, upload.cachedExplanations, setExplanation]);
 
-    setLoading(true);
-    setStatusText("正在生成本页小测...");
-    try {
-      const sid = await ensureSession();
-      const quiz = await generateQuiz({
-        sessionId: sid,
-        slideId: currentSlide.id,
-        questionCount: 3,
-      });
-      setQuizId(quiz.quiz_id);
-      setQuizQuestions(quiz.questions);
-      setQuizAnswers({});
-      setQuizFeedback("小测已生成，请选择答案后提交批改。");
-      setStatusText("小测生成完成");
-    } catch (error) {
-      const messageText = error instanceof Error ? error.message : "未知错误";
-      setStatusText(`小测生成失败：${messageText}`);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const statusText =
+    chat.statusText || upload.statusText || globalStatus || "就绪";
 
-  async function handleSubmitQuiz() {
-    if (!quizId) {
-      return;
-    }
-
-    setLoading(true);
-    setStatusText("正在批改...");
-    try {
-      const graded = await gradeQuiz({ quizId, answers: quizAnswers });
-      setQuizFeedback(graded.feedback);
-      await refreshLearningInsights();
-      setStatusText(`批改完成：${graded.score}/${graded.total}`);
-    } catch (error) {
-      const messageText = error instanceof Error ? error.message : "未知错误";
-      setStatusText(`批改失败：${messageText}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleCompleteReviewItem(reviewId: string) {
-    setLoading(true);
-    setStatusText("正在更新复习状态...");
-    try {
-      await completeReviewItem(reviewId);
-      await refreshLearningInsights();
-      setStatusText("复习项已标记完成");
-    } catch (error) {
-      const messageText = error instanceof Error ? error.message : "未知错误";
-      setStatusText(`更新复习状态失败：${messageText}`);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const loading = upload.loading || chat.loading || quiz.loading || review.loading || notesLoading;
 
   async function handleExportNotes() {
-    setLoading(true);
-    setStatusText("正在导出笔记...");
+    if (!upload.sessionId) return;
+    setNotesLoading(true);
+    setGlobalStatus("正在导出会话笔记...");
     try {
-      const sid = await ensureSession();
-      const result = await exportNotes({
-        sessionId: sid,
-        title: "PPT 学习笔记",
-      });
+      const result = await exportNotes({ sessionId: upload.sessionId, title: "会话笔记" });
       setNotesMarkdown(result.markdown);
-      setStatusText("笔记导出完成");
+      downloadMarkdown("session-notes.md", result.markdown);
+      setGlobalStatus("会话笔记导出完成");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "未知错误";
-      setStatusText(`导出失败：${message}`);
+      const msg = error instanceof Error ? error.message : "未知错误";
+      setGlobalStatus(`导出失败：${msg}`);
     } finally {
-      setLoading(false);
+      setNotesLoading(false);
     }
+  }
+
+  async function handleExportAllExplanations() {
+    if (!upload.documentId) return;
+    setNotesLoading(true);
+    setGlobalStatus("正在导出整套讲解...");
+    try {
+      const result = await exportDocumentExplanations(upload.documentId);
+      setNotesMarkdown(result.markdown);
+      downloadMarkdown("all-slides-explanations.md", result.markdown);
+      setGlobalStatus("整套讲解导出完成");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "未知错误";
+      setGlobalStatus(`导出失败：${msg}`);
+    } finally {
+      setNotesLoading(false);
+    }
+  }
+
+  async function handleAutoGenerateNotes() {
+    if (!upload.sessionId) return;
+    setNotesLoading(true);
+    setGlobalStatus("正在生成自动笔记...");
+    try {
+      const result = await autogenNotes({ sessionId: upload.sessionId, title: "自动笔记" });
+      setNotesMarkdown(result.markdown);
+      setGlobalStatus("自动笔记已生成，可继续手动补充");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "未知错误";
+      setGlobalStatus(`自动笔记生成失败：${msg}`);
+    } finally {
+      setNotesLoading(false);
+    }
+  }
+
+  function handleAppendSelectionToNotes() {
+    const selection = window.getSelection()?.toString().trim();
+    if (!selection) {
+      setGlobalStatus("请先在讲解区域选中文本再添加。");
+      return;
+    }
+    setNotesMarkdown((prev) => {
+      const quoted = selection
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n");
+      const prefix = prev.trim() ? `${prev.trimEnd()}\n\n` : "# 学习笔记\n\n";
+      return `${prefix}## 选中摘录\n${quoted}\n`;
+    });
+    setGlobalStatus("已把选中内容加入笔记。");
+  }
+
+  function handleLoadCachedExplanation() {
+    if (!currentSlide) return;
+    setExplanation(upload.cachedExplanations[currentSlide.id] ?? "");
   }
 
   return (
-    <main className="flex min-h-screen flex-col p-4 md:p-6">
-      <header className="mb-4 rounded-2xl bg-white/90 p-4 shadow-panel">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-ink md:text-2xl">PPT 分屏讲解学习助手</h1>
-            <p className="text-sm text-slate-600">上传资料后，按页学习、追问、框选解释并导出笔记。</p>
-          </div>
-
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-ink px-3 py-2 text-sm text-white">
-            <span>{loading ? "处理中..." : "上传 PDF/图片"}</span>
-            <input
-              accept=".pdf,image/png,image/jpeg,image/webp"
-              className="hidden"
-              disabled={loading}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) {
-                  void handleUpload(file);
-                }
-                event.currentTarget.value = "";
-              }}
-              type="file"
-            />
-          </label>
+    <main className="flex h-screen min-h-screen flex-col overflow-hidden bg-slate-100">
+      <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4">
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            type="button"
+          >
+            {sidebarCollapsed ? "展开" : "收起"}
+          </button>
+          <h1 className="text-sm font-semibold text-slate-800 md:text-base">PPT 学习工作台</h1>
         </div>
-
-        <p className="mt-3 rounded-lg bg-accentSoft px-3 py-2 text-sm text-slate-700">{statusText}</p>
+        <p className="max-w-[60%] truncate text-xs text-slate-600">{statusText}</p>
       </header>
 
-      <section className="grid flex-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <SlideViewer
-          currentIndex={currentSlideIndex}
-          onRoiChange={setRoi}
-          onSelect={setCurrentSlideIndex}
-          roi={roi}
-          slides={slides}
-        />
-        <AIPanel
-          analytics={analytics}
-          chatInput={chatInput}
-          chatMessages={chatMessages}
-          disabled={!currentSlide}
-          explanation={explanation}
-          loading={loading}
-          mode={mode}
-          notesMarkdown={notesMarkdown}
-          onChatInputChange={setChatInput}
-          onCompleteReview={(reviewId) => {
-            void handleCompleteReviewItem(reviewId);
-          }}
-          onExplainRoi={() => {
-            void handleExplainRoi();
-          }}
-          onExportNotes={() => {
-            void handleExportNotes();
-          }}
-          onGenerateExplanation={() => {
-            void ask("请解释当前页的核心知识点，并给出1分钟自测题");
-          }}
-          onGenerateQuiz={() => {
-            void handleGenerateQuiz();
-          }}
-          onModeChange={setMode}
-          onQuizAnswerChange={(questionId, answer) => {
-            setQuizAnswers((prev) => ({ ...prev, [questionId]: answer }));
-          }}
-          onRefreshReview={() => {
-            void refreshLearningInsights();
-          }}
-          onSendChat={() => {
-            const message = chatInput;
-            setChatInput("");
-            void ask(message);
-          }}
-          onSubmitQuiz={() => {
-            void handleSubmitQuiz();
-          }}
-          quizAnswers={quizAnswers}
-          quizFeedback={quizFeedback}
-          quizQuestions={quizQuestions}
-          reviewItems={reviewItems}
-          roiReady={Boolean(roi)}
-        />
-      </section>
+      <div className="flex min-h-0 flex-1">
+        <aside
+          className={`border-r border-slate-200 bg-white transition-all duration-200 ${
+            sidebarCollapsed ? "w-16" : "w-72"
+          }`}
+        >
+          <div className="flex h-full flex-col p-2">
+            <label
+              className={`mb-2 inline-flex cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-2 py-2 text-xs text-white ${
+                loading ? "opacity-60" : "hover:bg-slate-800"
+              }`}
+            >
+              <span>{sidebarCollapsed ? "上传" : "上传 PDF/图片"}</span>
+              <input
+                accept=".pdf,image/png,image/jpeg,image/webp"
+                className="hidden"
+                disabled={loading}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void upload.handleUpload(file);
+                  event.currentTarget.value = "";
+                }}
+                type="file"
+              />
+            </label>
+
+            {!sidebarCollapsed ? (
+              <>
+                <p className="mb-2 px-1 text-xs font-medium text-slate-500">已上传文档</p>
+                <div className="flex-1 space-y-1 overflow-auto">
+                  {upload.documents.length === 0 ? (
+                    <p className="px-2 text-xs text-slate-400">暂无文档</p>
+                  ) : (
+                    upload.documents.map((doc) => (
+                      <button
+                        className={`w-full rounded-md border px-2 py-2 text-left text-xs ${
+                          upload.documentId === doc.id
+                            ? "border-accent bg-accentSoft text-slate-800"
+                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                        key={doc.id}
+                        onClick={() => void upload.loadDocument(doc.id)}
+                        type="button"
+                      >
+                        <p className="truncate font-medium">{doc.filename}</p>
+                        <p className="mt-1 text-[10px] opacity-80">
+                          {doc.status} · {doc.page_count} 页
+                        </p>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            ) : null}
+          </div>
+        </aside>
+
+        <section className="min-h-0 flex-1">
+          <section className="grid h-full min-h-0 grid-cols-1 gap-0 lg:grid-cols-[1.2fr_1fr]">
+            <ErrorBoundary>
+              <SlideViewer
+                currentIndex={currentSlideIndex}
+                onRoiChange={setRoi}
+                onSelect={setCurrentSlideIndex}
+                roi={roi}
+                slides={upload.slides}
+              />
+            </ErrorBoundary>
+            <ErrorBoundary>
+              <AIPanel
+                analytics={review.analytics}
+                chatInput={chat.chatInput}
+                chatMessages={chat.chatMessages}
+                disabled={!currentSlide}
+                explanation={chat.explanation}
+                loading={loading}
+                mode={chat.mode}
+                notesMarkdown={notesMarkdown}
+                onAutoGenerateNotes={() => void handleAutoGenerateNotes()}
+                onChatInputChange={chat.setChatInput}
+                onCompleteReview={(reviewId, quality) => {
+                  if (upload.sessionId) void review.complete(reviewId, quality, upload.sessionId);
+                }}
+                onExplainRoi={() => {
+                  if (currentSlide && roi && upload.sessionId) {
+                    void chat.askRoi(roi, upload.sessionId, currentSlide);
+                  }
+                }}
+                onExportAllExplanations={() => void handleExportAllExplanations()}
+                onExportNotes={() => void handleExportNotes()}
+                onFormatNotes={() => setNotesMarkdown((prev) => formatNotesMarkdown(prev))}
+                onGenerateExplanation={handleLoadCachedExplanation}
+                onGenerateQuiz={() => {
+                  if (upload.sessionId && currentSlide) {
+                    void quiz.generate(upload.sessionId, currentSlide.id);
+                  }
+                }}
+                onModeChange={chat.setMode}
+                onNotesChange={setNotesMarkdown}
+                onAppendSelectionToNotes={handleAppendSelectionToNotes}
+                onQuizAnswerChange={quiz.setAnswer}
+                onRefreshReview={() => {
+                  if (upload.sessionId) void review.refresh(upload.sessionId);
+                }}
+                onSendChat={() => {
+                  const message = chat.chatInput;
+                  chat.setChatInput("");
+                  if (upload.sessionId) void chat.ask(message, upload.sessionId, currentSlide);
+                }}
+                onSubmitQuiz={() => void quiz.submit()}
+                quizAnswers={quiz.quizAnswers}
+                quizFeedback={quiz.quizFeedback}
+                quizQuestions={quiz.quizQuestions}
+                reviewItems={review.reviewItems}
+                roiReady={Boolean(roi)}
+              />
+            </ErrorBoundary>
+          </section>
+        </section>
+      </div>
     </main>
   );
 }

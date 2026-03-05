@@ -25,7 +25,7 @@ def test_slide_bound_chat_and_markdown_export(tmp_path: Path) -> None:
         "/api/v1/documents/upload",
         files={"file": ("slide.png", _png_bytes(), "image/png")},
     )
-    assert upload_resp.status_code == 201
+    assert upload_resp.status_code == 202
     upload_payload = upload_resp.json()
     doc_id = upload_payload["document"]["id"]
 
@@ -51,7 +51,7 @@ def test_slide_bound_chat_and_markdown_export(tmp_path: Path) -> None:
     )
     assert chat_resp.status_code == 200
     answer = chat_resp.json()["answer"]
-    assert "本页在讲什么" in answer
+    assert "## Slide 1 讲解" in answer
     assert "1分钟自测" in answer
 
     export_resp = client.post(

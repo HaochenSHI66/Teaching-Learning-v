@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getAssetUrl, type RoiBox, type Slide } from "@/lib/api";
 
@@ -27,9 +27,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
   const activeRoi = draftRoi ?? roi;
 
   const roiStyle = useMemo(() => {
-    if (!activeRoi) {
-      return null;
-    }
+    if (!activeRoi) return null;
     return {
       left: `${activeRoi.x * 100}%`,
       top: `${activeRoi.y * 100}%`,
@@ -38,6 +36,65 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
     };
   }, [activeRoi]);
 
+  // Keyboard navigation: left/right arrows
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (slides.length === 0) return;
+      const target = event.target as HTMLElement;
+      if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") return;
+
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        if (currentIndex < slides.length - 1) {
+          onSelect(currentIndex + 1);
+          onRoiChange(null);
+        }
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (currentIndex > 0) {
+          onSelect(currentIndex - 1);
+          onRoiChange(null);
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [slides.length, currentIndex, onSelect, onRoiChange]);
+
+  const toRelative = useCallback((clientX: number, clientY: number): Point | null => {
+    const element = canvasRef.current;
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: clamp01((clientX - rect.left) / rect.width),
+      y: clamp01((clientY - rect.top) / rect.height),
+    };
+  }, []);
+
+  const updateDraft = useCallback((start: Point, current: Point) => {
+    setDraftRoi({
+      x: Math.min(start.x, current.x),
+      y: Math.min(start.y, current.y),
+      w: Math.abs(current.x - start.x),
+      h: Math.abs(current.y - start.y),
+    });
+  }, []);
+
+  const commitDrag = useCallback(
+    (start: Point, end: Point) => {
+      const nextRoi = {
+        x: Math.min(start.x, end.x),
+        y: Math.min(start.y, end.y),
+        w: Math.abs(end.x - start.x),
+        h: Math.abs(end.y - start.y),
+      };
+      onRoiChange(nextRoi.w < 0.01 || nextRoi.h < 0.01 ? null : nextRoi);
+      setDraftRoi(null);
+    },
+    [onRoiChange],
+  );
+
   if (!currentSlide) {
     return (
       <section className="h-full rounded-2xl bg-white/80 p-6 shadow-panel">
@@ -45,36 +102,6 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
       </section>
     );
   }
-
-  const toRelative = (clientX: number, clientY: number): Point | null => {
-    const element = canvasRef.current;
-    if (!element) {
-      return null;
-    }
-    const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
-      return null;
-    }
-
-    return {
-      x: clamp01((clientX - rect.left) / rect.width),
-      y: clamp01((clientY - rect.top) / rect.height),
-    };
-  };
-
-  const updateDraft = (start: Point, current: Point) => {
-    const left = Math.min(start.x, current.x);
-    const top = Math.min(start.y, current.y);
-    const right = Math.max(start.x, current.x);
-    const bottom = Math.max(start.y, current.y);
-
-    setDraftRoi({
-      x: left,
-      y: top,
-      w: right - left,
-      h: bottom - top,
-    });
-  };
 
   return (
     <section className="grid h-full grid-cols-[112px_1fr] gap-4 rounded-2xl bg-white/80 p-4 shadow-panel">
@@ -126,61 +153,65 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
 
         <div className="flex-1 overflow-auto rounded-xl border border-slate-200 bg-white p-2">
           <div
-            className="relative mx-auto inline-block"
+            className="relative mx-auto inline-block touch-none select-none"
+            // Mouse events
             onMouseDown={(event) => {
               const point = toRelative(event.clientX, event.clientY);
-              if (!point) {
-                return;
-              }
+              if (!point) return;
               setDragStart(point);
               setDraftRoi(null);
             }}
+            onMouseLeave={() => {
+              if (dragStart) { setDragStart(null); setDraftRoi(null); }
+            }}
             onMouseMove={(event) => {
-              if (!dragStart) {
-                return;
-              }
+              if (!dragStart) return;
               const point = toRelative(event.clientX, event.clientY);
-              if (!point) {
-                return;
-              }
-              updateDraft(dragStart, point);
+              if (point) updateDraft(dragStart, point);
             }}
             onMouseUp={(event) => {
-              if (!dragStart) {
-                return;
-              }
+              if (!dragStart) return;
               const point = toRelative(event.clientX, event.clientY);
+              const start = dragStart;
               setDragStart(null);
-              if (!point) {
-                setDraftRoi(null);
-                return;
-              }
-
-              updateDraft(dragStart, point);
-              const left = Math.min(dragStart.x, point.x);
-              const top = Math.min(dragStart.y, point.y);
-              const right = Math.max(dragStart.x, point.x);
-              const bottom = Math.max(dragStart.y, point.y);
-              const nextRoi = { x: left, y: top, w: right - left, h: bottom - top };
-
-              if (nextRoi.w < 0.01 || nextRoi.h < 0.01) {
-                onRoiChange(null);
-              } else {
-                onRoiChange(nextRoi);
-              }
-              setDraftRoi(null);
+              if (!point) { setDraftRoi(null); return; }
+              updateDraft(start, point);
+              commitDrag(start, point);
             }}
-            onMouseLeave={() => {
-              if (dragStart) {
-                setDragStart(null);
-                setDraftRoi(null);
-              }
+            // Touch events
+            onTouchEnd={(event) => {
+              if (!dragStart) return;
+              const touch = event.changedTouches[0];
+              const start = dragStart;
+              setDragStart(null);
+              if (!touch) { setDraftRoi(null); return; }
+              const point = toRelative(touch.clientX, touch.clientY);
+              if (!point) { setDraftRoi(null); return; }
+              updateDraft(start, point);
+              commitDrag(start, point);
+            }}
+            onTouchMove={(event) => {
+              if (!dragStart) return;
+              event.preventDefault();
+              const touch = event.touches[0];
+              if (!touch) return;
+              const point = toRelative(touch.clientX, touch.clientY);
+              if (point) updateDraft(dragStart, point);
+            }}
+            onTouchStart={(event) => {
+              const touch = event.touches[0];
+              if (!touch) return;
+              const point = toRelative(touch.clientX, touch.clientY);
+              if (!point) return;
+              setDragStart(point);
+              setDraftRoi(null);
             }}
             ref={canvasRef}
           >
             <img
               alt={`Slide ${currentSlide.page_num}`}
               className="mx-auto block h-auto max-w-full rounded-lg"
+              draggable={false}
               src={getAssetUrl(currentSlide.image_url)}
             />
             {roiStyle ? (

@@ -61,6 +61,26 @@ export type QuizGradePayload = {
   }[];
 };
 
+export type DocumentStatus = {
+  id: string;
+  status: "processing" | "ready" | "error";
+  page_count: number;
+};
+
+export type DocumentListItem = {
+  id: string;
+  filename: string;
+  status: "processing" | "ready" | "error";
+  page_count: number;
+  created_at: string;
+};
+
+export type SlideExplanation = {
+  slide_id: string;
+  page_num: number;
+  markdown: string;
+};
+
 export type ReviewItem = {
   id: string;
   session_id: string;
@@ -69,6 +89,9 @@ export type ReviewItem = {
   prompt: string;
   due_at: string;
   status: string;
+  repetitions: number;
+  interval_days: number;
+  easiness: number;
 };
 
 export type ReviewQueuePayload = {
@@ -123,11 +146,52 @@ export async function uploadDocument(file: File): Promise<UploadPayload> {
   });
 }
 
+export async function fetchDocuments(): Promise<DocumentListItem[]> {
+  const payload = await request<{ documents: DocumentListItem[] }>("/api/v1/documents");
+  return payload.documents;
+}
+
+export async function fetchDocumentStatus(documentId: string): Promise<DocumentStatus> {
+  return request<DocumentStatus>(`/api/v1/documents/${documentId}/status`);
+}
+
+/** Poll until document status is "ready" or "error". Max wait ~60s. */
+export async function pollDocumentReady(
+  documentId: string,
+  onProgress?: (status: DocumentStatus) => void,
+): Promise<DocumentStatus> {
+  const INTERVAL_MS = 1500;
+  const MAX_ATTEMPTS = 40;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const status = await fetchDocumentStatus(documentId);
+    onProgress?.(status);
+    if (status.status === "ready" || status.status === "error") {
+      return status;
+    }
+    await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
+  }
+  throw new Error("Document processing timed out");
+}
+
 export async function fetchSlides(documentId: string): Promise<Slide[]> {
   const payload = await request<{ document_id: string; slides: Slide[] }>(
     `/api/v1/documents/${documentId}/slides`,
   );
   return payload.slides;
+}
+
+export async function fetchDocumentExplanations(documentId: string): Promise<SlideExplanation[]> {
+  const payload = await request<{ document_id: string; explanations: SlideExplanation[] }>(
+    `/api/v1/documents/${documentId}/explanations`,
+  );
+  return payload.explanations;
+}
+
+export async function exportDocumentExplanations(documentId: string): Promise<{ markdown: string }> {
+  return request<{ document_id: string; markdown: string }>(
+    `/api/v1/documents/${documentId}/explanations/export`,
+  );
 }
 
 export async function createSession(documentId: string, currentSlideId?: string): Promise<{ id: string }> {
@@ -218,9 +282,14 @@ export async function fetchReviewQueue(sessionId: string): Promise<ReviewQueuePa
   return request<ReviewQueuePayload>(`/api/v1/review/${sessionId}/queue`);
 }
 
-export async function completeReviewItem(reviewId: string): Promise<{ id: string; status: string }> {
+export async function completeReviewItem(
+  reviewId: string,
+  quality: number = 4,
+): Promise<{ id: string; status: string }> {
   return request<{ id: string; status: string }>(`/api/v1/review/${reviewId}/complete`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ quality }),
   });
 }
 
@@ -233,6 +302,22 @@ export async function exportNotes(params: {
   title: string;
 }): Promise<{ title: string; markdown: string }> {
   return request<{ title: string; markdown: string }>("/api/v1/notes/export", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      session_id: params.sessionId,
+      title: params.title,
+    }),
+  });
+}
+
+export async function autogenNotes(params: {
+  sessionId: string;
+  title: string;
+}): Promise<{ title: string; markdown: string }> {
+  return request<{ title: string; markdown: string }>("/api/v1/notes/autogen", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

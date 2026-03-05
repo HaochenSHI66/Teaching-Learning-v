@@ -16,3 +16,38 @@ body {
 * {
   box-sizing: border-box;
 }
+
+.markdown-body mark {
+  background: #fde68a;
+  color: #78350f;
+  padding: 0 0.2rem;
+  border-radius: 0.25rem;
+}
+
+.markdown-body .callout {
+  margin: 0.8rem 0;
+  border-left-width: 4px;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  background: #f8fafc;
+}
+
+.markdown-body .callout-note {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+
+.markdown-body .callout-tip {
+  border-left-color: #0d9488;
+  background: #f0fdfa;
+}
+
+.markdown-body .callout-warning {
+  border-left-color: #d97706;
+  background: #fffbeb;
+}
+
+.markdown-body .callout-important {
+  border-left-color: #7c3aed;
+  background: #f5f3ff;
+}

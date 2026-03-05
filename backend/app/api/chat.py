@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from PIL import Image
 from sqlmodel import Session
 
 from app.api.deps import get_db_session
-from app.models import Document, LearningSession, Message, Note, Slide
+from app.models import Document, LearningSession, Message, Slide
 from app.schemas import ChatRequest, ChatResponse, RoiChatRequest, RoiChatResponse
 from app.services.explanation_engine import generate_roi_explanation, generate_slide_explanation
 from app.services.retrieval import retrieve_related_slides
@@ -122,15 +122,6 @@ def chat_on_slide(
         )
     )
 
-    if target_slide_id:
-        session.add(
-            Note(
-                session_id=learning_session.id,
-                slide_id=target_slide_id,
-                content_md=answer,
-            )
-        )
-
     if payload.mode == "slide" and target_slide_id:
         learning_session.current_slide_id = target_slide_id
 
@@ -147,6 +138,7 @@ def chat_on_slide(
 
 @router.post("/roi", response_model=RoiChatResponse)
 def explain_roi(
+    request: Request,
     payload: RoiChatRequest,
     session: Session = Depends(get_db_session),
 ) -> RoiChatResponse:
@@ -160,7 +152,8 @@ def explain_roi(
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    image_path = Path(document.storage_path) / slide.image_path
+    storage_root: Path = request.app.state.storage_dir
+    image_path = storage_root / document.storage_path / slide.image_path
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="Slide image not found")
 
@@ -205,14 +198,6 @@ def explain_roi(
                 "roi": payload.roi.model_dump(),
                 "region_size": {"width": region_size[0], "height": region_size[1]},
             },
-        )
-    )
-
-    session.add(
-        Note(
-            session_id=learning_session.id,
-            slide_id=slide.id,
-            content_md=answer,
         )
     )
 

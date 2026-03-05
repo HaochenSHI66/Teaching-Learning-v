@@ -33,7 +33,7 @@ def test_review_queue_and_learning_analytics(tmp_path: Path) -> None:
         "/api/v1/documents/upload",
         files={"file": ("course.pdf", _two_page_pdf_bytes(), "application/pdf")},
     )
-    assert upload.status_code == 201
+    assert upload.status_code == 202
     document_id = upload.json()["document"]["id"]
 
     slides = client.get(f"/api/v1/documents/{document_id}/slides")

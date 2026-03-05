@@ -18,6 +18,24 @@ class UploadResponse(BaseModel):
     slide_count: int
 
 
+class DocumentStatusResponse(BaseModel):
+    id: str
+    status: str
+    page_count: int
+
+
+class DocumentListItem(BaseModel):
+    id: str
+    filename: str
+    status: str
+    page_count: int
+    created_at: datetime
+
+
+class DocumentListResponse(BaseModel):
+    documents: list[DocumentListItem]
+
+
 class SlideRead(BaseModel):
     id: str
     page_num: int
@@ -30,6 +48,22 @@ class SlideRead(BaseModel):
 class SlidesResponse(BaseModel):
     document_id: str
     slides: list[SlideRead]
+
+
+class SlideExplanationRead(BaseModel):
+    slide_id: str
+    page_num: int
+    markdown: str
+
+
+class DocumentExplanationsResponse(BaseModel):
+    document_id: str
+    explanations: list[SlideExplanationRead]
+
+
+class DocumentExplanationsExportResponse(BaseModel):
+    document_id: str
+    markdown: str
 
 
 class SessionCreateRequest(BaseModel):
@@ -90,6 +124,11 @@ class NotesExportResponse(BaseModel):
     markdown: str
 
 
+class NotesAutoGenerateRequest(BaseModel):
+    session_id: str
+    title: str = "自动笔记"
+
+
 class QuizGenerateRequest(BaseModel):
     session_id: str
     slide_id: str
@@ -135,6 +174,9 @@ class ReviewItemRead(BaseModel):
     prompt: str
     due_at: datetime
     status: str
+    repetitions: int
+    interval_days: float
+    easiness: float
 
 
 class ReviewQueueResponse(BaseModel):

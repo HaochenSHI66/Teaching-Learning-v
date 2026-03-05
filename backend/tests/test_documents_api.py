@@ -26,10 +26,8 @@ def test_upload_image_and_list_slides(tmp_path: Path) -> None:
         files={"file": ("slide.png", _png_bytes(), "image/png")},
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 202
     payload = response.json()
-    assert payload["slide_count"] == 1
-
     doc_id = payload["document"]["id"]
     slides_response = client.get(f"/api/v1/documents/{doc_id}/slides")
 

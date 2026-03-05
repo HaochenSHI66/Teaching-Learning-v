@@ -1,8 +1,9 @@
 # PPT Split-Screen Learning Assistant
 
 MVP+ for page-by-page PPT/PDF learning:
-- Left panel: slide viewer with thumbnails and page switching
-- Right panel: AI explanation, page-bound Q&A, markdown note export
+- Top bar + collapsible left sidebar (uploaded documents + upload entry)
+- Full-height split layout (left slide viewer, right AI/notes panel)
+- All text display areas rendered as Markdown (with callout and highlight support)
 - Drag-to-select ROI on slide and request region-only explanation
 - Per-slide quiz generation and auto-grading
 - Cross-slide retrieval hints in chat answers (RAG-lite with page citation)
@@ -20,20 +21,29 @@ MVP+ for page-by-page PPT/PDF learning:
 
 - Upload `PDF` and common image types (`png/jpg/webp`)
 - Auto split/render slides and thumbnails
+- Pre-generate cached explanations for all slides during upload processing
+- Persist cached explanations locally to avoid repeated model calls on page load
 - PDF text extraction into `slide_extracts` for retrieval and quiz generation
 - Create learning session bound to current document
 - Page-level explanation and follow-up Q&A
 - ROI box explanation (`/api/v1/chat/roi`)
 - Cross-slide retrieval for related context pages and page citation
+- One-click export of all cached explanations to a single Markdown file
 - Slide quiz generation and grading (`/api/v1/quizzes/generate`, `/api/v1/quizzes/{id}/grade`)
 - Wrong-question review queue (`/api/v1/review/{session_id}/queue`)
 - Session-level learning analytics (`/api/v1/analytics/{session_id}`)
+- Two-mode notes: auto-generated notes + manual editable notes
+- Append selected explanation text into notes and format notes with one click
 - Export markdown notes from session interactions
 
 ## Backend API
 
 - `POST /api/v1/documents/upload`
+- `GET /api/v1/documents`
+- `GET /api/v1/documents/{document_id}/status`
 - `GET /api/v1/documents/{document_id}/slides`
+- `GET /api/v1/documents/{document_id}/explanations`
+- `GET /api/v1/documents/{document_id}/explanations/export`
 - `POST /api/v1/sessions`
 - `GET /api/v1/sessions/{session_id}`
 - `POST /api/v1/chat`
@@ -44,6 +54,7 @@ MVP+ for page-by-page PPT/PDF learning:
 - `POST /api/v1/review/{review_id}/complete`
 - `GET /api/v1/analytics/{session_id}`
 - `POST /api/v1/notes/export`
+- `POST /api/v1/notes/autogen`
 - `GET /health`
 
 ## Local Development

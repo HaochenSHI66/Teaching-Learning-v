@@ -2,12 +2,9 @@
 
 import { useState } from "react";
 
+import { MarkdownContent } from "@/components/markdown-content";
+import type { ChatMessage } from "@/hooks/useChat";
 import type { QuizQuestion, ReviewItem, SessionAnalyticsPayload } from "@/lib/api";
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
 
 type AIPanelProps = {
   disabled: boolean;
@@ -29,11 +26,16 @@ type AIPanelProps = {
   onGenerateExplanation: () => void;
   onExplainRoi: () => void;
   onExportNotes: () => void;
+  onExportAllExplanations: () => void;
+  onAutoGenerateNotes: () => void;
+  onAppendSelectionToNotes: () => void;
+  onFormatNotes: () => void;
+  onNotesChange: (value: string) => void;
   onGenerateQuiz: () => void;
   onQuizAnswerChange: (questionId: string, answer: string) => void;
   onSubmitQuiz: () => void;
   onRefreshReview: () => void;
-  onCompleteReview: (reviewId: string) => void;
+  onCompleteReview: (reviewId: string, quality: number) => void;
 };
 
 const TABS = [
@@ -45,6 +47,13 @@ const TABS = [
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
+
+const QUALITY_LABELS: { quality: number; label: string; className: string }[] = [
+  { quality: 0, label: "完全不会", className: "bg-red-600 text-white hover:bg-red-700" },
+  { quality: 2, label: "模糊记得", className: "bg-orange-500 text-white hover:bg-orange-600" },
+  { quality: 4, label: "基本掌握", className: "bg-emerald-600 text-white hover:bg-emerald-700" },
+  { quality: 5, label: "完全掌握", className: "bg-blue-600 text-white hover:bg-blue-700" },
+];
 
 export function AIPanel({
   disabled,
@@ -66,6 +75,11 @@ export function AIPanel({
   onGenerateExplanation,
   onExplainRoi,
   onExportNotes,
+  onExportAllExplanations,
+  onAutoGenerateNotes,
+  onAppendSelectionToNotes,
+  onFormatNotes,
+  onNotesChange,
   onGenerateQuiz,
   onQuizAnswerChange,
   onSubmitQuiz,
@@ -75,7 +89,7 @@ export function AIPanel({
   const [tab, setTab] = useState<TabKey>("explain");
 
   return (
-    <section className="flex h-full flex-col rounded-2xl bg-white/85 p-4 shadow-panel">
+    <section className="flex h-full flex-col rounded-none bg-white/85 p-4 shadow-panel lg:rounded-r-2xl">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-sm">
           {TABS.map((item) => (
@@ -112,32 +126,21 @@ export function AIPanel({
 
       {tab === "explain" && (
         <div className="flex h-full flex-col gap-3">
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <button
-              className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-              disabled={disabled || loading}
-              onClick={onGenerateExplanation}
-              type="button"
-            >
-              {loading ? "生成中..." : "生成当前页讲解"}
-            </button>
-            <button
-              className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-              disabled={disabled || loading || !roiReady}
-              onClick={onExplainRoi}
-              type="button"
-            >
-              {loading ? "分析中..." : "解释框选区域"}
-            </button>
+          <button
+            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={disabled || loading}
+            onClick={onGenerateExplanation}
+            type="button"
+          >
+            {loading ? "加载中..." : "显示当前页缓存讲解"}
+          </button>
+          <div className="flex-1 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+            {explanation ? (
+              <MarkdownContent content={explanation} />
+            ) : (
+              <p className="text-sm text-slate-400">当前页暂无讲解缓存。</p>
+            )}
           </div>
-          {!roiReady ? (
-            <p className="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              在左侧图片上拖拽框选后可启用区域解释。
-            </p>
-          ) : null}
-          <pre className="flex-1 overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700">
-            {explanation || "点击按钮生成结构化讲解。"}
-          </pre>
         </div>
       )}
 
@@ -145,16 +148,33 @@ export function AIPanel({
         <div className="flex h-full flex-col gap-3">
           <div className="flex-1 space-y-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
             {chatMessages.length === 0 && <p className="text-sm text-slate-500">在这里追问当前页内容。</p>}
-            {chatMessages.map((message, idx) => (
+            {chatMessages.map((message) => (
               <article
                 className={`rounded-lg p-2 text-sm ${
                   message.role === "user" ? "bg-slate-900 text-white" : "bg-white text-slate-700"
                 }`}
-                key={`${message.role}-${idx}`}
+                key={message.id}
               >
-                {message.content}
+                <MarkdownContent
+                  className={message.role === "user" ? "prose-invert" : ""}
+                  content={message.content}
+                />
               </article>
             ))}
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <button
+              className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              disabled={disabled || loading || !roiReady}
+              onClick={onExplainRoi}
+              type="button"
+            >
+              {loading ? "处理中..." : "解释框选区域"}
+            </button>
+            <p className="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              {roiReady ? "ROI 已选择，可直接解释。" : "先在左侧框选区域，再点击解释。"}
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -162,7 +182,12 @@ export function AIPanel({
               className="h-24 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm outline-none focus:border-accent"
               disabled={disabled || loading}
               onChange={(event) => onChatInputChange(event.target.value)}
-              placeholder="输入追问，例如：这个公式为什么成立？"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                  onSendChat();
+                }
+              }}
+              placeholder="输入追问，Ctrl/⌘+Enter 发送"
               value={chatInput}
             />
             <button
@@ -179,19 +204,63 @@ export function AIPanel({
 
       {tab === "notes" && (
         <div className="flex h-full flex-col gap-3">
-          <button
-            className="rounded-lg bg-ink px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-            disabled={disabled || loading}
-            onClick={onExportNotes}
-            type="button"
-          >
-            导出 Markdown 笔记
-          </button>
-          <textarea
-            className="flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-700"
-            readOnly
-            value={notesMarkdown || "导出后会显示 Markdown 内容。"}
-          />
+          <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
+            <button
+              className="rounded-lg bg-slate-900 px-2 py-2 text-white disabled:bg-slate-300"
+              disabled={disabled || loading}
+              onClick={onAutoGenerateNotes}
+              type="button"
+            >
+              自动生成笔记
+            </button>
+            <button
+              className="rounded-lg bg-emerald-700 px-2 py-2 text-white disabled:bg-slate-300"
+              disabled={disabled || loading}
+              onClick={onAppendSelectionToNotes}
+              type="button"
+            >
+              添加选中解释
+            </button>
+            <button
+              className="rounded-lg bg-violet-700 px-2 py-2 text-white disabled:bg-slate-300"
+              disabled={disabled || loading}
+              onClick={onFormatNotes}
+              type="button"
+            >
+              格式化笔记
+            </button>
+            <button
+              className="rounded-lg bg-ink px-2 py-2 text-white disabled:bg-slate-300"
+              disabled={disabled || loading}
+              onClick={onExportNotes}
+              type="button"
+            >
+              导出会话笔记
+            </button>
+            <button
+              className="col-span-2 rounded-lg bg-blue-700 px-2 py-2 text-white disabled:bg-slate-300 md:col-span-1"
+              disabled={disabled || loading}
+              onClick={onExportAllExplanations}
+              type="button"
+            >
+              导出全部讲解MD
+            </button>
+          </div>
+
+          <div className="grid flex-1 grid-cols-1 gap-3 lg:grid-cols-2">
+            <textarea
+              className="h-full min-h-[220px] rounded-xl border border-slate-200 bg-white p-3 font-mono text-xs leading-5 text-slate-700"
+              onChange={(event) => onNotesChange(event.target.value)}
+              value={notesMarkdown}
+            />
+            <div className="overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+              {notesMarkdown.trim() ? (
+                <MarkdownContent content={notesMarkdown} />
+              ) : (
+                <p className="text-sm text-slate-400">笔记预览区</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -248,9 +317,9 @@ export function AIPanel({
             )}
           </div>
 
-          <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
-            {quizFeedback || "批改结果将显示在这里。"}
-          </p>
+          <div className="overflow-auto rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+            <MarkdownContent content={quizFeedback || "批改结果将显示在这里。"} />
+          </div>
         </div>
       )}
 
@@ -291,14 +360,21 @@ export function AIPanel({
               reviewItems.map((item) => (
                 <article className="rounded-lg border border-slate-200 bg-white p-3" key={item.id}>
                   <p className="text-sm font-medium text-slate-700">{item.prompt}</p>
-                  <p className="mt-1 text-xs text-slate-500">slide: {item.slide_id} | 到期: {item.due_at}</p>
-                  <button
-                    className="mt-2 rounded-md bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700"
-                    onClick={() => onCompleteReview(item.id)}
-                    type="button"
-                  >
-                    标记已复习
-                  </button>
+                  <p className="mt-1 text-xs text-slate-500">
+                    复习间隔：{item.interval_days.toFixed(1)} 天 | 熟练度：{item.easiness.toFixed(2)} | 到期：{item.due_at.slice(0, 10)}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {QUALITY_LABELS.map(({ quality, label, className }) => (
+                      <button
+                        className={`rounded-md px-2 py-1 text-xs ${className}`}
+                        key={quality}
+                        onClick={() => onCompleteReview(item.id, quality)}
+                        type="button"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </article>
               ))
             )}

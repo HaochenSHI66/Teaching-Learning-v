@@ -31,7 +31,7 @@ def _save_thumbnail(source: Path, destination: Path, max_width: int = 320) -> tu
     return width, height
 
 
-def _render_pdf(pdf_path: Path, output_dir: Path) -> list[SlideAsset]:
+def _render_pdf(pdf_path: Path, output_dir: Path, render_scale: float = 2.0) -> list[SlideAsset]:
     slides_dir = output_dir / "slides"
     thumbs_dir = output_dir / "thumbnails"
     slides_dir.mkdir(parents=True, exist_ok=True)
@@ -40,7 +40,7 @@ def _render_pdf(pdf_path: Path, output_dir: Path) -> list[SlideAsset]:
     assets: list[SlideAsset] = []
     with fitz.open(pdf_path) as document:
         for page_index, page in enumerate(document, start=1):
-            pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(render_scale, render_scale), alpha=False)
             slide_file = slides_dir / f"slide_{page_index:03d}.png"
             pixmap.save(slide_file)
 
@@ -91,9 +91,10 @@ def process_document(
     source_file: Path,
     media_type: str,
     document_dir: Path,
+    render_scale: float = 2.0,
 ) -> list[SlideAsset]:
     if media_type == "application/pdf":
-        return _render_pdf(source_file, document_dir)
+        return _render_pdf(source_file, document_dir, render_scale=render_scale)
 
     if media_type in SUPPORTED_IMAGE_TYPES:
         return _render_image(source_file, document_dir)

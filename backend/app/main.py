@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -31,9 +32,11 @@ def create_app(
     app.state.engine = engine
     app.state.storage_dir = resolved_storage.resolve()
 
+    cors_origins_env = os.getenv("CORS_ORIGINS", "")
+    allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] or ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

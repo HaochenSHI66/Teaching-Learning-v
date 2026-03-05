@@ -25,7 +25,7 @@ def test_end_to_end_learning_flow(tmp_path: Path) -> None:
         "/api/v1/documents/upload",
         files={"file": ("lecture.png", _png_bytes(), "image/png")},
     )
-    assert upload.status_code == 201
+    assert upload.status_code == 202
     doc_id = upload.json()["document"]["id"]
 
     slides = client.get(f"/api/v1/documents/{doc_id}/slides")

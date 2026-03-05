@@ -50,7 +50,7 @@ def test_cross_slide_retrieval_for_chat(tmp_path: Path) -> None:
         "/api/v1/documents/upload",
         files={"file": ("course.pdf", _two_page_pdf_bytes(), "application/pdf")},
     )
-    assert upload.status_code == 201
+    assert upload.status_code == 202
     document_id = upload.json()["document"]["id"]
 
     slides = client.get(f"/api/v1/documents/{document_id}/slides")
@@ -91,7 +91,7 @@ def test_roi_explanation_endpoint(tmp_path: Path) -> None:
         "/api/v1/documents/upload",
         files={"file": ("single.png", _png_bytes(), "image/png")},
     )
-    assert upload.status_code == 201
+    assert upload.status_code == 202
     document_id = upload.json()["document"]["id"]
 
     slides = client.get(f"/api/v1/documents/{document_id}/slides")
@@ -125,7 +125,7 @@ def test_generate_and_grade_quiz(tmp_path: Path) -> None:
         "/api/v1/documents/upload",
         files={"file": ("course.pdf", _two_page_pdf_bytes(), "application/pdf")},
     )
-    assert upload.status_code == 201
+    assert upload.status_code == 202
     document_id = upload.json()["document"]["id"]
 
     slides = client.get(f"/api/v1/documents/{document_id}/slides")
