@@ -125,3 +125,37 @@ class QuizGradeResponse(BaseModel):
     total: int
     feedback: str
     results: list[QuizGradeResult]
+
+
+class ReviewItemRead(BaseModel):
+    id: str
+    session_id: str
+    slide_id: str
+    source_ref: str
+    prompt: str
+    due_at: datetime
+    status: str
+
+
+class ReviewQueueResponse(BaseModel):
+    session_id: str
+    items: list[ReviewItemRead]
+
+
+class ReviewCompleteResponse(BaseModel):
+    id: str
+    status: str
+
+
+class HotSlideStat(BaseModel):
+    slide_id: str
+    message_count: int
+
+
+class SessionAnalyticsResponse(BaseModel):
+    session_id: str
+    user_messages: int
+    assistant_messages: int
+    quiz_attempts: int
+    avg_quiz_score_percent: int
+    hot_slides: list[HotSlideStat]

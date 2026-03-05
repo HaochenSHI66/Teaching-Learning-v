@@ -83,3 +83,14 @@ class QuizAttempt(SQLModel, table=True):
     feedback: str = Field(default="")
     detail: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ReviewItem(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    session_id: str = Field(index=True)
+    slide_id: str = Field(index=True)
+    source_ref: str = Field(index=True)
+    prompt: str
+    due_at: datetime = Field(default_factory=datetime.utcnow)
+    status: str = Field(default="pending")
+    created_at: datetime = Field(default_factory=datetime.utcnow)

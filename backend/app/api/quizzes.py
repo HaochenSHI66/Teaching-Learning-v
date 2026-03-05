@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.api.deps import get_db_session
-from app.models import LearningSession, Quiz, QuizAttempt, Slide, SlideExtract
+from app.models import LearningSession, Quiz, QuizAttempt, ReviewItem, Slide, SlideExtract
 from app.schemas import (
     QuizGenerateRequest,
     QuizGenerateResponse,
@@ -80,6 +82,23 @@ def grade_slide_quiz(
         detail=results,
     )
     session.add(attempt)
+
+    question_map = {item.get("id"): item.get("prompt", "") for item in quiz.questions}
+    for result in results:
+        if result["is_correct"]:
+            continue
+        question_id = result["question_id"]
+        prompt = question_map.get(question_id, f"复习题 {question_id}")
+        session.add(
+            ReviewItem(
+                session_id=quiz.session_id,
+                slide_id=quiz.slide_id,
+                source_ref=f"{quiz.id}:{question_id}",
+                prompt=prompt,
+                due_at=datetime.utcnow() + timedelta(days=1),
+            )
+        )
+
     session.commit()
 
     return QuizGradeResponse(
