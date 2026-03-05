@@ -7,6 +7,13 @@ export type Slide = {
   height: number;
 };
 
+export type RoiBox = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
 export type UploadPayload = {
   document: {
     id: string;
@@ -21,6 +28,37 @@ export type ChatPayload = {
   used_slide_ids: string[];
   degraded: boolean;
   follow_ups: string[];
+};
+
+export type RoiChatPayload = {
+  answer: string;
+  used_slide_ids: string[];
+  roi_bbox: RoiBox;
+};
+
+export type QuizQuestion = {
+  id: string;
+  prompt: string;
+  options: string[];
+};
+
+export type QuizPayload = {
+  quiz_id: string;
+  slide_id: string;
+  questions: QuizQuestion[];
+};
+
+export type QuizGradePayload = {
+  quiz_id: string;
+  score: number;
+  total: number;
+  feedback: string;
+  results: {
+    question_id: string;
+    expected: string;
+    actual: string;
+    is_correct: boolean;
+  }[];
 };
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -95,6 +133,57 @@ export async function askSlideQuestion(params: {
       slide_id: params.slideId,
       mode: params.mode ?? "slide",
     }),
+  });
+}
+
+export async function askRoiQuestion(params: {
+  sessionId: string;
+  slideId: string;
+  message: string;
+  roi: RoiBox;
+}): Promise<RoiChatPayload> {
+  return request<RoiChatPayload>("/api/v1/chat/roi", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      session_id: params.sessionId,
+      slide_id: params.slideId,
+      message: params.message,
+      roi: params.roi,
+    }),
+  });
+}
+
+export async function generateQuiz(params: {
+  sessionId: string;
+  slideId: string;
+  questionCount?: number;
+}): Promise<QuizPayload> {
+  return request<QuizPayload>("/api/v1/quizzes/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      session_id: params.sessionId,
+      slide_id: params.slideId,
+      question_count: params.questionCount ?? 3,
+    }),
+  });
+}
+
+export async function gradeQuiz(params: {
+  quizId: string;
+  answers: Record<string, string>;
+}): Promise<QuizGradePayload> {
+  return request<QuizGradePayload>(`/api/v1/quizzes/${params.quizId}/grade`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ answers: params.answers }),
   });
 }
 

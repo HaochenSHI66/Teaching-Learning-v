@@ -1,8 +1,11 @@
 # PPT Split-Screen Learning Assistant
 
-MVP for page-by-page PPT/PDF learning:
+MVP+ for page-by-page PPT/PDF learning:
 - Left panel: slide viewer with thumbnails and page switching
 - Right panel: AI explanation, page-bound Q&A, markdown note export
+- Drag-to-select ROI on slide and request region-only explanation
+- Per-slide quiz generation and auto-grading
+- Cross-slide retrieval hints in chat answers (RAG-lite with page citation)
 
 ## Repository Structure
 
@@ -11,21 +14,28 @@ MVP for page-by-page PPT/PDF learning:
 - `docs/plans/`: design and implementation plan docs
 - `storage/`: runtime storage for uploaded files and rendered slide images (generated at runtime)
 
-## MVP Features
+## Implemented Features
 
 - Upload `PDF` and common image types (`png/jpg/webp`)
 - Auto split/render slides and thumbnails
+- PDF text extraction into `slide_extracts` for retrieval and quiz generation
 - Create learning session bound to current document
 - Page-level explanation and follow-up Q&A
+- ROI box explanation (`/api/v1/chat/roi`)
+- Cross-slide retrieval for related context pages and page citation
+- Slide quiz generation and grading (`/api/v1/quizzes/generate`, `/api/v1/quizzes/{id}/grade`)
 - Export markdown notes from session interactions
 
-## Backend API (MVP)
+## Backend API
 
 - `POST /api/v1/documents/upload`
 - `GET /api/v1/documents/{document_id}/slides`
 - `POST /api/v1/sessions`
 - `GET /api/v1/sessions/{session_id}`
 - `POST /api/v1/chat`
+- `POST /api/v1/chat/roi`
+- `POST /api/v1/quizzes/generate`
+- `POST /api/v1/quizzes/{quiz_id}/grade`
 - `POST /api/v1/notes/export`
 - `GET /health`
 
@@ -67,8 +77,8 @@ pytest -q
 
 ## Notes on Scope
 
-This branch focuses on Phase-1 MVP. The following are reserved for next iterations:
-- ROI box selection explanation
-- Cross-slide RAG retrieval
-- Quiz auto-grading and spaced review scheduling
-- Background worker queue (Celery/RQ)
+Current branch covers Phase 1 + core Phase 2. Still reserved for later:
+- True multimodal ROI understanding (current ROI is deterministic template with region metadata)
+- Vector database + embedding-based semantic RAG
+- Spaced repetition scheduler and wrong-question notebook analytics
+- Background worker queue (Celery/RQ) for heavy preprocessing tasks
