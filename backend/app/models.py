@@ -53,6 +53,7 @@ class Message(SQLModel, table=True):
     content: str
     slide_id: str | None = Field(default=None, index=True)
     mode: str = Field(default="slide")
+    context: dict = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -61,4 +62,24 @@ class Note(SQLModel, table=True):
     session_id: str = Field(index=True)
     slide_id: str | None = Field(default=None, index=True)
     content_md: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Quiz(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    session_id: str = Field(index=True)
+    slide_id: str = Field(index=True)
+    questions: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    answer_key: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class QuizAttempt(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    quiz_id: str = Field(index=True)
+    answers: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    score: int = Field(default=0)
+    total: int = Field(default=0)
+    feedback: str = Field(default="")
+    detail: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)

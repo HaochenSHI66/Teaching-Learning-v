@@ -60,6 +60,26 @@ class ChatResponse(BaseModel):
     follow_ups: list[str]
 
 
+class RoiBox(BaseModel):
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+    w: float = Field(gt=0.0, le=1.0)
+    h: float = Field(gt=0.0, le=1.0)
+
+
+class RoiChatRequest(BaseModel):
+    session_id: str
+    slide_id: str
+    message: str
+    roi: RoiBox
+
+
+class RoiChatResponse(BaseModel):
+    answer: str
+    used_slide_ids: list[str]
+    roi_bbox: RoiBox
+
+
 class NotesExportRequest(BaseModel):
     session_id: str
     title: str = "PPT 学习笔记"
@@ -68,3 +88,40 @@ class NotesExportRequest(BaseModel):
 class NotesExportResponse(BaseModel):
     title: str
     markdown: str
+
+
+class QuizGenerateRequest(BaseModel):
+    session_id: str
+    slide_id: str
+    question_count: int = Field(default=3, ge=1, le=10)
+
+
+class QuizQuestion(BaseModel):
+    id: str
+    prompt: str
+    options: list[str]
+
+
+class QuizGenerateResponse(BaseModel):
+    quiz_id: str
+    slide_id: str
+    questions: list[QuizQuestion]
+
+
+class QuizGradeRequest(BaseModel):
+    answers: dict[str, str]
+
+
+class QuizGradeResult(BaseModel):
+    question_id: str
+    expected: str
+    actual: str
+    is_correct: bool
+
+
+class QuizGradeResponse(BaseModel):
+    quiz_id: str
+    score: int
+    total: int
+    feedback: str
+    results: list[QuizGradeResult]

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, stat
 from sqlmodel import Session, select
 
 from app.api.deps import get_db_session
-from app.models import Document, Slide
+from app.models import Document, Slide, SlideExtract
 from app.schemas import DocumentRead, SlideRead, SlidesResponse, UploadResponse
 from app.services.slide_processor import SUPPORTED_TYPES, process_document
 
@@ -61,14 +61,26 @@ async def upload_document(
     session.add(document)
 
     for asset in assets:
+        slide = Slide(
+            document_id=document.id,
+            page_num=asset.page_num,
+            image_path=asset.image_rel_path,
+            thumbnail_path=asset.thumbnail_rel_path,
+            width=asset.width,
+            height=asset.height,
+        )
+        session.add(slide)
+        session.flush()
+
+        summary = asset.extracted_text.splitlines()[0] if asset.extracted_text else ""
         session.add(
-            Slide(
-                document_id=document.id,
-                page_num=asset.page_num,
-                image_path=asset.image_rel_path,
-                thumbnail_path=asset.thumbnail_rel_path,
-                width=asset.width,
-                height=asset.height,
+            SlideExtract(
+                slide_id=slide.id,
+                payload={
+                    "page_num": asset.page_num,
+                    "text": asset.extracted_text,
+                    "summary": summary,
+                },
             )
         )
 

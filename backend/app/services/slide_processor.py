@@ -18,6 +18,7 @@ class SlideAsset:
     thumbnail_rel_path: str
     width: int
     height: int
+    extracted_text: str
 
 
 def _save_thumbnail(source: Path, destination: Path, max_width: int = 320) -> tuple[int, int]:
@@ -53,6 +54,7 @@ def _render_pdf(pdf_path: Path, output_dir: Path) -> list[SlideAsset]:
                     thumbnail_rel_path=thumb_file.relative_to(output_dir).as_posix(),
                     width=width,
                     height=height,
+                    extracted_text=page.get_text("text").strip(),
                 )
             )
     return assets
@@ -79,6 +81,7 @@ def _render_image(image_path: Path, output_dir: Path) -> list[SlideAsset]:
             thumbnail_rel_path=thumb_file.relative_to(output_dir).as_posix(),
             width=width,
             height=height,
+            extracted_text="",
         )
     ]
 
