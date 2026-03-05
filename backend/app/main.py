@@ -6,7 +6,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
+from app.api.notes import router as notes_router
+from app.api.sessions import router as sessions_router
 from app.db import create_db_engine, ensure_storage, init_db
 
 
@@ -34,6 +37,9 @@ def create_app(
     )
 
     app.include_router(documents_router)
+    app.include_router(sessions_router)
+    app.include_router(chat_router)
+    app.include_router(notes_router)
 
     init_db(engine)
 

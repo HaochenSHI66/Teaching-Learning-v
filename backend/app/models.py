@@ -35,3 +35,30 @@ class SlideExtract(SQLModel, table=True):
     id: str = Field(default_factory=_new_id, primary_key=True)
     slide_id: str = Field(index=True)
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+
+class LearningSession(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    document_id: str = Field(index=True)
+    current_slide_id: str | None = Field(default=None, index=True)
+    follow_current_page: bool = Field(default=True)
+    learning_state_summary: str = Field(default="")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Message(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    session_id: str = Field(index=True)
+    role: str
+    content: str
+    slide_id: str | None = Field(default=None, index=True)
+    mode: str = Field(default="slide")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Note(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    session_id: str = Field(index=True)
+    slide_id: str | None = Field(default=None, index=True)
+    content_md: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)

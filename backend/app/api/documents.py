@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from sqlmodel import Session, select
 
+from app.api.deps import get_db_session
 from app.models import Document, Slide
 from app.schemas import DocumentRead, SlideRead, SlidesResponse, UploadResponse
 from app.services.slide_processor import SUPPORTED_TYPES, process_document
@@ -18,18 +19,11 @@ async def _read_upload(file: UploadFile) -> bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
     return content
 
-
-def _get_session(request: Request):
-    engine = request.app.state.engine
-    with Session(engine) as session:
-        yield session
-
-
 @router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     request: Request,
     file: UploadFile,
-    session: Session = Depends(_get_session),
+    session: Session = Depends(get_db_session),
 ) -> UploadResponse:
     media_type = file.content_type or "application/octet-stream"
     if media_type not in SUPPORTED_TYPES:
@@ -95,7 +89,7 @@ async def upload_document(
 @router.get("/{document_id}/slides", response_model=SlidesResponse)
 def list_document_slides(
     document_id: str,
-    session: Session = Depends(_get_session),
+    session: Session = Depends(get_db_session),
 ) -> SlidesResponse:
     document = session.get(Document, document_id)
     if not document:
