@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 
 from app.api.analytics import router as analytics_router
 from app.api.chat import router as chat_router
@@ -17,11 +18,27 @@ from app.api.sessions import router as sessions_router
 from app.db import create_db_engine, ensure_storage, init_db
 
 
+def _load_environment_files() -> None:
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[2] / ".env",  # backend/.env
+        Path(__file__).resolve().parents[3] / ".env",  # project-root .env
+    ]
+    seen: set[Path] = set()
+    for env_file in candidates:
+        resolved = env_file.resolve()
+        if resolved in seen or not resolved.exists():
+            continue
+        load_dotenv(resolved, override=False)
+        seen.add(resolved)
+
+
 def create_app(
     *,
     database_url: str | None = None,
     storage_dir: Path | None = None,
 ) -> FastAPI:
+    _load_environment_files()
     app = FastAPI(title="PPT Learning Assistant API")
 
     db_url = database_url or "sqlite:///./storage/app.db"
