@@ -172,7 +172,7 @@ export default function Page() {
       <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4">
         <div className="flex items-center gap-2">
           <button
-            className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+            className="btn btn-outline !rounded-lg !px-3 !py-1.5 text-[11px]"
             onClick={() => setSidebarCollapsed((prev) => !prev)}
             type="button"
           >
@@ -191,8 +191,8 @@ export default function Page() {
         >
           <div className="flex h-full flex-col p-2">
             <label
-              className={`mb-2 inline-flex cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-2 py-2 text-xs text-white ${
-                loading ? "opacity-60" : "hover:bg-slate-800"
+              className={`btn btn-dark mb-2 inline-flex cursor-pointer text-xs ${
+                loading ? "opacity-70" : ""
               }`}
             >
               <span>{sidebarCollapsed ? "上传" : "上传 PDF/图片"}</span>
@@ -218,10 +218,10 @@ export default function Page() {
                   ) : (
                     upload.documents.map((doc) => (
                       <button
-                        className={`w-full rounded-md border px-2 py-2 text-left text-xs ${
+                        className={`w-full rounded-xl border px-2.5 py-2.5 text-left text-xs transition ${
                           upload.documentId === doc.id
-                            ? "border-accent bg-accentSoft text-slate-800"
-                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                            ? "border-cyan-300 bg-gradient-to-r from-cyan-50 to-teal-50 text-slate-800 shadow-sm"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                         }`}
                         key={doc.id}
                         onClick={() => void upload.loadDocument(doc.id)}

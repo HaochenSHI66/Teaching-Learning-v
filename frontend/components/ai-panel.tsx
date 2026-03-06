@@ -49,10 +49,10 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 const QUALITY_LABELS: { quality: number; label: string; className: string }[] = [
-  { quality: 0, label: "完全不会", className: "bg-red-600 text-white hover:bg-red-700" },
-  { quality: 2, label: "模糊记得", className: "bg-orange-500 text-white hover:bg-orange-600" },
-  { quality: 4, label: "基本掌握", className: "bg-emerald-600 text-white hover:bg-emerald-700" },
-  { quality: 5, label: "完全掌握", className: "bg-blue-600 text-white hover:bg-blue-700" },
+  { quality: 0, label: "完全不会", className: "btn btn-outline !border-red-200 !bg-red-50 !text-red-700" },
+  { quality: 2, label: "模糊记得", className: "btn btn-outline !border-orange-200 !bg-orange-50 !text-orange-700" },
+  { quality: 4, label: "基本掌握", className: "btn btn-outline !border-emerald-200 !bg-emerald-50 !text-emerald-700" },
+  { quality: 5, label: "完全掌握", className: "btn btn-outline !border-blue-200 !bg-blue-50 !text-blue-700" },
 ];
 
 export function AIPanel({
@@ -95,8 +95,8 @@ export function AIPanel({
           {TABS.map((item) => (
             <button
               key={item.key}
-              className={`rounded-full px-3 py-1 transition ${
-                tab === item.key ? "bg-accent text-white" : "text-slate-600 hover:bg-slate-100"
+              className={`btn btn-segment ${
+                tab === item.key ? "btn-segment-active" : "btn-segment-idle"
               }`}
               onClick={() => setTab(item.key)}
               type="button"
@@ -108,14 +108,14 @@ export function AIPanel({
 
         <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-xs">
           <button
-            className={`rounded-full px-3 py-1 ${mode === "slide" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+            className={`btn btn-segment ${mode === "slide" ? "btn-segment-active" : "btn-segment-idle"}`}
             onClick={() => onModeChange("slide")}
             type="button"
           >
             跟随当前页
           </button>
           <button
-            className={`rounded-full px-3 py-1 ${mode === "global" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+            className={`btn btn-segment ${mode === "global" ? "btn-segment-active" : "btn-segment-idle"}`}
             onClick={() => onModeChange("global")}
             type="button"
           >
@@ -127,7 +127,7 @@ export function AIPanel({
       {tab === "explain" && (
         <div className="flex h-full flex-col gap-3">
           <button
-            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="btn btn-primary w-full !py-2.5 text-sm"
             disabled={disabled || loading}
             onClick={onGenerateExplanation}
             type="button"
@@ -165,7 +165,7 @@ export function AIPanel({
 
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <button
-              className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="btn btn-warning !py-2.5 text-sm"
               disabled={disabled || loading || !roiReady}
               onClick={onExplainRoi}
               type="button"
@@ -191,7 +191,7 @@ export function AIPanel({
               value={chatInput}
             />
             <button
-              className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="btn btn-dark w-full !py-2.5 text-sm"
               disabled={disabled || loading || !chatInput.trim()}
               onClick={onSendChat}
               type="button"
@@ -206,7 +206,7 @@ export function AIPanel({
         <div className="flex h-full flex-col gap-3">
           <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
             <button
-              className="rounded-lg bg-slate-900 px-2 py-2 text-white disabled:bg-slate-300"
+              className="btn btn-dark !py-2"
               disabled={disabled || loading}
               onClick={onAutoGenerateNotes}
               type="button"
@@ -214,7 +214,7 @@ export function AIPanel({
               自动生成笔记
             </button>
             <button
-              className="rounded-lg bg-emerald-700 px-2 py-2 text-white disabled:bg-slate-300"
+              className="btn btn-success !py-2"
               disabled={disabled || loading}
               onClick={onAppendSelectionToNotes}
               type="button"
@@ -222,7 +222,7 @@ export function AIPanel({
               添加选中解释
             </button>
             <button
-              className="rounded-lg bg-violet-700 px-2 py-2 text-white disabled:bg-slate-300"
+              className="btn btn-violet !py-2"
               disabled={disabled || loading}
               onClick={onFormatNotes}
               type="button"
@@ -230,7 +230,7 @@ export function AIPanel({
               格式化笔记
             </button>
             <button
-              className="rounded-lg bg-ink px-2 py-2 text-white disabled:bg-slate-300"
+              className="btn btn-outline !py-2"
               disabled={disabled || loading}
               onClick={onExportNotes}
               type="button"
@@ -238,7 +238,7 @@ export function AIPanel({
               导出会话笔记
             </button>
             <button
-              className="col-span-2 rounded-lg bg-blue-700 px-2 py-2 text-white disabled:bg-slate-300 md:col-span-1"
+              className="btn btn-blue col-span-2 !py-2 md:col-span-1"
               disabled={disabled || loading}
               onClick={onExportAllExplanations}
               type="button"
@@ -268,7 +268,7 @@ export function AIPanel({
         <div className="flex h-full flex-col gap-3">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <button
-              className="rounded-lg bg-indigo-700 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="btn btn-indigo !py-2.5 text-sm"
               disabled={disabled || loading}
               onClick={onGenerateQuiz}
               type="button"
@@ -276,7 +276,7 @@ export function AIPanel({
               {loading ? "生成中..." : "生成本页小测"}
             </button>
             <button
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="btn btn-dark !py-2.5 text-sm"
               disabled={disabled || loading || quizQuestions.length === 0}
               onClick={onSubmitQuiz}
               type="button"
@@ -298,10 +298,10 @@ export function AIPanel({
                       const selected = quizAnswers[question.id] === optionKey;
                       return (
                         <button
-                          className={`rounded-md border px-2 py-1 text-left text-xs ${
+                          className={`btn !justify-start !rounded-lg !px-2.5 !py-1.5 text-left text-xs ${
                             selected
-                              ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+                              ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                              : "btn-outline"
                           }`}
                           key={option}
                           onClick={() => onQuizAnswerChange(question.id, optionKey)}
@@ -326,7 +326,7 @@ export function AIPanel({
       {tab === "review" && (
         <div className="flex h-full flex-col gap-3">
           <button
-            className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="btn btn-success !py-2.5 text-sm"
             disabled={disabled || loading}
             onClick={onRefreshReview}
             type="button"
@@ -366,7 +366,7 @@ export function AIPanel({
                   <div className="mt-2 flex flex-wrap gap-1">
                     {QUALITY_LABELS.map(({ quality, label, className }) => (
                       <button
-                        className={`rounded-md px-2 py-1 text-xs ${className}`}
+                        className={`${className} !rounded-lg !px-2.5 !py-1.5 text-xs`}
                         key={quality}
                         onClick={() => onCompleteReview(item.id, quality)}
                         type="button"

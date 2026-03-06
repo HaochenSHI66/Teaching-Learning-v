@@ -110,10 +110,10 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
           {slides.map((slide, index) => (
             <li key={slide.id}>
               <button
-                className={`w-full overflow-hidden rounded-lg border text-left transition ${
+                className={`w-full overflow-hidden rounded-xl border text-left transition ${
                   index === currentIndex
-                    ? "border-accent ring-2 ring-accent/30"
-                    : "border-slate-200 hover:border-slate-300"
+                    ? "border-cyan-300 bg-gradient-to-r from-cyan-50 to-teal-50 ring-2 ring-cyan-200/60"
+                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                 }`}
                 onClick={() => {
                   onSelect(index);
@@ -139,7 +139,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
           <div className="flex items-center gap-2">
             {roi ? <span className="rounded-full bg-accentSoft px-2 py-1 text-xs text-slate-700">ROI 已选择</span> : null}
             <button
-              className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+              className="btn btn-outline !rounded-lg !px-3 !py-1.5 text-xs"
               onClick={() => onRoiChange(null)}
               type="button"
             >
