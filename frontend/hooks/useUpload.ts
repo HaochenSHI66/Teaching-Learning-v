@@ -9,6 +9,7 @@ import {
   fetchDocuments,
   fetchDocumentStatus,
   fetchSlides,
+  generateDocumentExplanations as generateDocumentExplanationsRequest,
   pollDocumentReady,
   uploadDocument,
   type DocumentListItem,
@@ -29,6 +30,8 @@ type UploadActions = {
   handleUpload: (file: File) => Promise<void>;
   loadDocument: (documentId: string) => Promise<void>;
   deleteDocument: (documentId: string) => Promise<void>;
+  regenerateDocumentExplanations: (documentId: string) => Promise<void>;
+  setCachedExplanation: (slideId: string, markdown: string) => void;
   refreshDocuments: () => Promise<void>;
   reset: () => void;
 };
@@ -55,7 +58,7 @@ export function useUpload(): UploadState & UploadActions {
     }
   }
 
-  async function hydrateDocument(targetDocumentId: string) {
+  async function hydrateDocument(targetDocumentId: string, options?: { resetSession?: boolean }) {
     const fetchedSlides = await fetchSlides(targetDocumentId);
     const explanations = await fetchDocumentExplanations(targetDocumentId);
 
@@ -63,9 +66,11 @@ export function useUpload(): UploadState & UploadActions {
     setSlides(fetchedSlides);
     setCachedExplanations(Object.fromEntries(explanations.map((item) => [item.slide_id, item.markdown])));
 
-    const newSession =
-      fetchedSlides.length > 0 ? await createSession(targetDocumentId, fetchedSlides[0].id) : null;
-    setSessionId(newSession?.id ?? null);
+    if (options?.resetSession ?? true) {
+      const newSession =
+        fetchedSlides.length > 0 ? await createSession(targetDocumentId, fetchedSlides[0].id) : null;
+      setSessionId(newSession?.id ?? null);
+    }
 
     setStatusText(`文档加载完成，共 ${fetchedSlides.length} 页。`);
   }
@@ -93,7 +98,7 @@ export function useUpload(): UploadState & UploadActions {
         return;
       }
 
-      await hydrateDocument(targetDocumentId);
+      await hydrateDocument(targetDocumentId, { resetSession: true });
       await refreshDocuments();
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知错误";
@@ -155,6 +160,34 @@ export function useUpload(): UploadState & UploadActions {
     }
   }
 
+  async function regenerateDocumentExplanations(targetDocumentId: string) {
+    setLoading(true);
+    setStatusText("正在覆盖生成整份讲解...");
+    try {
+      await generateDocumentExplanationsRequest(targetDocumentId);
+      if (documentId === targetDocumentId) {
+        await hydrateDocument(targetDocumentId, { resetSession: false });
+      }
+      await refreshDocuments();
+      setStatusText("整份讲解已重新生成并覆盖缓存。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误";
+      setStatusText(`整份生成失败：${message}`);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setCachedExplanation(slideId: string, markdown: string) {
+    setCachedExplanations((prev) => ({ ...prev, [slideId]: markdown }));
+    setSlides((prev) =>
+      prev.map((slide) =>
+        slide.id === slideId ? { ...slide, explanation_state: "ready" } : slide,
+      ),
+    );
+  }
+
   function reset() {
     setDocumentId(null);
     setSessionId(null);
@@ -174,6 +207,8 @@ export function useUpload(): UploadState & UploadActions {
     handleUpload,
     loadDocument,
     deleteDocument,
+    regenerateDocumentExplanations,
+    setCachedExplanation,
     refreshDocuments,
     reset,
   };

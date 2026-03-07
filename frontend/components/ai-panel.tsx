@@ -4,11 +4,14 @@ import { useState } from "react";
 
 import { MarkdownContent } from "@/components/markdown-content";
 import type { ChatMessage } from "@/hooks/useChat";
-import type { QuizQuestion, ReviewItem, SessionAnalyticsPayload } from "@/lib/api";
+import type { QuizQuestion, ReviewItem, SessionAnalyticsPayload, SlideExtract } from "@/lib/api";
 
 type AIPanelProps = {
   disabled: boolean;
   explanation: string;
+  explanationLoading: boolean;
+  explanationState: "not_generated" | "ready" | "generating" | "error";
+  extraction: SlideExtract | null;
   loading: boolean;
   chatInput: string;
   chatMessages: ChatMessage[];
@@ -49,15 +52,79 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 const QUALITY_LABELS: { quality: number; label: string; className: string }[] = [
-  { quality: 0, label: "完全不会", className: "btn btn-outline !border-[#d7b7ab] !bg-[#f8ebe4] !text-[#9a5e4e]" },
-  { quality: 2, label: "模糊记得", className: "btn btn-outline !border-[#e2c79d] !bg-[#fbf0dc] !text-[#9a7446]" },
-  { quality: 4, label: "基本掌握", className: "btn btn-outline !border-[#c7d0b5] !bg-[#eef2e6] !text-[#657552]" },
-  { quality: 5, label: "完全掌握", className: "btn btn-outline !border-[#c8d4db] !bg-[#edf2f4] !text-[#5e7684]" },
+  { quality: 0, label: "完全不会", className: "btn btn-quality-danger" },
+  { quality: 2, label: "模糊记得", className: "btn btn-quality-warn" },
+  { quality: 4, label: "基本掌握", className: "btn btn-quality-ok" },
+  { quality: 5, label: "完全掌握", className: "btn btn-quality-done" },
 ];
+
+function buildExtractionMarkdown(extraction: SlideExtract | null) {
+  if (!extraction) {
+    return (
+      "> [!NOTE]\n" +
+      "> 当前页尚未提取出结构化内容。"
+    );
+  }
+
+  const lines = [
+    "> [!NOTE]",
+    "> 以下内容来自当前页的非大模型提取结果，可用于定位结构、图块和阅读顺序。",
+    "",
+    `**Summary**：${extraction.summary || "本页以图像或版面结构为主，暂无稳定文本摘要。"}`,
+    "",
+    "### Detected Structure",
+    `- Text Blocks: **${extraction.page_stats.text_block_count ?? 0}**`,
+    `- Figures: **${extraction.page_stats.figure_count ?? 0}**`,
+    `- Tables: **${extraction.page_stats.table_count ?? 0}**`,
+  ];
+
+  if (extraction.title_candidates.length > 0) {
+    lines.push("", "### Title Candidates", ...extraction.title_candidates.slice(0, 3).map((item) => `- ${item}`));
+  }
+
+  if (extraction.text_blocks.length > 0) {
+    lines.push("", "### Text Blocks");
+    for (const block of extraction.text_blocks.slice(0, 5)) {
+      lines.push(`- **${block.type}**: ${block.text ?? ""}`);
+    }
+  }
+
+  if (extraction.figures.length > 0) {
+    lines.push("", "### Figure Regions");
+    for (const figure of extraction.figures) {
+      lines.push(`- **${figure.label ?? figure.id}**`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function getExplanationBadge(
+  explanationState: AIPanelProps["explanationState"],
+  explanationLoading: boolean,
+) {
+  if (explanationLoading) {
+    return { label: "生成中", className: "bg-[#f7ecd6] text-[#8c6c46] border-[#d8bf94]" };
+  }
+
+  switch (explanationState) {
+    case "ready":
+      return { label: "已缓存", className: "bg-[#e8efe0] text-[#607253] border-[#c8d5b9]" };
+    case "error":
+      return { label: "失败", className: "bg-[#f5e3dc] text-[#9a5e4e] border-[#e0b5a7]" };
+    case "generating":
+      return { label: "生成中", className: "bg-[#f7ecd6] text-[#8c6c46] border-[#d8bf94]" };
+    default:
+      return { label: "未生成", className: "bg-[#efe7dc] text-[#826f5c] border-[#ddcfbc]" };
+  }
+}
 
 export function AIPanel({
   disabled,
   explanation,
+  explanationLoading,
+  explanationState,
+  extraction,
   loading,
   chatInput,
   chatMessages,
@@ -87,6 +154,8 @@ export function AIPanel({
   onCompleteReview,
 }: AIPanelProps) {
   const [tab, setTab] = useState<TabKey>("explain");
+  const badge = getExplanationBadge(explanationState, explanationLoading);
+  const extractionMarkdown = buildExtractionMarkdown(extraction);
 
   return (
     <section className="flex h-full flex-col rounded-[30px] border border-[#d9c7ab] bg-[linear-gradient(180deg,#fffaf2,#f6ebdb)] p-4 shadow-[0_28px_60px_rgba(122,98,66,0.12)]">
@@ -125,22 +194,74 @@ export function AIPanel({
       </header>
 
       {tab === "explain" && (
-        <div className="flex h-full flex-col gap-3">
-          <button
-            className="btn btn-primary w-full !py-2.5 text-sm"
-            disabled={disabled || loading}
-            onClick={onGenerateExplanation}
-            type="button"
-          >
-            {loading ? "加载中..." : "显示当前页缓存讲解"}
-          </button>
-          <div className="flex-1 overflow-auto rounded-[24px] border border-[#e0d0bb] bg-[#fffdf8] p-4">
-            {explanation ? (
-              <MarkdownContent content={explanation} />
-            ) : (
-              <p className="text-sm text-[#907d69]">当前页暂无讲解缓存。</p>
-            )}
-          </div>
+        <div className="flex h-full min-h-0 flex-col gap-3">
+          <section className="max-h-[280px] shrink-0 overflow-auto rounded-[24px] border border-[#ddcfbc] bg-[#fffdf8] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.24em] text-[#a18a72]">Current Page Extraction</p>
+                <p className="mt-1 text-sm font-medium text-[#4b3d2f]">当前页提取</p>
+              </div>
+              <span className="rounded-full border border-[#ddcfbc] bg-[#f4ecdf] px-3 py-1 text-[11px] text-[#7e6a57]">
+                Non-LLM
+              </span>
+            </div>
+            <MarkdownContent content={extractionMarkdown} />
+            {extraction?.figures?.length ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {extraction.figures.map((figure) => (
+                  <article
+                    className="rounded-[18px] border border-[#e3d6c3] bg-white p-3 shadow-sm"
+                    key={figure.id}
+                  >
+                    {figure.preview_image_url ? (
+                      <img
+                        alt={figure.label ?? figure.id}
+                        className="mb-2 h-28 w-full rounded-[14px] object-cover"
+                        src={figure.preview_image_url}
+                      />
+                    ) : null}
+                    <p className="text-xs font-medium text-[#4f4031]">{figure.label ?? figure.id}</p>
+                    <p className="mt-1 text-[11px] text-[#8a7764]">
+                      bbox: {figure.bbox.map((value) => value.toFixed(0)).join(", ")}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </section>
+
+          <section className="flex min-h-0 flex-1 flex-col rounded-[24px] border border-[#e0d0bb] bg-[#fffdf8]">
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eee2cf] px-4 py-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.24em] text-[#a18a72]">LLM Explanation</p>
+                <p className="mt-1 text-sm font-medium text-[#4b3d2f]">当前页讲解</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`rounded-full border px-3 py-1 text-[11px] ${badge.className}`}>{badge.label}</span>
+                <button
+                  className="btn btn-primary !py-2.5 text-sm"
+                  disabled={disabled || loading}
+                  onClick={onGenerateExplanation}
+                  type="button"
+                >
+                  {explanationLoading ? "生成中..." : "生成本页讲解"}
+                </button>
+              </div>
+            </header>
+            <div className="flex-1 overflow-auto p-4" data-note-source="explanation-content">
+              {explanation ? (
+                <MarkdownContent content={explanation} />
+              ) : (
+                <MarkdownContent
+                  content={
+                    "> [!NOTE]\n" +
+                    "> 当前页讲解等待大模型生成。\n" +
+                    "> 你可以先参考上方的提取结果，再点击“生成本页讲解”。"
+                  }
+                />
+              )}
+            </div>
+          </section>
         </div>
       )}
 
@@ -299,9 +420,7 @@ export function AIPanel({
                       return (
                         <button
                           className={`btn !justify-start !rounded-lg !px-2.5 !py-1.5 text-left text-xs ${
-                            selected
-                              ? "border-[#c8d4db] bg-[#edf2f4] text-[#5e7684]"
-                              : "btn-soft"
+                            selected ? "btn-quality-done" : "btn-soft"
                           }`}
                           key={option}
                           onClick={() => onQuizAnswerChange(question.id, optionKey)}

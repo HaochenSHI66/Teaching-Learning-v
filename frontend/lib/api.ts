@@ -5,6 +5,34 @@ export type Slide = {
   thumbnail_url: string;
   width: number;
   height: number;
+  explanation_state: "not_generated" | "ready" | "generating" | "error";
+  extract: SlideExtract;
+};
+
+export type SlideExtractBlock = {
+  id: string;
+  type: string;
+  bbox: number[];
+  order: number;
+  text?: string | null;
+  label?: string | null;
+  font_size?: number | null;
+  preview_image_url?: string | null;
+};
+
+export type SlideExtract = {
+  page_num: number;
+  text: string;
+  summary: string;
+  title_candidates: string[];
+  text_blocks: SlideExtractBlock[];
+  bullet_blocks: SlideExtractBlock[];
+  figures: SlideExtractBlock[];
+  tables: SlideExtractBlock[];
+  equation_like_blocks: SlideExtractBlock[];
+  code_like_blocks: SlideExtractBlock[];
+  reading_order: string[];
+  page_stats: Record<string, number>;
 };
 
 export type RoiBox = {
@@ -79,6 +107,16 @@ export type SlideExplanation = {
   slide_id: string;
   page_num: number;
   markdown: string;
+};
+
+export type SlideExplanationGeneratePayload = SlideExplanation & {
+  overwrote_existing: boolean;
+};
+
+export type DocumentExplanationGeneratePayload = {
+  document_id: string;
+  generated_count: number;
+  overwrote_existing: boolean;
 };
 
 export type ReviewItem = {
@@ -197,6 +235,29 @@ export async function fetchDocumentExplanations(documentId: string): Promise<Sli
 export async function exportDocumentExplanations(documentId: string): Promise<{ markdown: string }> {
   return request<{ document_id: string; markdown: string }>(
     `/api/v1/documents/${documentId}/explanations/export`,
+  );
+}
+
+export async function generateSlideExplanation(
+  documentId: string,
+  slideId: string,
+): Promise<SlideExplanationGeneratePayload> {
+  return request<SlideExplanationGeneratePayload>(
+    `/api/v1/documents/${documentId}/slides/${slideId}/explanations/generate`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function generateDocumentExplanations(
+  documentId: string,
+): Promise<DocumentExplanationGeneratePayload> {
+  return request<DocumentExplanationGeneratePayload>(
+    `/api/v1/documents/${documentId}/explanations/generate`,
+    {
+      method: "POST",
+    },
   );
 }
 

@@ -36,6 +36,32 @@ class DocumentListResponse(BaseModel):
     documents: list[DocumentListItem]
 
 
+class SlideExtractBlockRead(BaseModel):
+    id: str
+    type: str
+    bbox: list[float]
+    order: int
+    text: str | None = None
+    label: str | None = None
+    font_size: float | None = None
+    preview_image_url: str | None = None
+
+
+class SlideExtractRead(BaseModel):
+    page_num: int
+    text: str
+    summary: str
+    title_candidates: list[str]
+    text_blocks: list[SlideExtractBlockRead]
+    bullet_blocks: list[SlideExtractBlockRead]
+    figures: list[SlideExtractBlockRead]
+    tables: list[SlideExtractBlockRead]
+    equation_like_blocks: list[SlideExtractBlockRead]
+    code_like_blocks: list[SlideExtractBlockRead]
+    reading_order: list[str]
+    page_stats: dict[str, int]
+
+
 class SlideRead(BaseModel):
     id: str
     page_num: int
@@ -43,6 +69,8 @@ class SlideRead(BaseModel):
     thumbnail_url: str
     width: int
     height: int
+    extract: SlideExtractRead | None = None
+    explanation_state: str = "not_generated"
 
 
 class SlidesResponse(BaseModel):
@@ -56,9 +84,22 @@ class SlideExplanationRead(BaseModel):
     markdown: str
 
 
+class SlideExplanationGenerateResponse(BaseModel):
+    slide_id: str
+    page_num: int
+    markdown: str
+    overwrote_existing: bool
+
+
 class DocumentExplanationsResponse(BaseModel):
     document_id: str
     explanations: list[SlideExplanationRead]
+
+
+class DocumentExplanationGenerateResponse(BaseModel):
+    document_id: str
+    generated_count: int
+    overwrote_existing: bool
 
 
 class DocumentExplanationsExportResponse(BaseModel):

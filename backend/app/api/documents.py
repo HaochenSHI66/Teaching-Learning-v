@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import shutil
+from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, status
@@ -23,12 +25,15 @@ from app.models import (
 )
 from app.schemas import (
     DocumentDeleteResponse,
+    DocumentExplanationGenerateResponse,
     DocumentExplanationsExportResponse,
     DocumentExplanationsResponse,
     DocumentListItem,
     DocumentListResponse,
     DocumentRead,
     DocumentStatusResponse,
+    SlideExtractRead,
+    SlideExplanationGenerateResponse,
     SlideExplanationRead,
     SlideRead,
     SlidesResponse,
@@ -105,7 +110,8 @@ def _process_document_background(
             session.add(
                 SlideExtract(
                     slide_id=slide.id,
-                    payload={
+                    payload=asset.extract_payload
+                    or {
                         "page_num": asset.page_num,
                         "text": asset.extracted_text,
                         "summary": summary,
@@ -125,6 +131,66 @@ def _process_document_background(
             )
 
         session.commit()
+
+
+def _payload_to_extract_read(*, document_id: str, slide: Slide, payload: dict | None) -> SlideExtractRead:
+    source = deepcopy(payload or {})
+
+    def normalize_blocks(blocks: list[dict] | None) -> list[dict]:
+        normalized: list[dict] = []
+        for block in blocks or []:
+            item = dict(block)
+            preview_path = item.pop("preview_image_path", None)
+            if preview_path:
+                item["preview_image_url"] = f"/storage/{document_id}/{preview_path}"
+            normalized.append(item)
+        return normalized
+
+    return SlideExtractRead(
+        page_num=int(source.get("page_num") or slide.page_num),
+        text=str(source.get("text") or ""),
+        summary=str(source.get("summary") or ""),
+        title_candidates=list(source.get("title_candidates") or []),
+        text_blocks=normalize_blocks(source.get("text_blocks")),
+        bullet_blocks=normalize_blocks(source.get("bullet_blocks")),
+        figures=normalize_blocks(source.get("figures")),
+        tables=normalize_blocks(source.get("tables")),
+        equation_like_blocks=normalize_blocks(source.get("equation_like_blocks")),
+        code_like_blocks=normalize_blocks(source.get("code_like_blocks")),
+        reading_order=list(source.get("reading_order") or []),
+        page_stats={str(key): int(value) for key, value in (source.get("page_stats") or {}).items()},
+    )
+
+
+def _upsert_slide_explanation(
+    *,
+    session: Session,
+    document_id: str,
+    slide: Slide,
+    extracted_text: str,
+) -> tuple[SlideExplanation, bool]:
+    explanation = session.exec(select(SlideExplanation).where(SlideExplanation.slide_id == slide.id)).first()
+    markdown = build_cached_slide_explanation(
+        page_num=slide.page_num,
+        extracted_text=extracted_text,
+    )
+    overwrote_existing = explanation is not None
+
+    if explanation:
+        explanation.markdown = markdown
+        explanation.generated_at = datetime.now(timezone.utc)
+        session.add(explanation)
+        return explanation, overwrote_existing
+
+    explanation = SlideExplanation(
+        document_id=document_id,
+        slide_id=slide.id,
+        page_num=slide.page_num,
+        markdown=markdown,
+    )
+    session.add(explanation)
+    session.flush()
+    return explanation, overwrote_existing
 
 
 def _delete_document_related_records(*, session: Session, document_id: str) -> None:
@@ -282,6 +348,22 @@ def list_document_slides(
 
     query = select(Slide).where(Slide.document_id == document_id).order_by(Slide.page_num)
     slides = session.exec(query).all()
+    slide_ids = [slide.id for slide in slides]
+
+    extract_map = {
+        item.slide_id: item.payload
+        for item in (
+            session.exec(select(SlideExtract).where(SlideExtract.slide_id.in_(slide_ids))).all() if slide_ids else []
+        )
+    }
+    explanation_slide_ids = {
+        item.slide_id
+        for item in (
+            session.exec(select(SlideExplanation).where(SlideExplanation.slide_id.in_(slide_ids))).all()
+            if slide_ids
+            else []
+        )
+    }
 
     return SlidesResponse(
         document_id=document_id,
@@ -293,6 +375,12 @@ def list_document_slides(
                 thumbnail_url=f"/storage/{document_id}/{slide.thumbnail_path}",
                 width=slide.width,
                 height=slide.height,
+                extract=_payload_to_extract_read(
+                    document_id=document_id,
+                    slide=slide,
+                    payload=extract_map.get(slide.id),
+                ),
+                explanation_state="ready" if slide.id in explanation_slide_ids else "not_generated",
             )
             for slide in slides
         ],
@@ -326,6 +414,85 @@ def list_document_explanations(
             )
             for item in explanations
         ],
+    )
+
+
+@router.post(
+    "/{document_id}/slides/{slide_id}/explanations/generate",
+    response_model=SlideExplanationGenerateResponse,
+)
+def regenerate_slide_explanation(
+    document_id: str,
+    slide_id: str,
+    session: Session = Depends(get_db_session),
+) -> SlideExplanationGenerateResponse:
+    document = session.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if document.status != "ready":
+        raise HTTPException(status_code=409, detail="Document is not ready")
+
+    slide = session.get(Slide, slide_id)
+    if not slide or slide.document_id != document_id:
+        raise HTTPException(status_code=404, detail="Slide not found")
+
+    extract = session.exec(select(SlideExtract).where(SlideExtract.slide_id == slide_id)).first()
+    extracted_text = str((extract.payload if extract else {}).get("text") or "")
+    explanation, overwrote_existing = _upsert_slide_explanation(
+        session=session,
+        document_id=document_id,
+        slide=slide,
+        extracted_text=extracted_text,
+    )
+    session.commit()
+    session.refresh(explanation)
+
+    return SlideExplanationGenerateResponse(
+        slide_id=slide.id,
+        page_num=slide.page_num,
+        markdown=explanation.markdown,
+        overwrote_existing=overwrote_existing,
+    )
+
+
+@router.post(
+    "/{document_id}/explanations/generate",
+    response_model=DocumentExplanationGenerateResponse,
+)
+def regenerate_document_explanations(
+    document_id: str,
+    session: Session = Depends(get_db_session),
+) -> DocumentExplanationGenerateResponse:
+    document = session.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if document.status != "ready":
+        raise HTTPException(status_code=409, detail="Document is not ready")
+
+    slides = session.exec(select(Slide).where(Slide.document_id == document_id).order_by(Slide.page_num)).all()
+    extract_map = {
+        item.slide_id: item.payload
+        for item in session.exec(select(SlideExtract).where(SlideExtract.slide_id.in_([slide.id for slide in slides]))).all()
+    } if slides else {}
+
+    generated_count = 0
+    overwrote_existing = False
+    for slide in slides:
+        extracted_text = str((extract_map.get(slide.id) or {}).get("text") or "")
+        _, overwrote = _upsert_slide_explanation(
+            session=session,
+            document_id=document_id,
+            slide=slide,
+            extracted_text=extracted_text,
+        )
+        generated_count += 1
+        overwrote_existing = overwrote_existing or overwrote
+
+    session.commit()
+    return DocumentExplanationGenerateResponse(
+        document_id=document_id,
+        generated_count=generated_count,
+        overwrote_existing=overwrote_existing,
     )
 
 

@@ -4,6 +4,8 @@ import fitz
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.models import Slide
+from app.services.explanation_engine import generate_slide_explanation
 
 
 def _two_page_pdf_bytes() -> bytes:
@@ -100,3 +102,24 @@ def test_autogen_notes_from_cached_explanations(tmp_path: Path) -> None:
     assert "# 自动笔记" in markdown
     assert "## Slide 1" in markdown
     assert "### 核心术语 Core Terms" in markdown
+
+
+def test_generated_explanation_does_not_embed_prompt_contract() -> None:
+    slide = Slide(
+        id="slide-1",
+        document_id="doc-1",
+        page_num=1,
+        image_path="slides/slide_001.png",
+        thumbnail_path="thumbnails/thumb_001.png",
+        width=1600,
+        height=900,
+    )
+
+    markdown, _ = generate_slide_explanation(
+        slide=slide,
+        question="总结本页",
+        extracted_text="Gradient descent updates parameters using the learning rate.",
+    )
+
+    assert "Prompt Contract" not in markdown
+    assert "<!--" not in markdown

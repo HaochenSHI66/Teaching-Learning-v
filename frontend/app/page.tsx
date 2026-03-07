@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AIPanel } from "@/components/ai-panel";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -9,7 +9,14 @@ import { useChat } from "@/hooks/useChat";
 import { useQuiz } from "@/hooks/useQuiz";
 import { useReview } from "@/hooks/useReview";
 import { useUpload } from "@/hooks/useUpload";
-import { autogenNotes, exportDocumentExplanations, exportNotes, type RoiBox } from "@/lib/api";
+import {
+  autogenNotes,
+  exportDocumentExplanations,
+  exportNotes,
+  generateSlideExplanation,
+  type RoiBox,
+} from "@/lib/api";
+import { getErrorMessage } from "@/lib/errorMessage";
 
 function downloadMarkdown(filename: string, markdown: string) {
   const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
@@ -45,14 +52,18 @@ export default function Page() {
   const [globalStatus, setGlobalStatus] = useState("");
   const [notesLoading, setNotesLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [slideGenerationLoading, setSlideGenerationLoading] = useState(false);
+  const [selectedExplanationText, setSelectedExplanationText] = useState("");
 
   const review = useReview(setGlobalStatus);
 
-  async function refreshInsights() {
+  const refreshInsights = useCallback(async () => {
     if (upload.sessionId) {
       await review.refresh(upload.sessionId);
     }
-  }
+  // review.refresh is recreated each render but closes over only stable setters
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upload.sessionId]);
 
   const quiz = useQuiz(setGlobalStatus, refreshInsights);
 
@@ -71,6 +82,7 @@ export default function Page() {
     setCurrentSlideIndex(0);
     setRoi(null);
     setNotesMarkdown("");
+    setSelectedExplanationText("");
     setGlobalStatus("");
     quiz.reset();
     chat.setChatInput("");
@@ -80,7 +92,28 @@ export default function Page() {
 
   useEffect(() => {
     setRoi(null);
+    setSelectedExplanationText("");
   }, [currentSlideIndex]);
+
+  useEffect(() => {
+    function handleSelectionChange() {
+      const selection = window.getSelection();
+      const text = selection?.toString().trim() ?? "";
+      const anchorElement =
+        selection?.anchorNode instanceof Element
+          ? selection.anchorNode
+          : selection?.anchorNode?.parentElement ?? null;
+      const inExplanation =
+        anchorElement?.closest?.("[data-note-source='explanation-content']") ?? null;
+
+      if (inExplanation && text) {
+        setSelectedExplanationText(text);
+      }
+    }
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+  }, []);
 
   useEffect(() => {
     if (!currentSlide) {
@@ -93,7 +126,8 @@ export default function Page() {
   const statusText =
     chat.statusText || upload.statusText || globalStatus || "就绪";
 
-  const loading = upload.loading || chat.loading || quiz.loading || review.loading || notesLoading;
+  const loading =
+    upload.loading || chat.loading || quiz.loading || review.loading || notesLoading || slideGenerationLoading;
   const documentCount = upload.documents.length;
   const pageCount = upload.slides.length;
 
@@ -107,8 +141,7 @@ export default function Page() {
       downloadMarkdown("session-notes.md", result.markdown);
       setGlobalStatus("会话笔记导出完成");
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "未知错误";
-      setGlobalStatus(`导出失败：${msg}`);
+      setGlobalStatus(`导出失败：${getErrorMessage(error)}`);
     } finally {
       setNotesLoading(false);
     }
@@ -124,8 +157,7 @@ export default function Page() {
       downloadMarkdown("all-slides-explanations.md", result.markdown);
       setGlobalStatus("整套讲解导出完成");
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "未知错误";
-      setGlobalStatus(`导出失败：${msg}`);
+      setGlobalStatus(`导出失败：${getErrorMessage(error)}`);
     } finally {
       setNotesLoading(false);
     }
@@ -140,15 +172,14 @@ export default function Page() {
       setNotesMarkdown(result.markdown);
       setGlobalStatus("自动笔记已生成，可继续手动补充");
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "未知错误";
-      setGlobalStatus(`自动笔记生成失败：${msg}`);
+      setGlobalStatus(`自动笔记生成失败：${getErrorMessage(error)}`);
     } finally {
       setNotesLoading(false);
     }
   }
 
   function handleAppendSelectionToNotes() {
-    const selection = window.getSelection()?.toString().trim();
+    const selection = selectedExplanationText.trim();
     if (!selection) {
       setGlobalStatus("请先在讲解区域选中文本再添加。");
       return;
@@ -164,9 +195,20 @@ export default function Page() {
     setGlobalStatus("已把选中内容加入笔记。");
   }
 
-  function handleLoadCachedExplanation() {
-    if (!currentSlide) return;
-    setExplanation(upload.cachedExplanations[currentSlide.id] ?? "");
+  async function handleGenerateCurrentSlideExplanation() {
+    if (!upload.documentId || !currentSlide) return;
+    setSlideGenerationLoading(true);
+    setGlobalStatus("正在覆盖生成当前页讲解...");
+    try {
+      const result = await generateSlideExplanation(upload.documentId, currentSlide.id);
+      upload.setCachedExplanation(currentSlide.id, result.markdown);
+      setExplanation(result.markdown);
+      setGlobalStatus("当前页讲解已重新生成并覆盖缓存。");
+    } catch (error) {
+      setGlobalStatus(`当前页生成失败：${getErrorMessage(error)}`);
+    } finally {
+      setSlideGenerationLoading(false);
+    }
   }
 
   async function handleDeleteDocument(targetDocumentId: string, filename: string) {
@@ -208,9 +250,9 @@ export default function Page() {
         </div>
       </header>
 
-      <div className="relative z-10 flex min-h-0 flex-1 gap-4 p-4 md:p-5">
+      <div className="relative z-10 flex min-h-0 flex-1 gap-4 overflow-hidden p-4 md:p-5">
         <aside
-          className={`overflow-hidden rounded-[28px] border border-[#d9c7ab] bg-[#f7f0e3]/95 shadow-[0_20px_50px_rgba(109,85,58,0.12)] backdrop-blur-xl transition-all duration-300 ${
+          className={`min-h-0 overflow-hidden rounded-[28px] border border-[#d9c7ab] bg-[#f7f0e3]/95 shadow-[0_20px_50px_rgba(109,85,58,0.12)] backdrop-blur-xl transition-all duration-300 ${
             sidebarCollapsed ? "w-[84px]" : "w-[320px]"
           }`}
         >
@@ -300,6 +342,16 @@ export default function Page() {
                             删除
                           </button>
                         </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            className="btn btn-soft w-full !rounded-full !py-2 text-[11px]"
+                            disabled={loading || doc.status !== "ready"}
+                            onClick={() => void upload.regenerateDocumentExplanations(doc.id)}
+                            type="button"
+                          >
+                            整份生成讲解
+                          </button>
+                        </div>
                       </article>
                     ))
                   )}
@@ -314,8 +366,7 @@ export default function Page() {
           </div>
         </aside>
 
-        <section className="min-h-0 flex-1">
-          <section className="grid h-full min-h-0 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.92fr]">
+        <section className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.92fr]">
             <ErrorBoundary>
               <SlideViewer
                 currentIndex={currentSlideIndex}
@@ -331,6 +382,9 @@ export default function Page() {
                 chatInput={chat.chatInput}
                 chatMessages={chat.chatMessages}
                 disabled={!currentSlide}
+                explanationState={currentSlide?.explanation_state ?? "not_generated"}
+                explanationLoading={slideGenerationLoading}
+                extraction={currentSlide?.extract ?? null}
                 explanation={chat.explanation}
                 loading={loading}
                 mode={chat.mode}
@@ -348,7 +402,7 @@ export default function Page() {
                 onExportAllExplanations={() => void handleExportAllExplanations()}
                 onExportNotes={() => void handleExportNotes()}
                 onFormatNotes={() => setNotesMarkdown((prev) => formatNotesMarkdown(prev))}
-                onGenerateExplanation={handleLoadCachedExplanation}
+                onGenerateExplanation={() => void handleGenerateCurrentSlideExplanation()}
                 onGenerateQuiz={() => {
                   if (upload.sessionId && currentSlide) {
                     void quiz.generate(upload.sessionId, currentSlide.id);
@@ -374,7 +428,6 @@ export default function Page() {
                 roiReady={Boolean(roi)}
               />
             </ErrorBoundary>
-          </section>
         </section>
       </div>
     </main>

@@ -110,8 +110,8 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
   }
 
   return (
-    <section className="grid h-full grid-cols-[112px_1fr] gap-4 rounded-[30px] border border-[#d9c7ab] bg-[#fbf6ed]/96 p-4 shadow-[0_24px_54px_rgba(122,98,66,0.12)]">
-      <aside className="overflow-auto rounded-[24px] border border-[#e1d1bc] bg-[#f5ebda] p-2">
+    <section className="grid h-full min-h-0 grid-cols-[112px_1fr] gap-4 rounded-[30px] border border-[#d9c7ab] bg-[#fbf6ed]/96 p-4 shadow-[0_24px_54px_rgba(122,98,66,0.12)]">
+      <aside className="min-h-0 overflow-auto rounded-[24px] border border-[#e1d1bc] bg-[#f5ebda] p-2">
         <ul className="space-y-2">
           {slides.map((slide, index) => (
             <li key={slide.id}>
@@ -139,8 +139,8 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
         </ul>
       </aside>
 
-      <div className="flex flex-col gap-3">
-        <header className="flex items-center justify-between rounded-[24px] border border-[#e1d1bc] bg-[#fffaf2] px-4 py-3 text-sm text-[#7e6c5a]">
+      <div className="flex min-h-0 flex-col gap-3">
+        <header className="shrink-0 flex items-center justify-between rounded-[24px] border border-[#e1d1bc] bg-[#fffaf2] px-4 py-3 text-sm text-[#7e6c5a]">
           <div>
             <p className="text-[11px] uppercase tracking-[0.22em] text-[#a18a72]">Current Slide</p>
             <p className="mt-1 text-sm font-medium text-[#463829]">当前页：{currentSlide.page_num}</p>
@@ -184,7 +184,6 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
               const start = dragStart;
               setDragStart(null);
               if (!point) { setDraftRoi(null); return; }
-              updateDraft(start, point);
               commitDrag(start, point);
             }}
             // Touch events
@@ -196,7 +195,6 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
               if (!touch) { setDraftRoi(null); return; }
               const point = toRelative(touch.clientX, touch.clientY);
               if (!point) { setDraftRoi(null); return; }
-              updateDraft(start, point);
               commitDrag(start, point);
             }}
             onTouchMove={(event) => {
@@ -225,7 +223,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
             />
             {roiStyle ? (
               <div
-                className="pointer-events-none absolute border-2 border-amber-500 bg-amber-200/20"
+                className="pointer-events-none absolute border-2 border-[var(--brand-amber)] bg-[var(--brand-amber)]/20"
                 style={roiStyle}
               />
             ) : null}

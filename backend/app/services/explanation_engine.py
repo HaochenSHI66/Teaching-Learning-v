@@ -24,7 +24,7 @@ def generate_slide_explanation(
 ) -> tuple[str, list[str]]:
     related_pages = related_pages or [slide.page_num]
     citation = ", ".join(str(page_num) for page_num in sorted(set(related_pages)))
-    prompt_contract = build_slide_explanation_prompt(
+    _prompt_contract = build_slide_explanation_prompt(
         page_num=slide.page_num,
         question=question,
         extracted_text=extracted_text,
@@ -62,7 +62,6 @@ def generate_slide_explanation(
         "2. 哪个前提变化会让结论失效？\n"
         "3. 你能用自己的话说出推理路径吗？\n"
         "\n"
-        f"<!-- Prompt Contract\n{prompt_contract}\n-->\n"
     )
 
     follow_ups = [
@@ -83,7 +82,7 @@ def generate_roi_explanation(
 ) -> str:
     x, y, w, h = roi_bbox
     region_width, region_height = region_size
-    prompt_contract = build_roi_explanation_prompt(
+    _prompt_contract = build_roi_explanation_prompt(
         page_num=slide.page_num,
         question=question,
         extracted_text=extracted_text,
@@ -107,5 +106,4 @@ def generate_roi_explanation(
         "> [!TIP]\n"
         "> 可把该区域一句话总结写进笔记，后续复习效率最高。\n"
         "\n"
-        f"<!-- Prompt Contract\n{prompt_contract}\n-->\n"
     )
