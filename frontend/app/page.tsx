@@ -219,31 +219,30 @@ export default function Page() {
 
   return (
     <main className="relative flex h-screen min-h-screen flex-col overflow-hidden">
-      <header className="relative z-10 border-b border-[#d7c5aa] bg-[#fbf5eb]/85 backdrop-blur-xl">
-        <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-4 md:px-6">
-          <div className="flex items-center gap-3">
+      <header className="relative z-10 shrink-0 border-b border-[#d7c5aa] bg-[#fbf5eb]/85 backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-3 px-4 py-2 md:px-5">
+          <div className="flex items-center gap-2">
             <button
-              className="btn btn-outline !rounded-full !px-3 !py-2 text-[11px]"
+              className="btn btn-outline !rounded-full !px-2.5 !py-1 !text-[10px]"
               onClick={() => setSidebarCollapsed((prev) => !prev)}
               type="button"
             >
-              {sidebarCollapsed ? "展开面板" : "收起面板"}
+              {sidebarCollapsed ? "展开" : "收起"}
             </button>
             <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-[#8c765f]">Learning Studio</p>
-              <h1 className="text-xl font-semibold text-[#463829] md:text-2xl">PPT 学习工作台</h1>
-              <p className="text-xs text-[#8a7866]">逐页理解、即时提问、把讲解沉淀成可复习笔记。</p>
+              <p className="text-[9px] uppercase tracking-[0.28em] text-[#8c765f]">Learning Studio</p>
+              <h1 className="text-sm font-semibold leading-tight text-[#463829]">PPT 学习工作台</h1>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-full border border-[#cbb998] bg-[#f5ebda] px-3 py-1 text-xs text-[#5f6d52]">
+          <div className="flex items-center gap-1.5">
+            <div className="rounded-full border border-[#cbb998] bg-[#f5ebda] px-2.5 py-0.5 text-[11px] text-[#5f6d52]">
               文档 {documentCount}
             </div>
-            <div className="rounded-full border border-[#d8bf94] bg-[#f7ecd6] px-3 py-1 text-xs text-[#8c6c46]">
-              当前页 {currentSlide ? `${currentSlide.page_num}/${pageCount || 0}` : "未选择"}
+            <div className="rounded-full border border-[#d8bf94] bg-[#f7ecd6] px-2.5 py-0.5 text-[11px] text-[#8c6c46]">
+              {currentSlide ? `P${currentSlide.page_num}/${pageCount || 0}` : "—"}
             </div>
-            <div className="max-w-[360px] truncate rounded-full border border-[#dbc9ae] bg-[#fffaf1] px-3 py-1 text-xs text-[#746452]">
+            <div className="max-w-[300px] truncate rounded-full border border-[#dbc9ae] bg-[#fffaf1] px-2.5 py-0.5 text-[11px] text-[#746452]">
               {statusText}
             </div>
           </div>
@@ -381,6 +380,7 @@ export default function Page() {
                 analytics={review.analytics}
                 chatInput={chat.chatInput}
                 chatMessages={chat.chatMessages}
+                currentSlideId={currentSlide?.id}
                 disabled={!currentSlide}
                 explanationState={currentSlide?.explanation_state ?? "not_generated"}
                 explanationLoading={slideGenerationLoading}
@@ -391,6 +391,9 @@ export default function Page() {
                 notesMarkdown={notesMarkdown}
                 onAutoGenerateNotes={() => void handleAutoGenerateNotes()}
                 onChatInputChange={chat.setChatInput}
+                onClearSlideMessages={() => {
+                  if (currentSlide) chat.clearSlideMessages(currentSlide.id);
+                }}
                 onCompleteReview={(reviewId, quality) => {
                   if (upload.sessionId) void review.complete(reviewId, quality, upload.sessionId);
                 }}

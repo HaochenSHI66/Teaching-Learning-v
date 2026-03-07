@@ -118,12 +118,12 @@ def _template_roi_explanation(
         f"**问题**：*{question}*\n\n"
         "### 术语定位 Terms\n"
         f"{terms_markdown}\n\n"
-        "### 建议阅读顺序 Reading Order\n"
-        "1. 先识别 **标题/符号/对象**。\n"
-        "2. 判断它是 *定义（Definition）*、*推导（Derivation）* 还是 *结论（Conclusion）*。\n"
-        "3. 对照整页主线确认它的作用。\n\n"
+        "### 知识点提炼 Key Concepts\n"
+        "1. 识别该区域的核心对象（符号、变量、概念名）。\n"
+        "2. 判断其角色：*定义（Definition）*、*推导（Derivation）* 还是 *结论（Conclusion）*。\n"
+        "3. 用一句话概括：「本区域说明了 ___，其作用是 ___。」\n\n"
         "> [!TIP]\n"
-        "> 可把该区域一句话总结写进笔记，后续复习效率最高。\n"
+        "> 把这句话写进笔记，后续复习效率最高。\n"
         "\n"
     )
 
