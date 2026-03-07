@@ -97,11 +97,11 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
 
   if (!currentSlide) {
     return (
-      <section className="flex h-full items-center justify-center rounded-[30px] border border-white/10 bg-slate-950/50 p-6 shadow-2xl backdrop-blur-2xl">
-        <div className="max-w-md rounded-[24px] border border-dashed border-white/10 bg-white/5 px-6 py-8 text-center">
-          <p className="text-xs uppercase tracking-[0.26em] text-slate-500">Viewer</p>
-          <p className="mt-3 text-lg font-medium text-slate-100">上传文档后会在这里显示 PPT 页面。</p>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
+      <section className="flex h-full items-center justify-center rounded-[30px] border border-[#d9c7ab] bg-[#fbf6ed]/96 p-6 shadow-[0_24px_54px_rgba(122,98,66,0.12)]">
+        <div className="max-w-md rounded-[24px] border border-dashed border-[#dbc8ad] bg-[#fffaf2] px-6 py-8 text-center">
+          <p className="text-xs uppercase tracking-[0.26em] text-[#9c876e]">Viewer</p>
+          <p className="mt-3 text-lg font-medium text-[#473829]">上传文档后会在这里显示 PPT 页面。</p>
+          <p className="mt-2 text-sm leading-6 text-[#83715f]">
             左侧会出现缩略页导航，你可以在画布里框选区域，再去问答里做局部解释。
           </p>
         </div>
@@ -110,16 +110,16 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
   }
 
   return (
-    <section className="grid h-full grid-cols-[112px_1fr] gap-4 rounded-[30px] border border-white/10 bg-slate-950/55 p-4 shadow-2xl backdrop-blur-2xl">
-      <aside className="overflow-auto rounded-[24px] border border-white/10 bg-white/[0.05] p-2">
+    <section className="grid h-full grid-cols-[112px_1fr] gap-4 rounded-[30px] border border-[#d9c7ab] bg-[#fbf6ed]/96 p-4 shadow-[0_24px_54px_rgba(122,98,66,0.12)]">
+      <aside className="overflow-auto rounded-[24px] border border-[#e1d1bc] bg-[#f5ebda] p-2">
         <ul className="space-y-2">
           {slides.map((slide, index) => (
             <li key={slide.id}>
               <button
                 className={`w-full overflow-hidden rounded-xl border text-left transition ${
                   index === currentIndex
-                    ? "border-cyan-300/45 bg-gradient-to-br from-cyan-300/25 via-white/10 to-amber-300/18 ring-2 ring-cyan-300/20"
-                    : "border-white/10 bg-slate-900/40 hover:border-white/20 hover:bg-white/[0.08]"
+                    ? "border-[#c2ae81] bg-[linear-gradient(135deg,#fffaf1_0%,#f1e5d1_100%)] ring-2 ring-[#d9bf91]/40"
+                    : "border-[#e1d1bc] bg-[#fffaf2] hover:border-[#c9b08b] hover:bg-white"
                 }`}
                 onClick={() => {
                   onSelect(index);
@@ -132,7 +132,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
                   className="block h-auto w-full"
                   src={getAssetUrl(slide.thumbnail_url)}
                 />
-                <span className="block bg-slate-950/80 px-2 py-1 text-xs text-slate-300">#{slide.page_num}</span>
+                <span className="block bg-[#f7efdf] px-2 py-1 text-xs text-[#7e6c5a]">#{slide.page_num}</span>
               </button>
             </li>
           ))}
@@ -140,13 +140,13 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
       </aside>
 
       <div className="flex flex-col gap-3">
-        <header className="flex items-center justify-between rounded-[24px] border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-slate-300">
+        <header className="flex items-center justify-between rounded-[24px] border border-[#e1d1bc] bg-[#fffaf2] px-4 py-3 text-sm text-[#7e6c5a]">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Current Slide</p>
-            <p className="mt-1 text-sm font-medium text-slate-100">当前页：{currentSlide.page_num}</p>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[#a18a72]">Current Slide</p>
+            <p className="mt-1 text-sm font-medium text-[#463829]">当前页：{currentSlide.page_num}</p>
           </div>
           <div className="flex items-center gap-2">
-            {roi ? <span className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-100">ROI 已选择</span> : null}
+            {roi ? <span className="rounded-full border border-[#c8b185] bg-[#f2e8d3] px-3 py-1 text-xs text-[#6d7f5a]">ROI 已选择</span> : null}
             <button
               className="btn btn-outline !rounded-lg !px-3 !py-1.5 text-xs"
               onClick={() => onRoiChange(null)}
@@ -160,9 +160,9 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(88,213,207,0.12),_transparent_32%),linear-gradient(180deg,_rgba(255,255,255,0.08),_rgba(255,255,255,0.03))] p-3">
+        <div className="flex-1 overflow-auto rounded-[24px] border border-[#e1d1bc] bg-[radial-gradient(circle_at_top,_rgba(214,164,91,0.14),_transparent_34%),linear-gradient(180deg,#fffaf1,#f4eada)] p-3">
           <div
-            className="relative mx-auto inline-block touch-none select-none rounded-[22px] border border-white/10 bg-slate-950/70 p-2 shadow-[0_24px_80px_rgba(2,6,23,0.45)]"
+            className="relative mx-auto inline-block touch-none select-none rounded-[22px] border border-[#d8c6aa] bg-[#fffdf7] p-2 shadow-[0_24px_70px_rgba(122,98,66,0.18)]"
             // Mouse events
             onMouseDown={(event) => {
               const point = toRelative(event.clientX, event.clientY);

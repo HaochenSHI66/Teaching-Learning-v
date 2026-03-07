@@ -27,11 +27,11 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         this.props.fallback ?? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl bg-red-50 p-8 text-red-800">
+          <div className="flex flex-col items-center justify-center gap-3 rounded-[24px] border border-[#d9c2b6] bg-[#f8ebe4] p-8 text-[#7a4d41] shadow-[0_16px_36px_rgba(122,98,66,0.08)]">
             <p className="font-semibold">页面出现错误</p>
-            <p className="text-sm text-red-600">{this.state.message}</p>
+            <p className="text-sm text-[#9a5e4e]">{this.state.message}</p>
             <button
-              className="rounded-lg bg-red-700 px-4 py-2 text-sm text-white hover:bg-red-800"
+              className="btn btn-warning"
               onClick={() => this.setState({ hasError: false, message: "" })}
               type="button"
             >

@@ -177,7 +177,7 @@ export default function Page() {
 
   return (
     <main className="relative flex h-screen min-h-screen flex-col overflow-hidden">
-      <header className="relative z-10 border-b border-white/10 bg-slate-950/35 backdrop-blur-xl">
+      <header className="relative z-10 border-b border-[#d7c5aa] bg-[#fbf5eb]/85 backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-4 md:px-6">
           <div className="flex items-center gap-3">
             <button
@@ -188,20 +188,20 @@ export default function Page() {
               {sidebarCollapsed ? "展开面板" : "收起面板"}
             </button>
             <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-300">Learning Studio</p>
-              <h1 className="text-xl font-semibold text-white md:text-2xl">PPT 学习工作台</h1>
-              <p className="text-xs text-slate-400">逐页理解、即时提问、把讲解沉淀成可复习笔记。</p>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-[#8c765f]">Learning Studio</p>
+              <h1 className="text-xl font-semibold text-[#463829] md:text-2xl">PPT 学习工作台</h1>
+              <p className="text-xs text-[#8a7866]">逐页理解、即时提问、把讲解沉淀成可复习笔记。</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-100">
+            <div className="rounded-full border border-[#cbb998] bg-[#f5ebda] px-3 py-1 text-xs text-[#5f6d52]">
               文档 {documentCount}
             </div>
-            <div className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs text-amber-100">
+            <div className="rounded-full border border-[#d8bf94] bg-[#f7ecd6] px-3 py-1 text-xs text-[#8c6c46]">
               当前页 {currentSlide ? `${currentSlide.page_num}/${pageCount || 0}` : "未选择"}
             </div>
-            <div className="max-w-[360px] truncate rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+            <div className="max-w-[360px] truncate rounded-full border border-[#dbc9ae] bg-[#fffaf1] px-3 py-1 text-xs text-[#746452]">
               {statusText}
             </div>
           </div>
@@ -210,19 +210,19 @@ export default function Page() {
 
       <div className="relative z-10 flex min-h-0 flex-1 gap-4 p-4 md:p-5">
         <aside
-          className={`overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/55 shadow-2xl backdrop-blur-2xl transition-all duration-300 ${
+          className={`overflow-hidden rounded-[28px] border border-[#d9c7ab] bg-[#f7f0e3]/95 shadow-[0_20px_50px_rgba(109,85,58,0.12)] backdrop-blur-xl transition-all duration-300 ${
             sidebarCollapsed ? "w-[84px]" : "w-[320px]"
           }`}
         >
           <div className="flex h-full flex-col p-3">
-            <div className={`mb-3 rounded-[22px] border border-white/10 bg-white/5 p-3 ${sidebarCollapsed ? "text-center" : ""}`}>
-              <p className="text-[10px] uppercase tracking-[0.26em] text-slate-500">
+            <div className={`mb-3 rounded-[22px] border border-[#e4d8c5] bg-[#fffaf1] p-3 ${sidebarCollapsed ? "text-center" : ""}`}>
+              <p className="text-[10px] uppercase tracking-[0.26em] text-[#9d876f]">
                 {sidebarCollapsed ? "Doc" : "Document Dock"}
               </p>
               {!sidebarCollapsed ? (
                 <>
-                  <p className="mt-2 text-sm font-medium text-slate-100">资料库</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                  <p className="mt-2 text-sm font-medium text-[#463829]">资料库</p>
+                  <p className="mt-1 text-xs leading-5 text-[#877563]">
                     上传后自动生成整套讲解缓存，侧栏支持切换与删除。
                   </p>
                 </>
@@ -251,12 +251,12 @@ export default function Page() {
             {!sidebarCollapsed ? (
               <>
                 <div className="mb-2 flex items-center justify-between px-1">
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">已上传文档</p>
-                  <span className="text-[11px] text-slate-500">{documentCount} 份</span>
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-[#9a846a]">已上传文档</p>
+                  <span className="text-[11px] text-[#9a846a]">{documentCount} 份</span>
                 </div>
                 <div className="flex-1 space-y-2 overflow-auto pr-1">
                   {upload.documents.length === 0 ? (
-                    <div className="rounded-[22px] border border-dashed border-white/10 bg-white/5 px-4 py-5 text-sm text-slate-400">
+                    <div className="rounded-[22px] border border-dashed border-[#dbc8ad] bg-[#fffaf2] px-4 py-5 text-sm text-[#8b7764]">
                       暂无文档。上传一份 PDF 后，这里会显示你的学习资料库。
                     </div>
                   ) : (
@@ -264,8 +264,8 @@ export default function Page() {
                       <article
                         className={`rounded-[22px] border p-3 transition ${
                           upload.documentId === doc.id
-                            ? "border-cyan-300/35 bg-gradient-to-br from-cyan-400/18 via-slate-900/65 to-amber-300/12 shadow-[0_18px_40px_rgba(8,15,28,0.26)]"
-                            : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/[0.08]"
+                            ? "border-[#cab384] bg-[linear-gradient(135deg,#fff8ec_0%,#f2e7d2_62%,#ece4d5_100%)] shadow-[0_18px_36px_rgba(122,98,66,0.12)]"
+                            : "border-[#e0d1bc] bg-[#fffaf2] hover:border-[#cdb796] hover:bg-white"
                         }`}
                         key={doc.id}
                       >
@@ -275,16 +275,16 @@ export default function Page() {
                             onClick={() => void upload.loadDocument(doc.id)}
                             type="button"
                           >
-                            <p className="truncate text-sm font-medium text-slate-100">{doc.filename}</p>
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-                              <span className="rounded-full bg-white/8 px-2 py-1">{doc.page_count} 页</span>
+                            <p className="truncate text-sm font-medium text-[#463829]">{doc.filename}</p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#86715b]">
+                              <span className="rounded-full bg-[#f1e6d4] px-2 py-1">{doc.page_count} 页</span>
                               <span
                                 className={`rounded-full px-2 py-1 ${
                                   doc.status === "ready"
-                                    ? "bg-emerald-400/15 text-emerald-200"
+                                    ? "bg-[#e8efe0] text-[#607253]"
                                     : doc.status === "processing"
-                                      ? "bg-amber-300/15 text-amber-100"
-                                      : "bg-rose-400/15 text-rose-100"
+                                      ? "bg-[#f7ecd7] text-[#8c6c46]"
+                                      : "bg-[#f5e3dc] text-[#9a5e4e]"
                                 }`}
                               >
                                 {doc.status}
@@ -292,7 +292,7 @@ export default function Page() {
                             </div>
                           </button>
                           <button
-                            className="btn btn-outline !rounded-full !px-2.5 !py-1 text-[11px] text-rose-100 hover:!border-rose-300/40 hover:!bg-rose-400/10"
+                            className="btn btn-outline !rounded-full !px-2.5 !py-1 text-[11px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
                             disabled={loading}
                             onClick={() => void handleDeleteDocument(doc.id, doc.filename)}
                             type="button"
@@ -306,9 +306,9 @@ export default function Page() {
                 </div>
               </>
             ) : (
-              <div className="mt-2 flex flex-1 flex-col items-center gap-3 text-[11px] text-slate-500">
-                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2">{documentCount}</div>
-                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2">{pageCount}</div>
+              <div className="mt-2 flex flex-1 flex-col items-center gap-3 text-[11px] text-[#8f7b68]">
+                <div className="rounded-full border border-[#ddccaf] bg-[#fffaf1] px-3 py-2">{documentCount}</div>
+                <div className="rounded-full border border-[#ddccaf] bg-[#fffaf1] px-3 py-2">{pageCount}</div>
               </div>
             )}
           </div>
