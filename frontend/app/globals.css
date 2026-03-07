@@ -262,3 +262,27 @@ h4 {
   color: #806d5a;
   border-color: transparent;
 }
+
+.btn-quality-danger {
+  border-color: #d7b7ab;
+  background: #f8ebe4;
+  color: #9a5e4e;
+}
+
+.btn-quality-warn {
+  border-color: #e2c79d;
+  background: #fbf0dc;
+  color: #9a7446;
+}
+
+.btn-quality-ok {
+  border-color: #c7d0b5;
+  background: #eef2e6;
+  color: #657552;
+}
+
+.btn-quality-done {
+  border-color: #c8d4db;
+  background: #edf2f4;
+  color: #5e7684;
+}
