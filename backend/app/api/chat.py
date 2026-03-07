@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -16,13 +17,21 @@ from app.services.retrieval import retrieve_related_slides
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 
-def _get_slide_extract_text(session: Session, slide_id: str) -> str:
+def _get_slide_extract_payload(session: Session, slide_id: str) -> dict:
     slide_extract = session.exec(
         select(SlideExtract).where(SlideExtract.slide_id == slide_id)
     ).first()
     if not slide_extract:
-        return ""
-    return str(slide_extract.payload.get("text", ""))
+        return {}
+    return dict(slide_extract.payload)
+
+
+def _get_slide_extract_text(session: Session, slide_id: str) -> str:
+    return str(_get_slide_extract_payload(session, slide_id).get("text", ""))
+
+
+def _get_slide_image_path(request: Request, document: Document, slide: Slide) -> Path:
+    return request.app.state.storage_dir / document.storage_path / slide.image_path
 
 
 def _get_session_and_slide(
@@ -44,6 +53,7 @@ def _get_session_and_slide(
 
 @router.post("", response_model=ChatResponse)
 def chat_on_slide(
+    request: Request,
     payload: ChatRequest,
     session: Session = Depends(get_db_session),
 ) -> ChatResponse:
@@ -73,7 +83,11 @@ def chat_on_slide(
     )
 
     if target_slide:
-        extracted_text = _get_slide_extract_text(session, target_slide.id)
+        document = session.get(Document, learning_session.document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        extract_payload = _get_slide_extract_payload(session, target_slide.id)
+        extracted_text = str(extract_payload.get("text") or "")
         related_slides = retrieve_related_slides(
             session=session,
             document_id=learning_session.document_id,
@@ -84,10 +98,12 @@ def chat_on_slide(
         used_slide_ids = [slide.id for slide in related_slides] or [target_slide.id]
         related_pages = [slide.page_num for slide in related_slides] or [target_slide.page_num]
 
-        answer, follow_ups = generate_slide_explanation(
+        answer, follow_ups, degraded = generate_slide_explanation(
             slide=target_slide,
             question=payload.message,
             extracted_text=extracted_text,
+            slide_image_path=_get_slide_image_path(request, document, target_slide),
+            extract_payload=extract_payload,
             related_pages=related_pages,
         )
     else:
@@ -102,10 +118,16 @@ def chat_on_slide(
         if related_slides:
             reference_slide = related_slides[0]
             related_pages = [slide.page_num for slide in related_slides]
-            answer, follow_ups = generate_slide_explanation(
+            document = session.get(Document, learning_session.document_id)
+            if not document:
+                raise HTTPException(status_code=404, detail="Document not found")
+            extract_payload = _get_slide_extract_payload(session, reference_slide.id)
+            answer, follow_ups, degraded = generate_slide_explanation(
                 slide=reference_slide,
                 question=payload.message,
-                extracted_text=_get_slide_extract_text(session, reference_slide.id),
+                extracted_text=str(extract_payload.get("text") or ""),
+                slide_image_path=_get_slide_image_path(request, document, reference_slide),
+                extract_payload=extract_payload,
                 related_pages=related_pages,
             )
         else:
@@ -123,6 +145,7 @@ def chat_on_slide(
                 "3. 下一步你会练哪道题？\n"
             )
             follow_ups = ["把这题拆成三步", "给我一个反例", "和前一页有什么关系"]
+            degraded = True
 
     session.add(
         Message(
@@ -144,7 +167,7 @@ def chat_on_slide(
     return ChatResponse(
         answer=answer,
         used_slide_ids=used_slide_ids,
-        degraded=False,
+        degraded=degraded,
         follow_ups=follow_ups,
     )
 
@@ -182,14 +205,22 @@ def explain_roi(
 
         region = image.crop((left, top, right, bottom))
         region_size = region.size
+        with tempfile.NamedTemporaryFile(prefix="roi-", suffix=".png", delete=False) as temp_file:
+            roi_path = Path(temp_file.name)
+            region.save(roi_path, format="PNG")
 
-    answer = generate_roi_explanation(
+    extract_payload = _get_slide_extract_payload(session, slide.id)
+    answer, _ = generate_roi_explanation(
         slide=slide,
         question=payload.message,
-        extracted_text=_get_slide_extract_text(session, slide.id),
+        extracted_text=str(extract_payload.get("text") or ""),
+        slide_image_path=image_path,
+        roi_image_path=roi_path,
+        extract_payload=extract_payload,
         roi_bbox=(payload.roi.x, payload.roi.y, payload.roi.w, payload.roi.h),
         region_size=region_size,
     )
+    roi_path.unlink(missing_ok=True)
 
     session.add(
         Message(

@@ -120,6 +120,61 @@ def test_roi_explanation_endpoint(tmp_path: Path) -> None:
     assert "区域坐标" in payload["answer"]
 
 
+def test_roi_explanation_endpoint_uses_multimodal_gateway(tmp_path: Path, monkeypatch) -> None:
+    client = _create_client(tmp_path)
+
+    upload = client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("single.png", _png_bytes(), "image/png")},
+    )
+    assert upload.status_code == 202
+    document_id = upload.json()["document"]["id"]
+
+    slides = client.get(f"/api/v1/documents/{document_id}/slides")
+    slide_id = slides.json()["slides"][0]["id"]
+
+    session_response = client.post(
+        "/api/v1/sessions",
+        json={"document_id": document_id, "current_slide_id": slide_id},
+    )
+    session_id = session_response.json()["id"]
+
+    captured: dict[str, object] = {}
+
+    class SpyGateway:
+        def generate_roi_markdown(
+            self,
+            *,
+            prompt: str,
+            slide_image_path: Path,
+            roi_image_path: Path,
+            extraction_text: str,
+        ) -> str:
+            captured["prompt"] = prompt
+            captured["slide_image_path"] = slide_image_path
+            captured["roi_image_path"] = roi_image_path
+            captured["extraction_text"] = extraction_text
+            captured["slide_exists_during_call"] = slide_image_path.exists()
+            captured["roi_exists_during_call"] = roi_image_path.exists()
+            return "## ROI Live\n\n模型已收到整页和局部图像。"
+
+    monkeypatch.setattr("app.services.explanation_engine.ModelGateway", lambda: SpyGateway())
+
+    roi_response = client.post(
+        "/api/v1/chat/roi",
+        json={
+            "session_id": session_id,
+            "slide_id": slide_id,
+            "message": "解释这个框里的内容",
+            "roi": {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+        },
+    )
+    assert roi_response.status_code == 200
+    assert roi_response.json()["answer"].startswith("## ROI Live")
+    assert captured["slide_exists_during_call"] is True
+    assert captured["roi_exists_during_call"] is True
+
+
 def test_generate_and_grade_quiz(tmp_path: Path) -> None:
     client = _create_client(tmp_path)
 

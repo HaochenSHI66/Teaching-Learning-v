@@ -40,9 +40,9 @@ from app.schemas import (
     UploadResponse,
 )
 from app.services.explanation_cache import (
-    build_cached_slide_explanation,
     build_document_explanations_markdown,
 )
+from app.services.explanation_engine import generate_slide_explanation
 from app.services.slide_processor import SUPPORTED_TYPES, process_document
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
@@ -118,15 +118,21 @@ def _process_document_background(
                     },
                 )
             )
+            slide_image_path = document_dir / asset.image_rel_path
+            explanation_markdown, _, _ = generate_slide_explanation(
+                slide=slide,
+                question="请生成这一页的完整讲解",
+                extracted_text=asset.extracted_text,
+                slide_image_path=slide_image_path,
+                extract_payload=asset.extract_payload,
+                related_pages=[asset.page_num],
+            )
             session.add(
                 SlideExplanation(
                     document_id=document.id,
                     slide_id=slide.id,
                     page_num=asset.page_num,
-                    markdown=build_cached_slide_explanation(
-                        page_num=asset.page_num,
-                        extracted_text=asset.extracted_text,
-                    ),
+                    markdown=explanation_markdown,
                 )
             )
 
@@ -166,13 +172,24 @@ def _upsert_slide_explanation(
     *,
     session: Session,
     document_id: str,
+    storage_root: Path,
     slide: Slide,
     extracted_text: str,
+    extract_payload: dict | None = None,
 ) -> tuple[SlideExplanation, bool]:
     explanation = session.exec(select(SlideExplanation).where(SlideExplanation.slide_id == slide.id)).first()
-    markdown = build_cached_slide_explanation(
-        page_num=slide.page_num,
+    document = session.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    slide_image_path = storage_root / document.storage_path / slide.image_path
+    markdown, _, _ = generate_slide_explanation(
+        slide=slide,
+        question="请生成这一页的完整讲解",
         extracted_text=extracted_text,
+        slide_image_path=slide_image_path if slide_image_path.exists() else None,
+        extract_payload=extract_payload,
+        related_pages=[slide.page_num],
     )
     overwrote_existing = explanation is not None
 
@@ -424,6 +441,7 @@ def list_document_explanations(
 def regenerate_slide_explanation(
     document_id: str,
     slide_id: str,
+    request: Request,
     session: Session = Depends(get_db_session),
 ) -> SlideExplanationGenerateResponse:
     document = session.get(Document, document_id)
@@ -437,12 +455,15 @@ def regenerate_slide_explanation(
         raise HTTPException(status_code=404, detail="Slide not found")
 
     extract = session.exec(select(SlideExtract).where(SlideExtract.slide_id == slide_id)).first()
-    extracted_text = str((extract.payload if extract else {}).get("text") or "")
+    extract_payload = extract.payload if extract else {}
+    extracted_text = str(extract_payload.get("text") or "")
     explanation, overwrote_existing = _upsert_slide_explanation(
         session=session,
         document_id=document_id,
+        storage_root=request.app.state.storage_dir,
         slide=slide,
         extracted_text=extracted_text,
+        extract_payload=extract_payload,
     )
     session.commit()
     session.refresh(explanation)
@@ -461,6 +482,7 @@ def regenerate_slide_explanation(
 )
 def regenerate_document_explanations(
     document_id: str,
+    request: Request,
     session: Session = Depends(get_db_session),
 ) -> DocumentExplanationGenerateResponse:
     document = session.get(Document, document_id)
@@ -482,8 +504,10 @@ def regenerate_document_explanations(
         _, overwrote = _upsert_slide_explanation(
             session=session,
             document_id=document_id,
+            storage_root=request.app.state.storage_dir,
             slide=slide,
             extracted_text=extracted_text,
+            extract_payload=extract_map.get(slide.id),
         )
         generated_count += 1
         overwrote_existing = overwrote_existing or overwrote

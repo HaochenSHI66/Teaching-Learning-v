@@ -2,6 +2,7 @@ from pathlib import Path
 
 import fitz
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.main import create_app
 from app.models import Slide
@@ -115,7 +116,7 @@ def test_generated_explanation_does_not_embed_prompt_contract() -> None:
         height=900,
     )
 
-    markdown, _ = generate_slide_explanation(
+    markdown, _, _ = generate_slide_explanation(
         slide=slide,
         question="总结本页",
         extracted_text="Gradient descent updates parameters using the learning rate.",
@@ -123,3 +124,35 @@ def test_generated_explanation_does_not_embed_prompt_contract() -> None:
 
     assert "Prompt Contract" not in markdown
     assert "<!--" not in markdown
+
+
+def test_slide_generation_falls_back_when_gateway_fails(tmp_path: Path) -> None:
+    class FailingGateway:
+        def generate_slide_markdown(self, **_: object) -> str:
+            raise RuntimeError("boom")
+
+    slide = Slide(
+        id="slide-1",
+        document_id="doc-1",
+        page_num=1,
+        image_path="slides/slide_001.png",
+        thumbnail_path="thumbnails/thumb_001.png",
+        width=1600,
+        height=900,
+    )
+    slide_image = tmp_path / "slide.png"
+    Image.new("RGB", (400, 240), color=(245, 240, 232)).save(slide_image, format="PNG")
+
+    markdown, follow_ups, degraded = generate_slide_explanation(
+        slide=slide,
+        question="总结本页",
+        extracted_text="Gradient descent updates parameters using the learning rate.",
+        slide_image_path=slide_image,
+        extract_payload={"summary": "Gradient Descent"},
+        gateway=FailingGateway(),
+    )
+
+    assert degraded is True
+    assert follow_ups
+    assert "Prompt Contract" not in markdown
+    assert "### 核心术语 Core Terms" in markdown
