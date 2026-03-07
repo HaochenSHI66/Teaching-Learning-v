@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import {
   createSession,
+  deleteDocument as deleteDocumentRequest,
   fetchDocumentExplanations,
   fetchDocuments,
   fetchDocumentStatus,
@@ -27,6 +28,7 @@ type UploadState = {
 type UploadActions = {
   handleUpload: (file: File) => Promise<void>;
   loadDocument: (documentId: string) => Promise<void>;
+  deleteDocument: (documentId: string) => Promise<void>;
   refreshDocuments: () => Promise<void>;
   reset: () => void;
 };
@@ -116,6 +118,43 @@ export function useUpload(): UploadState & UploadActions {
     }
   }
 
+  async function deleteDocument(targetDocumentId: string) {
+    setLoading(true);
+    setStatusText("正在删除文档...");
+
+    try {
+      const currentDocuments = documents;
+      const currentIndex = currentDocuments.findIndex((item) => item.id === targetDocumentId);
+      const fallbackDocument =
+        currentDocuments[currentIndex + 1] ??
+        currentDocuments[currentIndex - 1] ??
+        currentDocuments.find((item) => item.id !== targetDocumentId) ??
+        null;
+
+      await deleteDocumentRequest(targetDocumentId);
+
+      if (documentId === targetDocumentId) {
+        if (fallbackDocument) {
+          await loadDocument(fallbackDocument.id);
+          setStatusText(`已删除文档，已切换到《${fallbackDocument.filename}》。`);
+        } else {
+          reset();
+          setDocuments([]);
+          setStatusText("文档已删除，当前资料库为空。");
+        }
+      } else {
+        const nextDocuments = currentDocuments.filter((item) => item.id !== targetDocumentId);
+        setDocuments(nextDocuments);
+        setStatusText("文档已删除。");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误";
+      setStatusText(`删除失败：${message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function reset() {
     setDocumentId(null);
     setSessionId(null);
@@ -134,6 +173,7 @@ export function useUpload(): UploadState & UploadActions {
     statusText,
     handleUpload,
     loadDocument,
+    deleteDocument,
     refreshDocuments,
     reset,
   };

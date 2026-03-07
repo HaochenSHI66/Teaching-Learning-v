@@ -97,23 +97,29 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
 
   if (!currentSlide) {
     return (
-      <section className="h-full rounded-2xl bg-white/80 p-6 shadow-panel">
-        <p className="text-sm text-slate-600">上传文档后会在这里显示 PPT 页面。</p>
+      <section className="flex h-full items-center justify-center rounded-[30px] border border-white/10 bg-slate-950/50 p-6 shadow-2xl backdrop-blur-2xl">
+        <div className="max-w-md rounded-[24px] border border-dashed border-white/10 bg-white/5 px-6 py-8 text-center">
+          <p className="text-xs uppercase tracking-[0.26em] text-slate-500">Viewer</p>
+          <p className="mt-3 text-lg font-medium text-slate-100">上传文档后会在这里显示 PPT 页面。</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            左侧会出现缩略页导航，你可以在画布里框选区域，再去问答里做局部解释。
+          </p>
+        </div>
       </section>
     );
   }
 
   return (
-    <section className="grid h-full grid-cols-[112px_1fr] gap-4 rounded-2xl bg-white/80 p-4 shadow-panel">
-      <aside className="overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+    <section className="grid h-full grid-cols-[112px_1fr] gap-4 rounded-[30px] border border-white/10 bg-slate-950/55 p-4 shadow-2xl backdrop-blur-2xl">
+      <aside className="overflow-auto rounded-[24px] border border-white/10 bg-white/[0.05] p-2">
         <ul className="space-y-2">
           {slides.map((slide, index) => (
             <li key={slide.id}>
               <button
                 className={`w-full overflow-hidden rounded-xl border text-left transition ${
                   index === currentIndex
-                    ? "border-cyan-300 bg-gradient-to-r from-cyan-50 to-teal-50 ring-2 ring-cyan-200/60"
-                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                    ? "border-cyan-300/45 bg-gradient-to-br from-cyan-300/25 via-white/10 to-amber-300/18 ring-2 ring-cyan-300/20"
+                    : "border-white/10 bg-slate-900/40 hover:border-white/20 hover:bg-white/[0.08]"
                 }`}
                 onClick={() => {
                   onSelect(index);
@@ -126,7 +132,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
                   className="block h-auto w-full"
                   src={getAssetUrl(slide.thumbnail_url)}
                 />
-                <span className="block bg-white px-2 py-1 text-xs text-slate-500">#{slide.page_num}</span>
+                <span className="block bg-slate-950/80 px-2 py-1 text-xs text-slate-300">#{slide.page_num}</span>
               </button>
             </li>
           ))}
@@ -134,10 +140,13 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
       </aside>
 
       <div className="flex flex-col gap-3">
-        <header className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-          <span>当前页：{currentSlide.page_num}</span>
+        <header className="flex items-center justify-between rounded-[24px] border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-slate-300">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Current Slide</p>
+            <p className="mt-1 text-sm font-medium text-slate-100">当前页：{currentSlide.page_num}</p>
+          </div>
           <div className="flex items-center gap-2">
-            {roi ? <span className="rounded-full bg-accentSoft px-2 py-1 text-xs text-slate-700">ROI 已选择</span> : null}
+            {roi ? <span className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-100">ROI 已选择</span> : null}
             <button
               className="btn btn-outline !rounded-lg !px-3 !py-1.5 text-xs"
               onClick={() => onRoiChange(null)}
@@ -151,9 +160,9 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto rounded-xl border border-slate-200 bg-white p-2">
+        <div className="flex-1 overflow-auto rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(88,213,207,0.12),_transparent_32%),linear-gradient(180deg,_rgba(255,255,255,0.08),_rgba(255,255,255,0.03))] p-3">
           <div
-            className="relative mx-auto inline-block touch-none select-none"
+            className="relative mx-auto inline-block touch-none select-none rounded-[22px] border border-white/10 bg-slate-950/70 p-2 shadow-[0_24px_80px_rgba(2,6,23,0.45)]"
             // Mouse events
             onMouseDown={(event) => {
               const point = toRelative(event.clientX, event.clientY);
@@ -210,7 +219,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
           >
             <img
               alt={`Slide ${currentSlide.page_num}`}
-              className="mx-auto block h-auto max-w-full rounded-lg"
+              className="mx-auto block h-auto max-w-full rounded-[18px]"
               draggable={false}
               src={getAssetUrl(currentSlide.image_url)}
             />

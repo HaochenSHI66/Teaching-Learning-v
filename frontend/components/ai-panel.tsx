@@ -89,9 +89,9 @@ export function AIPanel({
   const [tab, setTab] = useState<TabKey>("explain");
 
   return (
-    <section className="flex h-full flex-col rounded-none bg-white/85 p-4 shadow-panel lg:rounded-r-2xl">
+    <section className="flex h-full flex-col rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(246,241,231,0.96),rgba(255,250,240,0.9))] p-4 shadow-[0_30px_80px_rgba(2,6,23,0.22)]">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-sm">
+        <div className="inline-flex rounded-full border border-slate-200/80 bg-white/80 p-1 text-sm shadow-sm">
           {TABS.map((item) => (
             <button
               key={item.key}
@@ -106,7 +106,7 @@ export function AIPanel({
           ))}
         </div>
 
-        <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-xs">
+        <div className="inline-flex rounded-full border border-slate-200/80 bg-white/80 p-1 text-xs shadow-sm">
           <button
             className={`btn btn-segment ${mode === "slide" ? "btn-segment-active" : "btn-segment-idle"}`}
             onClick={() => onModeChange("slide")}
@@ -134,7 +134,7 @@ export function AIPanel({
           >
             {loading ? "加载中..." : "显示当前页缓存讲解"}
           </button>
-          <div className="flex-1 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex-1 overflow-auto rounded-[24px] border border-slate-200/80 bg-white/70 p-4">
             {explanation ? (
               <MarkdownContent content={explanation} />
             ) : (
@@ -146,11 +146,11 @@ export function AIPanel({
 
       {tab === "chat" && (
         <div className="flex h-full flex-col gap-3">
-          <div className="flex-1 space-y-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex-1 space-y-2 overflow-auto rounded-[24px] border border-slate-200/80 bg-white/70 p-4">
             {chatMessages.length === 0 && <p className="text-sm text-slate-500">在这里追问当前页内容。</p>}
             {chatMessages.map((message) => (
               <article
-                className={`rounded-lg p-2 text-sm ${
+                className={`rounded-[18px] p-3 text-sm shadow-sm ${
                   message.role === "user" ? "bg-slate-900 text-white" : "bg-white text-slate-700"
                 }`}
                 key={message.id}
@@ -172,14 +172,14 @@ export function AIPanel({
             >
               {loading ? "处理中..." : "解释框选区域"}
             </button>
-            <p className="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p className="rounded-[18px] border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               {roiReady ? "ROI 已选择，可直接解释。" : "先在左侧框选区域，再点击解释。"}
             </p>
           </div>
 
           <div className="space-y-2">
             <textarea
-              className="h-24 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm outline-none focus:border-accent"
+              className="h-24 w-full rounded-[18px] border border-slate-300 bg-white p-3 text-sm outline-none focus:border-accent"
               disabled={disabled || loading}
               onChange={(event) => onChatInputChange(event.target.value)}
               onKeyDown={(event) => {
@@ -230,7 +230,7 @@ export function AIPanel({
               格式化笔记
             </button>
             <button
-              className="btn btn-outline !py-2"
+              className="btn btn-soft !py-2"
               disabled={disabled || loading}
               onClick={onExportNotes}
               type="button"
@@ -249,11 +249,11 @@ export function AIPanel({
 
           <div className="grid flex-1 grid-cols-1 gap-3 lg:grid-cols-2">
             <textarea
-              className="h-full min-h-[220px] rounded-xl border border-slate-200 bg-white p-3 font-mono text-xs leading-5 text-slate-700"
+              className="h-full min-h-[220px] rounded-[24px] border border-slate-200 bg-white p-3 font-mono text-xs leading-5 text-slate-700 shadow-inner"
               onChange={(event) => onNotesChange(event.target.value)}
               value={notesMarkdown}
             />
-            <div className="overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="overflow-auto rounded-[24px] border border-slate-200 bg-white/70 p-4">
               {notesMarkdown.trim() ? (
                 <MarkdownContent content={notesMarkdown} />
               ) : (
@@ -285,12 +285,12 @@ export function AIPanel({
             </button>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex-1 space-y-3 overflow-auto rounded-[24px] border border-slate-200/80 bg-white/70 p-4">
             {quizQuestions.length === 0 ? (
               <p className="text-sm text-slate-500">先生成小测，再选择答案提交。</p>
             ) : (
               quizQuestions.map((question) => (
-                <article className="rounded-lg border border-slate-200 bg-white p-3" key={question.id}>
+                <article className="rounded-[20px] border border-slate-200 bg-white p-3 shadow-sm" key={question.id}>
                   <p className="mb-2 text-sm font-medium text-slate-700">{question.prompt}</p>
                   <div className="grid gap-1">
                     {question.options.map((option) => {
@@ -301,7 +301,7 @@ export function AIPanel({
                           className={`btn !justify-start !rounded-lg !px-2.5 !py-1.5 text-left text-xs ${
                             selected
                               ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                              : "btn-outline"
+                              : "btn-soft"
                           }`}
                           key={option}
                           onClick={() => onQuizAnswerChange(question.id, optionKey)}
@@ -317,7 +317,7 @@ export function AIPanel({
             )}
           </div>
 
-          <div className="overflow-auto rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+          <div className="overflow-auto rounded-[20px] bg-indigo-50 px-3 py-3 text-xs text-indigo-700">
             <MarkdownContent content={quizFeedback || "批改结果将显示在这里。"} />
           </div>
         </div>
@@ -335,30 +335,30 @@ export function AIPanel({
           </button>
 
           <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
-            <div className="rounded-lg bg-emerald-50 p-2 text-emerald-700">
+            <div className="rounded-[20px] bg-emerald-50 p-3 text-emerald-700">
               <div>提问次数</div>
               <div className="text-lg font-semibold">{analytics?.user_messages ?? 0}</div>
             </div>
-            <div className="rounded-lg bg-cyan-50 p-2 text-cyan-700">
+            <div className="rounded-[20px] bg-cyan-50 p-3 text-cyan-700">
               <div>回答次数</div>
               <div className="text-lg font-semibold">{analytics?.assistant_messages ?? 0}</div>
             </div>
-            <div className="rounded-lg bg-violet-50 p-2 text-violet-700">
+            <div className="rounded-[20px] bg-violet-50 p-3 text-violet-700">
               <div>测验次数</div>
               <div className="text-lg font-semibold">{analytics?.quiz_attempts ?? 0}</div>
             </div>
-            <div className="rounded-lg bg-amber-50 p-2 text-amber-700">
+            <div className="rounded-[20px] bg-amber-50 p-3 text-amber-700">
               <div>平均掌握度</div>
               <div className="text-lg font-semibold">{analytics?.avg_quiz_score_percent ?? 0}%</div>
             </div>
           </div>
 
-          <div className="flex-1 space-y-2 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex-1 space-y-2 overflow-auto rounded-[24px] border border-slate-200/80 bg-white/70 p-4">
             {reviewItems.length === 0 ? (
               <p className="text-sm text-slate-500">暂无待复习项。做题后错题会自动进入这里。</p>
             ) : (
               reviewItems.map((item) => (
-                <article className="rounded-lg border border-slate-200 bg-white p-3" key={item.id}>
+                <article className="rounded-[20px] border border-slate-200 bg-white p-3 shadow-sm" key={item.id}>
                   <p className="text-sm font-medium text-slate-700">{item.prompt}</p>
                   <p className="mt-1 text-xs text-slate-500">
                     复习间隔：{item.interval_days.toFixed(1)} 天 | 熟练度：{item.easiness.toFixed(2)} | 到期：{item.due_at.slice(0, 10)}

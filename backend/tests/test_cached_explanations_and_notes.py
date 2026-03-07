@@ -53,12 +53,15 @@ def test_list_documents_and_export_cached_explanations(tmp_path: Path) -> None:
     explanations = explanations_resp.json()["explanations"]
     assert len(explanations) == 2
     assert "[!NOTE]" in explanations[0]["markdown"]
+    assert "### 核心术语 Core Terms" in explanations[0]["markdown"]
+    assert "导数（Derivative）" in explanations[0]["markdown"]
 
     export_resp = client.get(f"/api/v1/documents/{document_id}/explanations/export")
     assert export_resp.status_code == 200
     exported_md = export_resp.json()["markdown"]
     assert "# 全部PPT讲解" in exported_md
     assert "## Slide 1" in exported_md
+    assert "矩阵（Matrix）" in exported_md
 
 
 def test_autogen_notes_from_cached_explanations(tmp_path: Path) -> None:
@@ -96,3 +99,4 @@ def test_autogen_notes_from_cached_explanations(tmp_path: Path) -> None:
     markdown = notes_resp.json()["markdown"]
     assert "# 自动笔记" in markdown
     assert "## Slide 1" in markdown
+    assert "### 核心术语 Core Terms" in markdown

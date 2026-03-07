@@ -155,6 +155,12 @@ export async function fetchDocumentStatus(documentId: string): Promise<DocumentS
   return request<DocumentStatus>(`/api/v1/documents/${documentId}/status`);
 }
 
+export async function deleteDocument(documentId: string): Promise<{ id: string; deleted: boolean }> {
+  return request<{ id: string; deleted: boolean }>(`/api/v1/documents/${documentId}`, {
+    method: "DELETE",
+  });
+}
+
 /** Poll until document status is "ready" or "error". Max wait ~60s. */
 export async function pollDocumentReady(
   documentId: string,

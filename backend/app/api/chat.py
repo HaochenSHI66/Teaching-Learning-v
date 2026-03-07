@@ -5,14 +5,24 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from PIL import Image
 from sqlmodel import Session
+from sqlmodel import select
 
 from app.api.deps import get_db_session
-from app.models import Document, LearningSession, Message, Slide
+from app.models import Document, LearningSession, Message, Slide, SlideExtract
 from app.schemas import ChatRequest, ChatResponse, RoiChatRequest, RoiChatResponse
 from app.services.explanation_engine import generate_roi_explanation, generate_slide_explanation
 from app.services.retrieval import retrieve_related_slides
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+
+def _get_slide_extract_text(session: Session, slide_id: str) -> str:
+    slide_extract = session.exec(
+        select(SlideExtract).where(SlideExtract.slide_id == slide_id)
+    ).first()
+    if not slide_extract:
+        return ""
+    return str(slide_extract.payload.get("text", ""))
 
 
 def _get_session_and_slide(
@@ -63,6 +73,7 @@ def chat_on_slide(
     )
 
     if target_slide:
+        extracted_text = _get_slide_extract_text(session, target_slide.id)
         related_slides = retrieve_related_slides(
             session=session,
             document_id=learning_session.document_id,
@@ -76,6 +87,7 @@ def chat_on_slide(
         answer, follow_ups = generate_slide_explanation(
             slide=target_slide,
             question=payload.message,
+            extracted_text=extracted_text,
             related_pages=related_pages,
         )
     else:
@@ -93,6 +105,7 @@ def chat_on_slide(
             answer, follow_ups = generate_slide_explanation(
                 slide=reference_slide,
                 question=payload.message,
+                extracted_text=_get_slide_extract_text(session, reference_slide.id),
                 related_pages=related_pages,
             )
         else:
@@ -173,6 +186,7 @@ def explain_roi(
     answer = generate_roi_explanation(
         slide=slide,
         question=payload.message,
+        extracted_text=_get_slide_extract_text(session, slide.id),
         roi_bbox=(payload.roi.x, payload.roi.y, payload.roi.w, payload.roi.h),
         region_size=region_size,
     )

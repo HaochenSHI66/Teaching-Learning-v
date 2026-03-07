@@ -66,6 +66,11 @@ class DocumentExplanationsExportResponse(BaseModel):
     markdown: str
 
 
+class DocumentDeleteResponse(BaseModel):
+    id: str
+    deleted: bool
+
+
 class SessionCreateRequest(BaseModel):
     document_id: str
     current_slide_id: str | None = None

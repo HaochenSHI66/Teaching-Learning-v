@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, status
@@ -8,8 +9,20 @@ from sqlmodel import Session, select
 
 from app.api.deps import get_db_session
 from app.db import create_db_engine
-from app.models import Document, Slide, SlideExplanation, SlideExtract
+from app.models import (
+    Document,
+    LearningSession,
+    Message,
+    Note,
+    Quiz,
+    QuizAttempt,
+    ReviewItem,
+    Slide,
+    SlideExplanation,
+    SlideExtract,
+)
 from app.schemas import (
+    DocumentDeleteResponse,
     DocumentExplanationsExportResponse,
     DocumentExplanationsResponse,
     DocumentListItem,
@@ -112,6 +125,51 @@ def _process_document_background(
             )
 
         session.commit()
+
+
+def _delete_document_related_records(*, session: Session, document_id: str) -> None:
+    slides = session.exec(select(Slide).where(Slide.document_id == document_id)).all()
+    slide_ids = [slide.id for slide in slides]
+
+    sessions = session.exec(
+        select(LearningSession).where(LearningSession.document_id == document_id)
+    ).all()
+    session_ids = [item.id for item in sessions]
+
+    quizzes = []
+    quiz_ids: list[str] = []
+    if session_ids:
+        quizzes = session.exec(select(Quiz).where(Quiz.session_id.in_(session_ids))).all()
+        quiz_ids = [quiz.id for quiz in quizzes]
+
+        for message in session.exec(select(Message).where(Message.session_id.in_(session_ids))).all():
+            session.delete(message)
+        for note in session.exec(select(Note).where(Note.session_id.in_(session_ids))).all():
+            session.delete(note)
+        for review_item in session.exec(
+            select(ReviewItem).where(ReviewItem.session_id.in_(session_ids))
+        ).all():
+            session.delete(review_item)
+
+    if quiz_ids:
+        for attempt in session.exec(select(QuizAttempt).where(QuizAttempt.quiz_id.in_(quiz_ids))).all():
+            session.delete(attempt)
+
+    for quiz in quizzes:
+        session.delete(quiz)
+
+    if slide_ids:
+        for extract in session.exec(select(SlideExtract).where(SlideExtract.slide_id.in_(slide_ids))).all():
+            session.delete(extract)
+        for explanation in session.exec(
+            select(SlideExplanation).where(SlideExplanation.slide_id.in_(slide_ids))
+        ).all():
+            session.delete(explanation)
+
+    for learning_session in sessions:
+        session.delete(learning_session)
+    for slide in slides:
+        session.delete(slide)
 
 
 @router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -282,3 +340,24 @@ def export_document_explanations(
         slide_markdowns=[item.markdown for item in payload.explanations],
     )
     return DocumentExplanationsExportResponse(document_id=document_id, markdown=markdown)
+
+
+@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
+def delete_document(
+    document_id: str,
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> DocumentDeleteResponse:
+    document = session.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    _delete_document_related_records(session=session, document_id=document_id)
+    session.delete(document)
+    session.commit()
+
+    document_dir = request.app.state.storage_dir / document.storage_path
+    if document_dir.exists():
+        shutil.rmtree(document_dir, ignore_errors=True)
+
+    return DocumentDeleteResponse(id=document_id, deleted=True)
