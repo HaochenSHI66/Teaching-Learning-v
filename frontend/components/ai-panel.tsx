@@ -248,6 +248,19 @@ export function AIPanel({
                 </button>
               </div>
             </header>
+
+            {explanationLoading && (
+              <div className="border-b border-[#eee2cf] px-4 py-3">
+                <div className="mb-1.5 flex items-center justify-between text-[11px] text-[#9a7e63]">
+                  <span>正在调用 AI 生成讲解，请稍候…</span>
+                  <span className="animate-pulse">●</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#ede3d3]">
+                  <div className="h-full w-1/2 animate-[slide_1.6s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-[#c9a97a] via-[#e8c98a] to-[#c9a97a]" />
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-auto p-4" data-note-source="explanation-content">
               {explanation ? (
                 <MarkdownContent content={explanation} />
