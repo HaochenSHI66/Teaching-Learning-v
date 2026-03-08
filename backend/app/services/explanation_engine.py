@@ -7,7 +7,6 @@ from app.services.model_gateway import ModelGateway
 from app.services.prompt_templates import (
     build_roi_explanation_prompt,
     build_slide_explanation_prompt,
-    format_bilingual_terms_markdown,
 )
 
 
@@ -62,39 +61,21 @@ def _template_slide_explanation(
     extracted_text: str,
     related_pages: list[int],
 ) -> str:
-    citation = ", ".join(str(page_num) for page_num in sorted(set(related_pages)))
-    terms_markdown = format_bilingual_terms_markdown(extracted_text)
+    citation = “, “.join(str(page_num) for page_num in sorted(set(related_pages)))
     summary = _summary_from_text(extracted_text, question)
     return (
-        f"## Slide {slide.page_num} 讲解\n\n"
-        f"> [!NOTE]\n"
-        f"> **问题聚焦**：围绕“*{question}*”建立本页理解框架。\n"
-        f"> **引用页码**：{citation}\n"
-        f"> **输出约束**：中文解释 + 英文术语标注，遵循结构化 Markdown。\n\n"
-        "### 本页在讲什么 Summary\n"
-        f"<mark>{summary}</mark>\n\n"
-        "### 核心术语 Core Terms\n"
-        f"{terms_markdown}\n\n"
-        "### 知识链路 Reasoning Flow\n"
-        "1. **主题定位**：先判断本页是在给出定义（Definition）、方法（Method）还是结论（Conclusion）。\n"
-        "2. *推理展开*：把输入条件、关键步骤、输出结果按顺序复原。\n"
-        "3. **跨页连接**：确认它和相关页码中的前置概念、延伸概念分别是什么。\n\n"
-        "### 示例复盘 Example Walkthrough\n"
-        "- 用“**已知条件 -> 推理步骤 -> 结论**”复述一次。\n"
-        "- 如果这是方法页，优先说明它解决什么问题，以及何时不该使用。\n\n"
-        "> [!TIP]\n"
-        "> 复述时尽量把符号翻译成自然语言，会更容易发现理解漏洞。\n\n"
-        "### 易错点 Pitfalls\n"
-        "- 容易只记英文术语，不建立中文语义。\n"
-        "- 容易只背结论，不检查它依赖的前提条件。\n"
-        "- 容易把相关页当作重复内容，忽略它们提供的上下文。\n\n"
-        "> [!WARNING]\n"
-        "> 常见误区：只背结论、不查前提；只看公式、不解释符号。\n\n"
-        "### 1分钟自测 Quick Check\n"
-        "1. 本页核心结论是什么？\n"
-        "2. 哪个前提变化会让结论失效？\n"
-        "3. 你能用自己的话说出推理路径吗？\n"
-        "\n"
+        f”## 第 {slide.page_num} 页讲解\n\n”
+        f”> [!NOTE]\n”
+        f”> 本页为第 {citation} 页相关内容的讲解，围绕”*{question}*”展开。\n\n”
+        “---\n\n”
+        “## 完整翻译\n\n”
+        f”{summary}\n\n”
+        “（注：AI 讲解暂时不可用，以下为基础框架，请稍后重试获取完整讲解。）\n\n”
+        “---\n\n”
+        “## 知识点讲解\n\n”
+        “当前页面内容提取有限，无法生成完整的深度讲解。请确认 AI 服务正常后重新生成，”
+        “或直接在对话框中提问具体问题。\n”
+        “\n”
     )
 
 
@@ -108,22 +89,19 @@ def _template_roi_explanation(
 ) -> str:
     x, y, w, h = roi_bbox
     region_width, region_height = region_size
-    terms_markdown = format_bilingual_terms_markdown(extracted_text)
     return (
-        f"## 区域解释（Slide {slide.page_num}）\n\n"
+        f"## 区域讲解（第 {slide.page_num} 页）\n\n"
         f"> [!NOTE]\n"
-        f"> **区域坐标**：`x={x:.3f}, y={y:.3f}, w={w:.3f}, h={h:.3f}`\n"
-        f"> **区域像素**：`{region_width} x {region_height}`\n"
-        f"> **解释策略**：局部先解释，再回到整页主线。\n\n"
+        f"> 框选区域坐标：`x={x:.3f}, y={y:.3f}, w={w:.3f}, h={h:.3f}`，"
+        f"像素大小：`{region_width} x {region_height}`\n\n"
         f"**问题**：*{question}*\n\n"
-        "### 术语定位 Terms\n"
-        f"{terms_markdown}\n\n"
-        "### 知识点提炼 Key Concepts\n"
-        "1. 识别该区域的核心对象（符号、变量、概念名）。\n"
-        "2. 判断其角色：*定义（Definition）*、*推导（Derivation）* 还是 *结论（Conclusion）*。\n"
-        "3. 用一句话概括：「本区域说明了 ___，其作用是 ___。」\n\n"
-        "> [!TIP]\n"
-        "> 把这句话写进笔记，后续复习效率最高。\n"
+        "---\n\n"
+        "## 区域内容翻译\n\n"
+        "（注：AI 讲解暂时不可用，无法提取框选区域的完整内容，请稍后重试。）\n\n"
+        "---\n\n"
+        "## 知识点讲解\n\n"
+        "当前无法生成框选区域的深度讲解。请确认 AI 服务正常后重新框选，"
+        "或在对话框中直接描述你想理解的内容。\n"
         "\n"
     )
 
