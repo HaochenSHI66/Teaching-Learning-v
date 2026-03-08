@@ -328,6 +328,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pillow" },
     { name = "pymupdf" },
     { name = "python-dotenv" },
@@ -345,6 +346,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.116.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "pymupdf", specifier = ">=1.26.0" },

@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AIPanel } from "@/components/ai-panel";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { NoteEditor } from "@/components/note-editor";
 import { SlideViewer } from "@/components/slide-viewer";
 import { useChat } from "@/hooks/useChat";
-import { useQuiz } from "@/hooks/useQuiz";
-import { useReview } from "@/hooks/useReview";
 import { useUpload } from "@/hooks/useUpload";
 import {
+  askSlideQuestion,
   autogenNotes,
   exportDocumentExplanations,
   exportNotes,
@@ -33,12 +33,12 @@ function downloadMarkdown(filename: string, markdown: string) {
 function formatNotesMarkdown(input: string) {
   const trimmed = input.replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
   if (!trimmed) {
-    return "# 学习笔记\n\n- [ ] 补充核心结论\n- [ ] 补充易错点\n- [ ] 补充一题练习\n";
+    return "# 笔记\n\n";
   }
   if (trimmed.startsWith("#")) {
     return `${trimmed}\n`;
   }
-  return `# 学习笔记\n\n${trimmed}\n`;
+  return `# 笔记\n\n${trimmed}\n`;
 }
 
 export default function Page() {
@@ -53,19 +53,7 @@ export default function Page() {
   const [notesLoading, setNotesLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [slideGenerationLoading, setSlideGenerationLoading] = useState(false);
-  const [selectedExplanationText, setSelectedExplanationText] = useState("");
-
-  const review = useReview(setGlobalStatus);
-
-  const refreshInsights = useCallback(async () => {
-    if (upload.sessionId) {
-      await review.refresh(upload.sessionId);
-    }
-  // review.refresh is recreated each render but closes over only stable setters
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [upload.sessionId]);
-
-  const quiz = useQuiz(setGlobalStatus, refreshInsights);
+  const [notePanelOpen, setNotePanelOpen] = useState(false);
 
   const currentSlide = useMemo(
     () => upload.slides[currentSlideIndex],
@@ -73,18 +61,10 @@ export default function Page() {
   );
 
   useEffect(() => {
-    if (upload.sessionId) {
-      void review.refresh(upload.sessionId);
-    }
-  }, [upload.sessionId]);
-
-  useEffect(() => {
     setCurrentSlideIndex(0);
     setRoi(null);
     setNotesMarkdown("");
-    setSelectedExplanationText("");
     setGlobalStatus("");
-    quiz.reset();
     chat.setChatInput("");
     chat.clearStatus();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,28 +72,7 @@ export default function Page() {
 
   useEffect(() => {
     setRoi(null);
-    setSelectedExplanationText("");
   }, [currentSlideIndex]);
-
-  useEffect(() => {
-    function handleSelectionChange() {
-      const selection = window.getSelection();
-      const text = selection?.toString().trim() ?? "";
-      const anchorElement =
-        selection?.anchorNode instanceof Element
-          ? selection.anchorNode
-          : selection?.anchorNode?.parentElement ?? null;
-      const inExplanation =
-        anchorElement?.closest?.("[data-note-source='explanation-content']") ?? null;
-
-      if (inExplanation && text) {
-        setSelectedExplanationText(text);
-      }
-    }
-
-    document.addEventListener("selectionchange", handleSelectionChange);
-    return () => document.removeEventListener("selectionchange", handleSelectionChange);
-  }, []);
 
   useEffect(() => {
     if (!currentSlide) {
@@ -124,22 +83,22 @@ export default function Page() {
   }, [currentSlide, upload.cachedExplanations, setExplanation]);
 
   const statusText =
-    chat.statusText || upload.statusText || globalStatus || "就绪";
+    chat.statusText || upload.statusText || globalStatus || "待机";
 
   const loading =
-    upload.loading || chat.loading || quiz.loading || review.loading || notesLoading || slideGenerationLoading;
+    upload.loading || chat.loading || notesLoading || slideGenerationLoading;
   const documentCount = upload.documents.length;
   const pageCount = upload.slides.length;
 
   async function handleExportNotes() {
     if (!upload.sessionId) return;
     setNotesLoading(true);
-    setGlobalStatus("正在导出会话笔记...");
+    setGlobalStatus("导出会话笔记中…");
     try {
       const result = await exportNotes({ sessionId: upload.sessionId, title: "会话笔记" });
       setNotesMarkdown(result.markdown);
       downloadMarkdown("session-notes.md", result.markdown);
-      setGlobalStatus("会话笔记导出完成");
+      setGlobalStatus("笔记已导出");
     } catch (error) {
       setGlobalStatus(`导出失败：${getErrorMessage(error)}`);
     } finally {
@@ -150,12 +109,12 @@ export default function Page() {
   async function handleExportAllExplanations() {
     if (!upload.documentId) return;
     setNotesLoading(true);
-    setGlobalStatus("正在导出整套讲解...");
+    setGlobalStatus("导出解析中…");
     try {
       const result = await exportDocumentExplanations(upload.documentId);
       setNotesMarkdown(result.markdown);
       downloadMarkdown("all-slides-explanations.md", result.markdown);
-      setGlobalStatus("整套讲解导出完成");
+      setGlobalStatus("解析已导出");
     } catch (error) {
       setGlobalStatus(`导出失败：${getErrorMessage(error)}`);
     } finally {
@@ -166,53 +125,77 @@ export default function Page() {
   async function handleAutoGenerateNotes() {
     if (!upload.sessionId) return;
     setNotesLoading(true);
-    setGlobalStatus("正在生成自动笔记...");
+    setGlobalStatus("生成结构化笔记中…");
     try {
       const result = await autogenNotes({ sessionId: upload.sessionId, title: "自动笔记" });
       setNotesMarkdown(result.markdown);
-      setGlobalStatus("自动笔记已生成，可继续手动补充");
+      setGlobalStatus("笔记已生成");
     } catch (error) {
-      setGlobalStatus(`自动笔记生成失败：${getErrorMessage(error)}`);
+      setGlobalStatus(`笔记生成失败：${getErrorMessage(error)}`);
     } finally {
       setNotesLoading(false);
     }
   }
 
-  function handleAppendSelectionToNotes() {
-    const selection = selectedExplanationText.trim();
-    if (!selection) {
-      setGlobalStatus("请先在讲解区域选中文本再添加。");
+  async function handleElaborateSelection(text: string) {
+    if (!upload.sessionId || !currentSlide) {
+      setGlobalStatus("请先选定页面");
       return;
     }
-    setNotesMarkdown((prev) => {
-      const quoted = selection
-        .split("\n")
-        .map((line) => `> ${line}`)
-        .join("\n");
-      const prefix = prev.trim() ? `${prev.trimEnd()}\n\n` : "# 学习笔记\n\n";
-      return `${prefix}## 选中摘录\n${quoted}\n`;
-    });
-    setGlobalStatus("已把选中内容加入笔记。");
+    setSlideGenerationLoading(true);
+    setGlobalStatus("深入解析中…");
+    try {
+      const response = await askSlideQuestion({
+        sessionId: upload.sessionId,
+        message: `请对以下选中内容进行深入、详细的学术解析（约150～300字），结果补充至当前解析末尾：\n\n${text}`,
+        slideId: currentSlide.id,
+        mode: "slide",
+      });
+      const elaboration = `\n\n---\n\n**补充解析**\n\n${response.answer}`;
+      setExplanation(chat.explanation ? `${chat.explanation}${elaboration}` : response.answer);
+      setGlobalStatus("已追加至解析");
+    } catch (error) {
+      setGlobalStatus(`深入解析失败：${getErrorMessage(error)}`);
+    } finally {
+      setSlideGenerationLoading(false);
+    }
+  }
+
+  async function handleAIPolishNotes(content: string): Promise<string> {
+    if (!upload.sessionId) return content;
+    setGlobalStatus("润色中…");
+    try {
+      const response = await askSlideQuestion({
+        sessionId: upload.sessionId,
+        message: `请优化整理以下学习笔记，改善结构与表达，保留所有核心要点，以 Markdown 格式输出：\n\n${content}`,
+        mode: "global",
+      });
+      setGlobalStatus("润色完成");
+      return response.answer;
+    } catch (error) {
+      setGlobalStatus(`AI 润色失败：${getErrorMessage(error)}`);
+      return content;
+    }
   }
 
   async function handleGenerateCurrentSlideExplanation() {
     if (!upload.documentId || !currentSlide) return;
     setSlideGenerationLoading(true);
-    setGlobalStatus("正在覆盖生成当前页讲解...");
+    setGlobalStatus("重新生成解析中…");
     try {
       const result = await generateSlideExplanation(upload.documentId, currentSlide.id);
       upload.setCachedExplanation(currentSlide.id, result.markdown);
       setExplanation(result.markdown);
-      setGlobalStatus("当前页讲解已重新生成并覆盖缓存。");
+      setGlobalStatus("解析已更新");
     } catch (error) {
-      setGlobalStatus(`当前页生成失败：${getErrorMessage(error)}`);
+      setGlobalStatus(`解析生成失败：${getErrorMessage(error)}`);
     } finally {
       setSlideGenerationLoading(false);
     }
   }
 
   async function handleDeleteDocument(targetDocumentId: string, filename: string) {
-    const confirmed = window.confirm(`确定删除《${filename}》吗？这会移除缓存讲解、会话记录和本地文件。`);
+    const confirmed = window.confirm(`确认删除《${filename}》？该操作将清除缓存与会话记录。`);
     if (!confirmed) return;
     await upload.deleteDocument(targetDocumentId);
   }
@@ -223,21 +206,24 @@ export default function Page() {
         <div className="flex items-center justify-between gap-3 px-4 py-2 md:px-5">
           <div className="flex items-center gap-2">
             <button
-              className="btn btn-outline !rounded-full !px-2.5 !py-1 !text-[10px]"
+              className="flex h-8 w-8 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#d7c5aa] bg-[#fffaf1] hover:bg-[#f5ebda] transition-colors"
               onClick={() => setSidebarCollapsed((prev) => !prev)}
               type="button"
+              aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
             >
-              {sidebarCollapsed ? "展开" : "收起"}
+              <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
+              <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
+              <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
             </button>
             <div>
               <p className="text-[9px] uppercase tracking-[0.28em] text-[#8c765f]">Learning Studio</p>
-              <h1 className="text-sm font-semibold leading-tight text-[#463829]">PPT 学习工作台</h1>
+              <h1 className="text-sm font-semibold leading-tight text-[#463829]">幻灯片研习台</h1>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5">
             <div className="rounded-full border border-[#cbb998] bg-[#f5ebda] px-2.5 py-0.5 text-[11px] text-[#5f6d52]">
-              文档 {documentCount}
+              {documentCount} 篇
             </div>
             <div className="rounded-full border border-[#d8bf94] bg-[#f7ecd6] px-2.5 py-0.5 text-[11px] text-[#8c6c46]">
               {currentSlide ? `P${currentSlide.page_num}/${pageCount || 0}` : "—"}
@@ -252,22 +238,16 @@ export default function Page() {
       <div className="relative z-10 flex min-h-0 flex-1 gap-4 overflow-hidden p-4 md:p-5">
         <aside
           className={`min-h-0 overflow-hidden rounded-[28px] border border-[#d9c7ab] bg-[#f7f0e3]/95 shadow-[0_20px_50px_rgba(109,85,58,0.12)] backdrop-blur-xl transition-all duration-300 ${
-            sidebarCollapsed ? "w-[84px]" : "w-[320px]"
+            sidebarCollapsed ? "w-0 p-0 border-0 opacity-0 pointer-events-none" : "w-[320px]"
           }`}
         >
           <div className="flex h-full flex-col p-3">
-            <div className={`mb-3 rounded-[22px] border border-[#e4d8c5] bg-[#fffaf1] p-3 ${sidebarCollapsed ? "text-center" : ""}`}>
-              <p className="text-[10px] uppercase tracking-[0.26em] text-[#9d876f]">
-                {sidebarCollapsed ? "Doc" : "Document Dock"}
+            <div className="mb-3 rounded-[22px] border border-[#e4d8c5] bg-[#fffaf1] p-3">
+              <p className="text-[10px] uppercase tracking-[0.26em] text-[#9d876f]">Document Dock</p>
+              <p className="mt-2 text-sm font-medium text-[#463829]">资料库</p>
+              <p className="mt-1 text-xs leading-5 text-[#877563]">
+                上传文档后自动生成解析缓存，支持多文档切换。
               </p>
-              {!sidebarCollapsed ? (
-                <>
-                  <p className="mt-2 text-sm font-medium text-[#463829]">资料库</p>
-                  <p className="mt-1 text-xs leading-5 text-[#877563]">
-                    上传后自动生成整套讲解缓存，侧栏支持切换与删除。
-                  </p>
-                </>
-              ) : null}
             </div>
 
             <label
@@ -275,7 +255,7 @@ export default function Page() {
                 loading ? "opacity-70" : ""
               }`}
             >
-              <span>{sidebarCollapsed ? "上传" : "上传 PDF/图片"}</span>
+              <span>上传 PDF/图片</span>
               <input
                 accept=".pdf,image/png,image/jpeg,image/webp"
                 className="hidden"
@@ -289,79 +269,112 @@ export default function Page() {
               />
             </label>
 
-            {!sidebarCollapsed ? (
-              <>
-                <div className="mb-2 flex items-center justify-between px-1">
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-[#9a846a]">已上传文档</p>
-                  <span className="text-[11px] text-[#9a846a]">{documentCount} 份</span>
-                </div>
-                <div className="flex-1 space-y-2 overflow-auto pr-1">
-                  {upload.documents.length === 0 ? (
-                    <div className="rounded-[22px] border border-dashed border-[#dbc8ad] bg-[#fffaf2] px-4 py-5 text-sm text-[#8b7764]">
-                      暂无文档。上传一份 PDF 后，这里会显示你的学习资料库。
-                    </div>
-                  ) : (
-                    upload.documents.map((doc) => (
-                      <article
-                        className={`rounded-[22px] border p-3 transition ${
-                          upload.documentId === doc.id
-                            ? "border-[#cab384] bg-[linear-gradient(135deg,#fff8ec_0%,#f2e7d2_62%,#ece4d5_100%)] shadow-[0_18px_36px_rgba(122,98,66,0.12)]"
-                            : "border-[#e0d1bc] bg-[#fffaf2] hover:border-[#cdb796] hover:bg-white"
-                        }`}
-                        key={doc.id}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <button
-                            className="min-w-0 flex-1 text-left"
-                            onClick={() => void upload.loadDocument(doc.id)}
-                            type="button"
-                          >
-                            <p className="truncate text-sm font-medium text-[#463829]">{doc.filename}</p>
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#86715b]">
-                              <span className="rounded-full bg-[#f1e6d4] px-2 py-1">{doc.page_count} 页</span>
-                              <span
-                                className={`rounded-full px-2 py-1 ${
-                                  doc.status === "ready"
-                                    ? "bg-[#e8efe0] text-[#607253]"
-                                    : doc.status === "processing"
-                                      ? "bg-[#f7ecd7] text-[#8c6c46]"
-                                      : "bg-[#f5e3dc] text-[#9a5e4e]"
-                                }`}
-                              >
-                                {doc.status}
-                              </span>
-                            </div>
-                          </button>
-                          <button
-                            className="btn btn-outline !rounded-full !px-2.5 !py-1 text-[11px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
-                            disabled={loading}
-                            onClick={() => void handleDeleteDocument(doc.id, doc.filename)}
-                            type="button"
-                          >
-                            删除
-                          </button>
-                        </div>
-                        <div className="mt-3 flex items-center gap-2">
-                          <button
-                            className="btn btn-soft w-full !rounded-full !py-2 text-[11px]"
-                            disabled={loading || doc.status !== "ready"}
-                            onClick={() => void upload.regenerateDocumentExplanations(doc.id)}
-                            type="button"
-                          >
-                            整份生成讲解
-                          </button>
-                        </div>
-                      </article>
-                    ))
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="mt-2 flex flex-1 flex-col items-center gap-3 text-[11px] text-[#8f7b68]">
-                <div className="rounded-full border border-[#ddccaf] bg-[#fffaf1] px-3 py-2">{documentCount}</div>
-                <div className="rounded-full border border-[#ddccaf] bg-[#fffaf1] px-3 py-2">{pageCount}</div>
+            <>
+              <div className="mb-2 flex items-center justify-between px-1">
+                <p className="text-xs font-medium uppercase tracking-[0.22em] text-[#9a846a]">文档库</p>
+                <span className="text-[11px] text-[#9a846a]">{documentCount} 份</span>
               </div>
-            )}
+              <div className="flex-1 space-y-2 overflow-auto pr-1">
+                {upload.documents.length === 0 ? (
+                  <div className="rounded-[22px] border border-dashed border-[#dbc8ad] bg-[#fffaf2] px-4 py-5 text-sm text-[#8b7764]">
+                    暂无文档。上传 PDF 后显示。
+                  </div>
+                ) : (
+                  upload.documents.map((doc) => (
+                    <article
+                      className={`rounded-[22px] border p-3 transition ${
+                        upload.documentId === doc.id
+                          ? "border-[#cab384] bg-[linear-gradient(135deg,#fff8ec_0%,#f2e7d2_62%,#ece4d5_100%)] shadow-[0_18px_36px_rgba(122,98,66,0.12)]"
+                          : "border-[#e0d1bc] bg-[#fffaf2] hover:border-[#cdb796] hover:bg-white"
+                      }`}
+                      key={doc.id}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => void upload.loadDocument(doc.id)}
+                          type="button"
+                        >
+                          <p className="truncate text-sm font-medium text-[#463829]">{doc.filename}</p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#86715b]">
+                            <span className="rounded-full bg-[#f1e6d4] px-2 py-1">{doc.page_count} 页</span>
+                            <span
+                              className={`rounded-full px-2 py-1 ${
+                                doc.status === "ready"
+                                  ? "bg-[#e8efe0] text-[#607253]"
+                                  : doc.status === "processing"
+                                    ? "bg-[#f7ecd7] text-[#8c6c46]"
+                                    : "bg-[#f5e3dc] text-[#9a5e4e]"
+                              }`}
+                            >
+                              {doc.status}
+                            </span>
+                          </div>
+                        </button>
+                        <button
+                          className="btn btn-outline !rounded-full !px-2.5 !py-1 text-[11px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
+                          disabled={loading}
+                          onClick={() => void handleDeleteDocument(doc.id, doc.filename)}
+                          type="button"
+                        >
+                          删除
+                        </button>
+                      </div>
+                      <div className="mt-3 flex flex-col gap-2">
+                        {upload.generationDocId === doc.id ? (
+                          <>
+                            <div className="flex items-center justify-between text-[11px] text-[#7a6655]">
+                              <span>
+                                {upload.generationProgress
+                                  ? `${upload.generationProgress.current} / ${upload.generationProgress.total} 页`
+                                  : "准备中…"}
+                              </span>
+                              <button
+                                className="btn btn-outline !rounded-full !px-2.5 !py-0.5 !text-[10px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
+                                onClick={upload.abortGeneration}
+                                type="button"
+                              >
+                                终止
+                              </button>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#ede3d3]">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-[#c9a97a] to-[#8a9d76] transition-all duration-300"
+                                style={{
+                                  width: upload.generationProgress
+                                    ? `${(upload.generationProgress.current / upload.generationProgress.total) * 100}%`
+                                    : "0%",
+                                }}
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="btn btn-soft flex-1 !rounded-full !py-2 text-[11px]"
+                              disabled={loading || doc.status !== "ready"}
+                              onClick={() => void upload.regenerateDocumentExplanations(doc.id)}
+                              type="button"
+                            >
+                              生成解析
+                            </button>
+                            {upload.documentId === doc.id && (
+                              <button
+                                className={`btn !rounded-full !py-2 !px-3 text-[11px] ${notePanelOpen ? "btn-dark" : "btn-soft"}`}
+                                onClick={() => setNotePanelOpen((prev) => !prev)}
+                                type="button"
+                              >
+                                笔记
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+            </>
           </div>
         </aside>
 
@@ -376,60 +389,61 @@ export default function Page() {
               />
             </ErrorBoundary>
             <ErrorBoundary>
-              <AIPanel
-                analytics={review.analytics}
-                chatInput={chat.chatInput}
-                chatMessages={chat.chatMessages}
-                currentSlideId={currentSlide?.id}
-                disabled={!currentSlide}
-                explanationState={currentSlide?.explanation_state ?? "not_generated"}
-                explanationLoading={slideGenerationLoading}
-                extraction={currentSlide?.extract ?? null}
-                explanation={chat.explanation}
-                loading={loading}
-                mode={chat.mode}
-                notesMarkdown={notesMarkdown}
-                onAutoGenerateNotes={() => void handleAutoGenerateNotes()}
-                onChatInputChange={chat.setChatInput}
-                onClearSlideMessages={() => {
-                  if (currentSlide) chat.clearSlideMessages(currentSlide.id);
-                }}
-                onCompleteReview={(reviewId, quality) => {
-                  if (upload.sessionId) void review.complete(reviewId, quality, upload.sessionId);
-                }}
-                onExplainRoi={() => {
-                  if (currentSlide && roi && upload.sessionId) {
-                    void chat.askRoi(roi, upload.sessionId, currentSlide);
-                  }
-                }}
-                onExportAllExplanations={() => void handleExportAllExplanations()}
-                onExportNotes={() => void handleExportNotes()}
-                onFormatNotes={() => setNotesMarkdown((prev) => formatNotesMarkdown(prev))}
-                onGenerateExplanation={() => void handleGenerateCurrentSlideExplanation()}
-                onGenerateQuiz={() => {
-                  if (upload.sessionId && currentSlide) {
-                    void quiz.generate(upload.sessionId, currentSlide.id);
-                  }
-                }}
-                onModeChange={chat.setMode}
-                onNotesChange={setNotesMarkdown}
-                onAppendSelectionToNotes={handleAppendSelectionToNotes}
-                onQuizAnswerChange={quiz.setAnswer}
-                onRefreshReview={() => {
-                  if (upload.sessionId) void review.refresh(upload.sessionId);
-                }}
-                onSendChat={() => {
-                  const message = chat.chatInput;
-                  chat.setChatInput("");
-                  if (upload.sessionId) void chat.ask(message, upload.sessionId, currentSlide);
-                }}
-                onSubmitQuiz={() => void quiz.submit()}
-                quizAnswers={quiz.quizAnswers}
-                quizFeedback={quiz.quizFeedback}
-                quizQuestions={quiz.quizQuestions}
-                reviewItems={review.reviewItems}
-                roiReady={Boolean(roi)}
-              />
+              {notePanelOpen ? (
+                <NoteEditor
+                  markdown={notesMarkdown}
+                  onChange={setNotesMarkdown}
+                  onFormat={() => setNotesMarkdown((prev) => formatNotesMarkdown(prev))}
+                  onAIOrganize={() => void handleAutoGenerateNotes()}
+                  onAIPolish={handleAIPolishNotes}
+                  onExport={() => void handleExportNotes()}
+                  loading={loading}
+                  disabled={!currentSlide}
+                  documentName={upload.documents.find((d) => d.id === upload.documentId)?.filename}
+                />
+              ) : (
+                <AIPanel
+                  chatInput={chat.chatInput}
+                  chatMessages={chat.chatMessages}
+                  currentSlideId={currentSlide?.id}
+                  disabled={!currentSlide}
+                  explanationState={currentSlide?.explanation_state ?? "not_generated"}
+                  explanationLoading={slideGenerationLoading}
+                  extraction={currentSlide?.extract ?? null}
+                  explanation={chat.explanation}
+                  loading={loading}
+                  mode={chat.mode}
+                  onChatInputChange={chat.setChatInput}
+                  onClearSlideMessages={() => {
+                    if (currentSlide) chat.clearSlideMessages(currentSlide.id);
+                  }}
+                  onElaborateSelection={handleElaborateSelection}
+                  onExplainRoi={() => {
+                    if (currentSlide && roi && upload.sessionId) {
+                      void chat.askRoi(roi, upload.sessionId, currentSlide);
+                    }
+                  }}
+                  onGenerateExplanation={() => void handleGenerateCurrentSlideExplanation()}
+                  onInsertToNotes={(text) => {
+                    setNotesMarkdown((prev) => {
+                      const quoted = text
+                        .split("\n")
+                        .map((line) => `> ${line}`)
+                        .join("\n");
+                      const prefix = prev.trim() ? `${prev.trimEnd()}\n\n` : "# 笔记\n\n";
+                      return `${prefix}## 摘录\n${quoted}\n`;
+                    });
+                    setGlobalStatus("已摘录");
+                  }}
+                  onModeChange={chat.setMode}
+                  onSendChat={() => {
+                    const message = chat.chatInput;
+                    chat.setChatInput("");
+                    if (upload.sessionId) void chat.ask(message, upload.sessionId, currentSlide);
+                  }}
+                  roiReady={Boolean(roi)}
+                />
+              )}
             </ErrorBoundary>
         </section>
       </div>

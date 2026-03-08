@@ -65,7 +65,7 @@ def build_slide_explanation_prompt(
         "1. 全文使用中文讲解，但核心知识点术语必须采用“中文（English）”格式。\n"
         "2. 输出必须是结构化 Markdown，不要输出 JSON，不要输出多余寒暄。\n"
         "3. 必须包含以下部分：\n"
-        "   - ## Slide 标题\n"
+        "   - ## [页面实际标题]（从页面内容提取，禁止写 'Slide 标题' 这个占位符）\n"
         "   - NOTE callout，总结本页主题与引用页码\n"
         "   - ### 本页在讲什么 Summary\n"
         "   - ### 核心术语 Core Terms\n"

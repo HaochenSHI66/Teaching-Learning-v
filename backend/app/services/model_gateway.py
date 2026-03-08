@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import re
+
+
+def _strip_markdown_fence(text: str) -> str:
+    """Remove a single outer ```markdown / ``` wrapper that LLMs sometimes add."""
+    stripped = re.sub(r"^```[a-zA-Z]*\n", "", text.strip(), count=1)
+    stripped = re.sub(r"\n```$", "", stripped.rstrip())
+    return stripped.strip()
 
 
 class ModelGateway:
@@ -120,12 +128,12 @@ class ModelGateway:
         message = choices[0].get("message") or {}
         content = message.get("content")
         if isinstance(content, str) and content.strip():
-            return content.strip()
+            return _strip_markdown_fence(content.strip())
         if isinstance(content, list):
             parts = [item.get("text", "") for item in content if isinstance(item, dict)]
             merged = "\n".join(part for part in parts if part.strip()).strip()
             if merged:
-                return merged
+                return _strip_markdown_fence(merged)
         raise RuntimeError("Model gateway returned empty content")
 
     def _image_to_data_url(self, image_path: Path) -> str:

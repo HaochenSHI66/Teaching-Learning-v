@@ -6,7 +6,7 @@ export type Slide = {
   width: number;
   height: number;
   explanation_state: "not_generated" | "ready" | "generating" | "error";
-  extract: SlideExtract;
+  extract: SlideExtract | null;
 };
 
 export type SlideExtractBlock = {

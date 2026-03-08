@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   createSession,
@@ -9,12 +9,14 @@ import {
   fetchDocuments,
   fetchDocumentStatus,
   fetchSlides,
-  generateDocumentExplanations as generateDocumentExplanationsRequest,
+  generateSlideExplanation,
   pollDocumentReady,
   uploadDocument,
   type DocumentListItem,
   type Slide,
 } from "@/lib/api";
+
+type GenerationProgress = { current: number; total: number };
 
 type UploadState = {
   documentId: string | null;
@@ -24,6 +26,8 @@ type UploadState = {
   cachedExplanations: Record<string, string>;
   loading: boolean;
   statusText: string;
+  generationDocId: string | null;
+  generationProgress: GenerationProgress | null;
 };
 
 type UploadActions = {
@@ -31,6 +35,7 @@ type UploadActions = {
   loadDocument: (documentId: string) => Promise<void>;
   deleteDocument: (documentId: string) => Promise<void>;
   regenerateDocumentExplanations: (documentId: string) => Promise<void>;
+  abortGeneration: () => void;
   setCachedExplanation: (slideId: string, markdown: string) => void;
   refreshDocuments: () => Promise<void>;
   reset: () => void;
@@ -44,6 +49,9 @@ export function useUpload(): UploadState & UploadActions {
   const [cachedExplanations, setCachedExplanations] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("请先上传 PDF/图片开始学习。");
+  const [generationDocId, setGenerationDocId] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
+  const abortRef = useRef(false);
 
   useEffect(() => {
     void refreshDocuments();
@@ -161,22 +169,48 @@ export function useUpload(): UploadState & UploadActions {
   }
 
   async function regenerateDocumentExplanations(targetDocumentId: string) {
+    abortRef.current = false;
     setLoading(true);
-    setStatusText("正在覆盖生成整份讲解...");
+    setGenerationDocId(targetDocumentId);
+    setStatusText("获取页面列表中…");
     try {
-      await generateDocumentExplanationsRequest(targetDocumentId);
-      if (documentId === targetDocumentId) {
-        await hydrateDocument(targetDocumentId, { resetSession: false });
+      const targetSlides = await fetchSlides(targetDocumentId);
+      const total = targetSlides.length;
+      setGenerationProgress({ current: 0, total });
+
+      let completed = 0;
+      for (const slide of targetSlides) {
+        if (abortRef.current) {
+          setStatusText(`已中止（${completed}/${total} 页）`);
+          break;
+        }
+        setStatusText(`生成解析中… ${completed + 1}/${total} 页`);
+        const result = await generateSlideExplanation(targetDocumentId, slide.id);
+        completed++;
+        setGenerationProgress({ current: completed, total });
+        setCachedExplanations((prev) => ({ ...prev, [slide.id]: result.markdown }));
+        setSlides((prev) =>
+          prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
+        );
+      }
+
+      if (!abortRef.current) {
+        setStatusText(`解析已生成（${completed}/${total} 页）`);
       }
       await refreshDocuments();
-      setStatusText("整份讲解已重新生成并覆盖缓存。");
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知错误";
       setStatusText(`整份生成失败：${message}`);
-      throw error;
     } finally {
       setLoading(false);
+      setGenerationDocId(null);
+      setGenerationProgress(null);
+      abortRef.current = false;
     }
+  }
+
+  function abortGeneration() {
+    abortRef.current = true;
   }
 
   function setCachedExplanation(slideId: string, markdown: string) {
@@ -204,10 +238,13 @@ export function useUpload(): UploadState & UploadActions {
     cachedExplanations,
     loading,
     statusText,
+    generationDocId,
+    generationProgress,
     handleUpload,
     loadDocument,
     deleteDocument,
     regenerateDocumentExplanations,
+    abortGeneration,
     setCachedExplanation,
     refreshDocuments,
     reset,

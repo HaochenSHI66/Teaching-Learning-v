@@ -10,6 +10,13 @@ type MarkdownContentProps = {
   className?: string;
 };
 
+function stripCodeFence(markdown: string): string {
+  const stripped = markdown.replace(/^```[a-zA-Z]*\n/, "").replace(/\n```$/, "");
+  // Only return stripped version if it actually removed an outer fence
+  if (stripped.length < markdown.length) return stripped.trim();
+  return markdown;
+}
+
 function normalizeCallouts(markdown: string): string {
   return markdown
     .split("\n")
@@ -53,7 +60,7 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
         rehypePlugins={[rehypeRaw]}
         remarkPlugins={[remarkGfm]}
       >
-        {normalizeCallouts(content)}
+        {normalizeCallouts(stripCodeFence(content))}
       </ReactMarkdown>
     </div>
   );

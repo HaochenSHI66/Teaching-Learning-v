@@ -61,7 +61,6 @@ export function useChat(): ChatState & ChatActions {
           slideId: mode === "slide" ? slide?.id : undefined,
           mode,
         });
-        setExplanation(response.answer);
         setChatMessages((prev) => [
           ...prev,
           { id: nextId(), role: "assistant", content: response.answer, slideId },
@@ -96,7 +95,6 @@ export function useChat(): ChatState & ChatActions {
         message: "请解释我框选的区域",
         roi,
       });
-      setExplanation(response.answer);
       setChatMessages((prev) => [
         ...prev,
         { id: nextId(), role: "assistant", content: response.answer, slideId: slide.id },

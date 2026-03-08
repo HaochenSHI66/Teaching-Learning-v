@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { MarkdownContent } from "@/components/markdown-content";
+import { SelectionPopup } from "@/components/selection-popup";
 import type { ChatMessage } from "@/hooks/useChat";
-import type { QuizQuestion, ReviewItem, SessionAnalyticsPayload, SlideExtract } from "@/lib/api";
+import type { SlideExtract } from "@/lib/api";
 
 type AIPanelProps = {
   disabled: boolean;
@@ -16,80 +17,89 @@ type AIPanelProps = {
   chatInput: string;
   chatMessages: ChatMessage[];
   currentSlideId?: string;
-  notesMarkdown: string;
   mode: "slide" | "global";
   roiReady: boolean;
-  quizQuestions: QuizQuestion[];
-  quizAnswers: Record<string, string>;
-  quizFeedback: string;
-  reviewItems: ReviewItem[];
-  analytics: SessionAnalyticsPayload | null;
   onModeChange: (mode: "slide" | "global") => void;
   onChatInputChange: (value: string) => void;
   onSendChat: () => void;
   onGenerateExplanation: () => void;
   onExplainRoi: () => void;
-  onExportNotes: () => void;
-  onExportAllExplanations: () => void;
-  onAutoGenerateNotes: () => void;
-  onAppendSelectionToNotes: () => void;
-  onFormatNotes: () => void;
-  onNotesChange: (value: string) => void;
-  onGenerateQuiz: () => void;
-  onQuizAnswerChange: (questionId: string, answer: string) => void;
-  onSubmitQuiz: () => void;
-  onRefreshReview: () => void;
-  onCompleteReview: (reviewId: string, quality: number) => void;
   onClearSlideMessages: () => void;
+  onInsertToNotes: (text: string) => void;
+  onElaborateSelection: (text: string) => void;
 };
 
 const TABS = [
   { key: "explain", label: "解析" },
   { key: "extract", label: "结构" },
   { key: "chat", label: "追问" },
-  { key: "notes", label: "笔记" },
-  { key: "quiz", label: "测验" },
-  { key: "review", label: "复习" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
 
-const QUALITY_LABELS: { quality: number; label: string; className: string }[] = [
-  { quality: 0, label: "完全不会", className: "btn btn-quality-danger" },
-  { quality: 2, label: "模糊记得", className: "btn btn-quality-warn" },
-  { quality: 4, label: "基本掌握", className: "btn btn-quality-ok" },
-  { quality: 5, label: "完全掌握", className: "btn btn-quality-done" },
-];
 
 function buildExtractionMarkdown(extraction: SlideExtract | null) {
   if (!extraction) {
     return "> [!NOTE]\n> 当前页尚未提取出结构化内容。";
   }
 
+  const stats = extraction.page_stats;
+  // Derive counts from available data when page_stats is empty (legacy documents)
+  const wordCount = stats.word_count ?? (extraction.text ? extraction.text.split(/\s+/).filter(Boolean).length : 0);
+  const textBlockCount = stats.text_block_count ?? extraction.text_blocks.length;
+  const bulletCount = stats.bullet_count ?? extraction.bullet_blocks.length;
+  const figureCount = stats.figure_count ?? extraction.figures.length;
+
   const lines = [
     "> [!NOTE]",
-    "> 非大模型提取结果，可用于定位页面结构、图块与阅读顺序。",
-    "",
-    `**摘要**：${extraction.summary || "本页以图像或版面结构为主，暂无稳定文本摘要。"}`,
+    "> 非大模型提取，用于定位页面结构与阅读顺序。",
     "",
     "### 页面统计",
-    `- 文本块：**${extraction.page_stats.text_block_count ?? 0}**`,
-    `- 图示区域：**${extraction.page_stats.figure_count ?? 0}**`,
-    `- 表格：**${extraction.page_stats.table_count ?? 0}**`,
+    `- 文字量（词）：**${wordCount}**`,
+    `- 文本块：**${textBlockCount}**（含要点 **${bulletCount}**）`,
+    `- 图示区域：**${figureCount}**`,
   ];
 
   if (extraction.title_candidates.length > 0) {
     lines.push("", "### 标题候选", ...extraction.title_candidates.slice(0, 3).map((t) => `- ${t}`));
   }
-  if (extraction.text_blocks.length > 0) {
-    lines.push("", "### 文本块");
-    for (const b of extraction.text_blocks.slice(0, 5)) {
-      lines.push(`- **${b.type}**: ${b.text ?? ""}`);
+
+  // Prefer structured blocks; fall back to raw text when blocks are absent (legacy)
+  const allTextBlocks = [...extraction.text_blocks, ...extraction.bullet_blocks];
+  if (allTextBlocks.length > 0) {
+    lines.push("", "### 页面文本");
+    for (const b of allTextBlocks) {
+      const prefix = b.type === "bullet" ? "- " : "";
+      const snippet = (b.text ?? "").trim();
+      if (snippet) lines.push(`${prefix}${snippet}`);
+    }
+  } else if (extraction.text.trim()) {
+    lines.push("", "### 页面文本");
+    lines.push(extraction.text.trim());
+  }
+
+  if (extraction.equation_like_blocks.length > 0) {
+    lines.push("", "### 公式/数学区域");
+    for (const b of extraction.equation_like_blocks) {
+      const snippet = (b.text ?? "").trim();
+      if (snippet) lines.push(`- ${snippet}`);
     }
   }
+
+  if (extraction.code_like_blocks.length > 0) {
+    lines.push("", "### 代码区域");
+    for (const b of extraction.code_like_blocks) {
+      const snippet = (b.text ?? "").trim();
+      if (snippet) lines.push("```\n" + snippet + "\n```");
+    }
+  }
+
   if (extraction.figures.length > 0) {
     lines.push("", "### 图示区域");
-    for (const f of extraction.figures) lines.push(`- **${f.label ?? f.id}**`);
+    for (const f of extraction.figures) {
+      const label = f.label && !f.label.startsWith("Figure Region") ? f.label : null;
+      lines.push(`- ${label ?? `图 ${f.order + 1}`}`);
+    }
   }
 
   return lines.join("\n");
@@ -104,7 +114,7 @@ function getExplanationBadge(
     case "ready":      return { label: "已缓存", cls: "bg-[#e8efe0] text-[#607253] border-[#c8d5b9]" };
     case "error":      return { label: "失败",   cls: "bg-[#f5e3dc] text-[#9a5e4e] border-[#e0b5a7]" };
     case "generating": return { label: "生成中", cls: "bg-[#f7ecd6] text-[#8c6c46] border-[#d8bf94]" };
-    default:           return { label: "未生成", cls: "bg-[#efe7dc] text-[#826f5c] border-[#ddcfbc]" };
+    default:           return { label: "待生成", cls: "bg-[#efe7dc] text-[#826f5c] border-[#ddcfbc]" };
   }
 }
 
@@ -118,33 +128,19 @@ export function AIPanel({
   chatInput,
   chatMessages,
   currentSlideId,
-  notesMarkdown,
   mode,
   roiReady,
-  quizQuestions,
-  quizAnswers,
-  quizFeedback,
-  reviewItems,
-  analytics,
   onModeChange,
   onChatInputChange,
   onSendChat,
   onGenerateExplanation,
   onExplainRoi,
-  onExportNotes,
-  onExportAllExplanations,
-  onAutoGenerateNotes,
-  onAppendSelectionToNotes,
-  onFormatNotes,
-  onNotesChange,
-  onGenerateQuiz,
-  onQuizAnswerChange,
-  onSubmitQuiz,
-  onRefreshReview,
-  onCompleteReview,
   onClearSlideMessages,
+  onInsertToNotes,
+  onElaborateSelection,
 }: AIPanelProps) {
   const [tab, setTab] = useState<TabKey>("explain");
+  const explanationRef = useRef<HTMLDivElement>(null);
   const badge = getExplanationBadge(explanationState, explanationLoading);
   const extractionMarkdown = buildExtractionMarkdown(extraction);
 
@@ -172,53 +168,61 @@ export function AIPanel({
 
       {/* ── 解析 ─────────────────────────────────────── */}
       {tab === "explain" && (
-        <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8]">
-          <header className="shrink-0 flex items-center justify-between gap-2 border-b border-[#eee2cf] px-3 py-2">
-            <p className="text-[11px] font-medium text-[#4b3d2f]">当前页 AI 解析</p>
-            <div className="flex items-center gap-1.5">
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] ${badge.cls}`}>{badge.label}</span>
-              <button
-                className="btn btn-primary !px-3 !py-1.5 !text-[11px]"
-                disabled={disabled || loading}
-                onClick={onGenerateExplanation}
-                type="button"
-              >
-                {explanationLoading ? "生成中…" : "生成解析"}
-              </button>
-            </div>
-          </header>
-
-          {explanationLoading && (
-            <div className="shrink-0 border-b border-[#eee2cf] px-3 py-2">
-              <div className="mb-1 flex items-center justify-between text-[10px] text-[#9a7e63]">
-                <span>正在调用 AI，请稍候…</span>
-                <span className="animate-pulse">●</span>
+        <>
+          <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8]">
+            <header className="shrink-0 flex items-center justify-between gap-2 border-b border-[#eee2cf] px-3 py-2">
+              <p className="text-[11px] font-medium text-[#4b3d2f]">当前页解析</p>
+              <div className="flex items-center gap-1.5">
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] ${badge.cls}`}>{badge.label}</span>
+                <button
+                  className="btn btn-primary !px-3 !py-1.5 !text-[11px]"
+                  disabled={disabled || loading}
+                  onClick={onGenerateExplanation}
+                  type="button"
+                >
+                  {explanationLoading ? "生成中…" : "生成解析"}
+                </button>
               </div>
-              <div className="h-1 w-full overflow-hidden rounded-full bg-[#ede3d3]">
-                <div className="h-full w-1/2 animate-[slide_1.6s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-[#c9a97a] via-[#e8c98a] to-[#c9a97a]" />
-              </div>
-            </div>
-          )}
+            </header>
 
-          <div className="min-h-0 flex-1 overflow-auto p-3" data-note-source="explanation-content">
-            {explanation ? (
-              <MarkdownContent content={explanation} />
-            ) : (
-              <MarkdownContent
-                content={
-                  "> [!NOTE]\n> 当前页 AI 解析尚未生成。\n> 可先切换到「结构」标签查看提取内容，再点击「生成解析」。"
-                }
-              />
+            {explanationLoading && (
+              <div className="shrink-0 border-b border-[#eee2cf] px-3 py-2">
+                <div className="mb-1 flex items-center justify-between text-[10px] text-[#9a7e63]">
+                  <span>解析生成中…</span>
+                  <span className="animate-pulse">●</span>
+                </div>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-[#ede3d3]">
+                  <div className="h-full w-1/2 animate-[slide_1.6s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-[#c9a97a] via-[#e8c98a] to-[#c9a97a]" />
+                </div>
+              </div>
             )}
-          </div>
-        </section>
+
+            <div ref={explanationRef} className="min-h-0 flex-1 overflow-auto p-3" data-note-source="explanation-content">
+              {explanation ? (
+                <MarkdownContent content={explanation} />
+              ) : (
+                <MarkdownContent
+                  content={
+                    "> [!NOTE]\n> 当前页解析尚未生成，点击「生成解析」开始。"
+                  }
+                />
+              )}
+            </div>
+          </section>
+          <SelectionPopup
+            containerRef={explanationRef}
+            onInsert={onInsertToNotes}
+            onElaborate={onElaborateSelection}
+            disabled={disabled || loading}
+          />
+        </>
       )}
 
       {/* ── 结构 ─────────────────────────────────────── */}
       {tab === "extract" && (
         <div className="min-h-0 flex-1 overflow-auto rounded-[22px] border border-[#ddcfbc] bg-[#fffdf8] p-3">
           <div className="mb-2 flex items-center gap-2">
-            <p className="text-[11px] font-medium text-[#4b3d2f]">页面结构提取</p>
+            <p className="text-[11px] font-medium text-[#4b3d2f]">页面结构</p>
             <span className="rounded-full border border-[#ddcfbc] bg-[#f4ecdf] px-2 py-0.5 text-[9px] text-[#7e6a57]">Non-LLM</span>
           </div>
           <MarkdownContent content={extractionMarkdown} />
@@ -233,9 +237,8 @@ export function AIPanel({
                       src={figure.preview_image_url}
                     />
                   ) : null}
-                  <p className="text-[11px] font-medium text-[#4f4031]">{figure.label ?? figure.id}</p>
-                  <p className="mt-0.5 text-[10px] text-[#8a7764]">
-                    bbox: {figure.bbox.map((v) => v.toFixed(0)).join(", ")}
+                  <p className="text-[11px] font-medium text-[#4f4031]">
+                    {figure.label && !figure.label.startsWith("Figure Region") ? figure.label : `图 ${figure.order + 1}`}
                   </p>
                 </article>
               ))}
@@ -271,7 +274,7 @@ export function AIPanel({
           {/* Collapsible history */}
           <details className="shrink-0 overflow-hidden rounded-[16px] border border-[#e0d0bb] bg-[#fffdf8]" open={slideMessages.length > 0}>
             <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2 text-[10px] text-[#9a846a] hover:bg-[#f8f2e8]">
-              <span>本页追问记录（{Math.floor(slideMessages.length / 2)} 轮）</span>
+              <span>本页问答（{Math.floor(slideMessages.length / 2)} 条）</span>
               <button
                 className="btn btn-outline !rounded-lg !px-2 !py-0.5 !text-[10px]"
                 disabled={slideMessages.length === 0}
@@ -283,7 +286,7 @@ export function AIPanel({
             </summary>
             <div className="max-h-44 space-y-1.5 overflow-auto border-t border-[#eee2cf] px-3 py-2">
               {slideMessages.length === 0 ? (
-                <p className="text-[11px] text-[#b09a87]">暂无本页追问记录。</p>
+                <p className="text-[11px] text-[#b09a87]">暂无问答记录。</p>
               ) : (
                 slideMessages.map((m) => (
                   <div
@@ -312,10 +315,10 @@ export function AIPanel({
               onClick={onExplainRoi}
               type="button"
             >
-              {loading ? "处理中…" : "解释框选区域"}
+              {loading ? "处理中…" : "解析框选区域"}
             </button>
             <p className="rounded-[14px] border border-dashed border-[#d8bf94] bg-[#fbf1df] px-2 py-1.5 text-[10px] text-[#8b6b45]">
-              {roiReady ? "ROI 已选，点击解释。" : "先在左侧框选区域。"}
+              {roiReady ? "区域已选，点击解析。" : "框选左侧区域后解析。"}
             </p>
           </div>
 
@@ -328,7 +331,7 @@ export function AIPanel({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSendChat();
               }}
-              placeholder="输入追问，Ctrl/⌘+Enter 发送"
+              placeholder="输入问题，Ctrl/⌘+Enter 发送"
               value={chatInput}
             />
             <button
@@ -337,144 +340,12 @@ export function AIPanel({
               onClick={onSendChat}
               type="button"
             >
-              {loading ? "发送中…" : "发送追问"}
+              {loading ? "发送中…" : "发送"}
             </button>
           </div>
         </div>
       )}
 
-      {/* ── 笔记 ─────────────────────────────────────── */}
-      {tab === "notes" && (
-        <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-          <div className="shrink-0 grid grid-cols-2 gap-1 md:grid-cols-3">
-            <button className="btn btn-dark !py-1.5 !text-[11px]" disabled={disabled || loading} onClick={onAutoGenerateNotes} type="button">自动生成笔记</button>
-            <button className="btn btn-success !py-1.5 !text-[11px]" disabled={disabled || loading} onClick={onAppendSelectionToNotes} type="button">添加选中解释</button>
-            <button className="btn btn-violet !py-1.5 !text-[11px]" disabled={disabled || loading} onClick={onFormatNotes} type="button">格式化</button>
-            <button className="btn btn-soft !py-1.5 !text-[11px]" disabled={disabled || loading} onClick={onExportNotes} type="button">导出会话笔记</button>
-            <button className="btn btn-blue col-span-2 !py-1.5 !text-[11px] md:col-span-1" disabled={disabled || loading} onClick={onExportAllExplanations} type="button">导出全部解析</button>
-          </div>
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-1.5 lg:grid-cols-2">
-            <textarea
-              className="h-full min-h-[160px] rounded-[20px] border border-[#deccb1] bg-[#fffdf8] p-2.5 font-mono text-[11px] leading-5 text-[#5a4938] shadow-inner"
-              onChange={(e) => onNotesChange(e.target.value)}
-              value={notesMarkdown}
-            />
-            <div className="min-h-0 overflow-auto rounded-[20px] border border-[#deccb1] bg-[#fffdf8] p-3">
-              {notesMarkdown.trim() ? (
-                <MarkdownContent content={notesMarkdown} />
-              ) : (
-                <p className="text-xs text-[#907d69]">笔记预览区</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── 测验 ─────────────────────────────────────── */}
-      {tab === "quiz" && (
-        <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-          <div className="shrink-0 grid grid-cols-2 gap-1.5">
-            <button className="btn btn-indigo !py-1.5 !text-[11px]" disabled={disabled || loading} onClick={onGenerateQuiz} type="button">
-              {loading ? "生成中…" : "生成本页测验"}
-            </button>
-            <button className="btn btn-dark !py-1.5 !text-[11px]" disabled={disabled || loading || quizQuestions.length === 0} onClick={onSubmitQuiz} type="button">
-              {loading ? "批改中…" : "提交批改"}
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 space-y-2 overflow-auto rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8] p-3">
-            {quizQuestions.length === 0 ? (
-              <p className="text-xs text-[#8c7866]">先生成测验，再选择答案提交。</p>
-            ) : (
-              quizQuestions.map((q) => (
-                <article className="rounded-[18px] border border-[#e0d0bb] bg-white p-2.5 shadow-sm" key={q.id}>
-                  <p className="mb-1.5 text-xs font-medium text-[#4f4031]">{q.prompt}</p>
-                  <div className="grid gap-1">
-                    {q.options.map((option) => {
-                      const optionKey = option.split(".")[0] ?? option;
-                      const selected = quizAnswers[q.id] === optionKey;
-                      return (
-                        <button
-                          className={`btn !justify-start !rounded-lg !px-2 !py-1 text-left !text-[11px] ${selected ? "btn-quality-done" : "btn-soft"}`}
-                          key={option}
-                          onClick={() => onQuizAnswerChange(q.id, optionKey)}
-                          type="button"
-                        >
-                          {option}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </article>
-              ))
-            )}
-          </div>
-
-          <div className="shrink-0 overflow-auto rounded-[18px] bg-[#edf1f4] px-3 py-2 text-[11px] text-[#5f7488]">
-            <MarkdownContent content={quizFeedback || "批改结果将显示在这里。"} />
-          </div>
-        </div>
-      )}
-
-      {/* ── 复习 ─────────────────────────────────────── */}
-      {tab === "review" && (
-        <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-          <button
-            className="shrink-0 btn btn-success !py-1.5 !text-[11px]"
-            disabled={disabled || loading}
-            onClick={onRefreshReview}
-            type="button"
-          >
-            {loading ? "刷新中…" : "刷新复习队列"}
-          </button>
-
-          <div className="shrink-0 grid grid-cols-2 gap-1.5 md:grid-cols-4">
-            <div className="rounded-[16px] bg-[#edf2e4] p-2 text-[#607253]">
-              <div className="text-[9px] uppercase tracking-wider">提问</div>
-              <div className="text-base font-semibold">{analytics?.user_messages ?? 0}</div>
-            </div>
-            <div className="rounded-[16px] bg-[#f4efe4] p-2 text-[#8b7758]">
-              <div className="text-[9px] uppercase tracking-wider">回答</div>
-              <div className="text-base font-semibold">{analytics?.assistant_messages ?? 0}</div>
-            </div>
-            <div className="rounded-[16px] bg-[#f0e7df] p-2 text-[#8d6a58]">
-              <div className="text-[9px] uppercase tracking-wider">测验</div>
-              <div className="text-base font-semibold">{analytics?.quiz_attempts ?? 0}</div>
-            </div>
-            <div className="rounded-[16px] bg-[#f7ecd8] p-2 text-[#8b6c46]">
-              <div className="text-[9px] uppercase tracking-wider">掌握度</div>
-              <div className="text-base font-semibold">{analytics?.avg_quiz_score_percent ?? 0}%</div>
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 space-y-1.5 overflow-auto rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8] p-3">
-            {reviewItems.length === 0 ? (
-              <p className="text-xs text-[#8c7866]">暂无待复习项。测验后错题会自动加入。</p>
-            ) : (
-              reviewItems.map((item) => (
-                <article className="rounded-[18px] border border-[#e0d0bb] bg-white p-2.5 shadow-sm" key={item.id}>
-                  <p className="text-xs font-medium text-[#4f4031]">{item.prompt}</p>
-                  <p className="mt-0.5 text-[10px] text-[#8c7866]">
-                    间隔 {item.interval_days.toFixed(1)} 天 · 熟练度 {item.easiness.toFixed(2)} · 到期 {item.due_at.slice(0, 10)}
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {QUALITY_LABELS.map(({ quality, label, className }) => (
-                      <button
-                        className={`${className} !rounded-lg !px-2 !py-1 !text-[10px]`}
-                        key={quality}
-                        onClick={() => onCompleteReview(item.id, quality)}
-                        type="button"
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </article>
-              ))
-            )}
-          </div>
-        </div>
-      )}
     </section>
   );
 }
