@@ -2,8 +2,10 @@
 
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 
 type MarkdownContentProps = {
   content: string;
@@ -57,8 +59,8 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
             return <blockquote className={`callout ${tone}`}>{children}</blockquote>;
           },
         }}
-        rehypePlugins={[rehypeRaw]}
-        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw, rehypeKatex]}
+        remarkPlugins={[remarkGfm, remarkMath]}
       >
         {normalizeCallouts(stripCodeFence(content))}
       </ReactMarkdown>
