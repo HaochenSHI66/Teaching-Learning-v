@@ -9,6 +9,8 @@ class DocumentRead(BaseModel):
     id: str
     filename: str
     media_type: str
+    folder_id: str | None = None
+    sort_order: int = 0
     status: str
     page_count: int
 
@@ -27,6 +29,8 @@ class DocumentStatusResponse(BaseModel):
 class DocumentListItem(BaseModel):
     id: str
     filename: str
+    folder_id: str | None = None
+    sort_order: int = 0
     status: str
     page_count: int
     created_at: datetime
@@ -34,6 +38,68 @@ class DocumentListItem(BaseModel):
 
 class DocumentListResponse(BaseModel):
     documents: list[DocumentListItem]
+
+
+class FolderDocumentItem(BaseModel):
+    id: str
+    filename: str
+    folder_id: str | None = None
+    sort_order: int = 0
+    status: str
+    page_count: int
+    created_at: datetime
+
+
+class FolderRead(BaseModel):
+    id: str
+    name: str
+    color: str
+    sort_order: int
+    created_at: datetime
+
+
+class FolderGroupRead(FolderRead):
+    documents: list[FolderDocumentItem]
+
+
+class UncategorizedGroupRead(BaseModel):
+    id: str = "uncategorized"
+    name: str = "未归类"
+    documents: list[FolderDocumentItem]
+
+
+class FolderLibraryResponse(BaseModel):
+    folders: list[FolderGroupRead]
+    uncategorized: UncategorizedGroupRead
+
+
+class FolderCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    color: str = Field(default="oat", min_length=1, max_length=40)
+
+
+class FolderUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    color: str | None = Field(default=None, min_length=1, max_length=40)
+
+
+class FolderResponse(BaseModel):
+    folder: FolderRead
+
+
+class FolderDeleteResponse(BaseModel):
+    id: str
+    deleted: bool
+
+
+class MoveDocumentRequest(BaseModel):
+    document_id: str
+    target_folder_id: str | None = None
+    target_index: int = Field(default=0, ge=0)
+
+
+class MoveDocumentResponse(BaseModel):
+    document: FolderDocumentItem
 
 
 class SlideExtractBlockRead(BaseModel):

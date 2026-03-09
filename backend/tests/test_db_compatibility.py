@@ -45,6 +45,12 @@ def test_init_db_backfills_columns_for_existing_sqlite_databases(tmp_path: Path)
 
     assert "context" in _columns(db_path, "message")
     assert {"repetitions", "interval_days", "easiness"} <= _columns(db_path, "reviewitem")
+    assert {"folder_id", "sort_order"} <= _columns(db_path, "document")
+    with sqlite3.connect(db_path) as connection:
+        folder_table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='folder'"
+        ).fetchone()
+    assert folder_table is not None
 
 
 def test_init_db_is_idempotent_when_backfill_columns_already_exist(tmp_path: Path) -> None:

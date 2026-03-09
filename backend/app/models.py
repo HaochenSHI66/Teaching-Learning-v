@@ -20,8 +20,18 @@ class Document(SQLModel, table=True):
     filename: str
     media_type: str
     storage_path: str
+    folder_id: str | None = Field(default=None, index=True)
+    sort_order: int = Field(default=0, index=True)
     status: str = Field(default="ready")
     page_count: int = Field(default=0)
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class Folder(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    name: str
+    color: str = Field(default="oat")
+    sort_order: int = Field(default=0, index=True)
     created_at: datetime = Field(default_factory=_utcnow)
 
 

@@ -4,15 +4,19 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   createSession,
+  createFolder as createFolderRequest,
   deleteDocument as deleteDocumentRequest,
   fetchDocumentExplanations,
-  fetchDocuments,
   fetchDocumentStatus,
+  fetchFolderLibrary,
   fetchSlides,
   generateSlideExplanation,
+  moveDocumentToFolder,
   pollDocumentReady,
   uploadDocument,
+  type DocumentLibrary,
   type DocumentListItem,
+  type FolderDocumentItem,
   type Slide,
   type SlideExplanation,
 } from "@/lib/api";
@@ -24,6 +28,7 @@ type UploadState = {
   sessionId: string | null;
   slides: Slide[];
   documents: DocumentListItem[];
+  library: DocumentLibrary;
   cachedExplanations: Record<string, SlideExplanation>;
   loading: boolean;
   statusText: string;
@@ -35,6 +40,8 @@ type UploadActions = {
   handleUpload: (file: File) => Promise<void>;
   loadDocument: (documentId: string) => Promise<void>;
   deleteDocument: (documentId: string) => Promise<void>;
+  createFolder: (name: string, color?: string) => Promise<void>;
+  moveDocument: (documentId: string, targetFolderId: string | null, targetIndex: number) => Promise<void>;
   regenerateDocumentExplanations: (documentId: string) => Promise<void>;
   abortGeneration: () => void;
   setCachedExplanation: (slideId: string, explanation: SlideExplanation) => void;
@@ -42,11 +49,74 @@ type UploadActions = {
   reset: () => void;
 };
 
+const EMPTY_LIBRARY: DocumentLibrary = {
+  folders: [],
+  uncategorized: { id: "uncategorized", name: "未归类", documents: [] },
+};
+
+function flattenLibrary(library: DocumentLibrary): DocumentListItem[] {
+  return [
+    ...library.folders.flatMap((folder) => folder.documents),
+    ...library.uncategorized.documents,
+  ];
+}
+
+function moveLibraryDocument(
+  library: DocumentLibrary,
+  documentId: string,
+  targetFolderId: string | null,
+  targetIndex: number,
+): DocumentLibrary {
+  const next: DocumentLibrary = {
+    folders: library.folders.map((folder) => ({
+      ...folder,
+      documents: folder.documents.map((doc) => ({ ...doc })),
+    })),
+    uncategorized: {
+      ...library.uncategorized,
+      documents: library.uncategorized.documents.map((doc) => ({ ...doc })),
+    },
+  };
+
+  const groups = [
+    ...next.folders.map((folder) => ({ folderId: folder.id as string | null, documents: folder.documents })),
+    { folderId: null as string | null, documents: next.uncategorized.documents },
+  ];
+
+  let moving: FolderDocumentItem | null = null;
+  for (const group of groups) {
+    const index = group.documents.findIndex((doc) => doc.id === documentId);
+    if (index >= 0) {
+      moving = group.documents.splice(index, 1)[0];
+      break;
+    }
+  }
+  if (!moving) return library;
+
+  const targetGroup =
+    groups.find((group) => group.folderId === targetFolderId) ??
+    groups.find((group) => group.folderId === null);
+  if (!targetGroup) return library;
+
+  const insertIndex = Math.min(targetIndex, targetGroup.documents.length);
+  targetGroup.documents.splice(insertIndex, 0, { ...moving, folder_id: targetFolderId });
+
+  for (const group of groups) {
+    group.documents.forEach((doc, index) => {
+      doc.folder_id = group.folderId;
+      doc.sort_order = index;
+    });
+  }
+
+  return next;
+}
+
 export function useUpload(): UploadState & UploadActions {
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [slides, setSlides] = useState<Slide[]>([]);
   const [documents, setDocuments] = useState<DocumentListItem[]>([]);
+  const [library, setLibrary] = useState<DocumentLibrary>(EMPTY_LIBRARY);
   const [cachedExplanations, setCachedExplanations] = useState<Record<string, SlideExplanation>>({});
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("请先上传 PDF/图片开始学习。");
@@ -60,8 +130,9 @@ export function useUpload(): UploadState & UploadActions {
 
   async function refreshDocuments() {
     try {
-      const list = await fetchDocuments();
-      setDocuments(list);
+      const nextLibrary = await fetchFolderLibrary();
+      setLibrary(nextLibrary);
+      setDocuments(flattenLibrary(nextLibrary));
     } catch {
       // ignore silent refresh errors
     }
@@ -153,12 +224,14 @@ export function useUpload(): UploadState & UploadActions {
           setStatusText(`已删除文档，已切换到《${fallbackDocument.filename}》。`);
         } else {
           reset();
+          setLibrary(EMPTY_LIBRARY);
           setDocuments([]);
           setStatusText("文档已删除，当前资料库为空。");
         }
       } else {
-        const nextDocuments = currentDocuments.filter((item) => item.id !== targetDocumentId);
-        setDocuments(nextDocuments);
+        const nextLibrary = await fetchFolderLibrary();
+        setLibrary(nextLibrary);
+        setDocuments(flattenLibrary(nextLibrary));
         setStatusText("文档已删除。");
       }
     } catch (error) {
@@ -166,6 +239,48 @@ export function useUpload(): UploadState & UploadActions {
       setStatusText(`删除失败：${message}`);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function createFolder(name: string, color: string = "oat") {
+    setLoading(true);
+    setStatusText("正在创建文件夹...");
+    try {
+      await createFolderRequest({ name, color });
+      await refreshDocuments();
+      setStatusText(`文件夹《${name}》已创建。`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误";
+      setStatusText(`创建文件夹失败：${message}`);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function moveDocument(documentIdToMove: string, targetFolderId: string | null, targetIndex: number) {
+    const previousLibrary = library;
+    const optimistic = moveLibraryDocument(previousLibrary, documentIdToMove, targetFolderId, targetIndex);
+    setLibrary(optimistic);
+    setDocuments(flattenLibrary(optimistic));
+    setStatusText("正在移动文档...");
+
+    try {
+      await moveDocumentToFolder({
+        documentId: documentIdToMove,
+        targetFolderId,
+        targetIndex,
+      });
+      const latestLibrary = await fetchFolderLibrary();
+      setLibrary(latestLibrary);
+      setDocuments(flattenLibrary(latestLibrary));
+      setStatusText("文档已移动。");
+    } catch (error) {
+      setLibrary(previousLibrary);
+      setDocuments(flattenLibrary(previousLibrary));
+      const message = error instanceof Error ? error.message : "未知错误";
+      setStatusText(`移动失败：${message}`);
+      throw error;
     }
   }
 
@@ -227,6 +342,7 @@ export function useUpload(): UploadState & UploadActions {
     setDocumentId(null);
     setSessionId(null);
     setSlides([]);
+    setLibrary(EMPTY_LIBRARY);
     setCachedExplanations({});
     setStatusText("请先上传 PDF/图片开始学习。");
   }
@@ -236,6 +352,7 @@ export function useUpload(): UploadState & UploadActions {
     sessionId,
     slides,
     documents,
+    library,
     cachedExplanations,
     loading,
     statusText,
@@ -244,6 +361,8 @@ export function useUpload(): UploadState & UploadActions {
     handleUpload,
     loadDocument,
     deleteDocument,
+    createFolder,
+    moveDocument,
     regenerateDocumentExplanations,
     abortGeneration,
     setCachedExplanation,

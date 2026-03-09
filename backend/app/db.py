@@ -46,6 +46,10 @@ def create_db_engine(database_url: str):
 
 
 _SQLITE_COLUMN_BACKFILLS: dict[str, dict[str, str]] = {
+    "document": {
+        "folder_id": "TEXT",
+        "sort_order": "INTEGER NOT NULL DEFAULT 0",
+    },
     "learningsession": {
         "current_slide_id": "TEXT",
         "follow_current_page": "BOOLEAN NOT NULL DEFAULT 1",

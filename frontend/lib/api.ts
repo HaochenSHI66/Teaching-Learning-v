@@ -63,6 +63,8 @@ export type UploadPayload = {
   document: {
     id: string;
     filename: string;
+    folder_id?: string | null;
+    sort_order?: number;
     page_count: number;
   };
   slide_count: number;
@@ -115,9 +117,34 @@ export type DocumentStatus = {
 export type DocumentListItem = {
   id: string;
   filename: string;
+  folder_id?: string | null;
+  sort_order?: number;
   status: "processing" | "ready" | "error";
   page_count: number;
   created_at: string;
+};
+
+export type FolderDocumentItem = DocumentListItem & {
+  folder_id: string | null;
+  sort_order: number;
+};
+
+export type FolderGroup = {
+  id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  created_at: string;
+  documents: FolderDocumentItem[];
+};
+
+export type DocumentLibrary = {
+  folders: FolderGroup[];
+  uncategorized: {
+    id: "uncategorized";
+    name: string;
+    documents: FolderDocumentItem[];
+  };
 };
 
 export type SlideExplanation = {
@@ -219,6 +246,40 @@ export async function uploadDocument(file: File): Promise<UploadPayload> {
 export async function fetchDocuments(): Promise<DocumentListItem[]> {
   const payload = await request<{ documents: DocumentListItem[] }>("/api/v1/documents");
   return payload.documents;
+}
+
+export async function fetchFolderLibrary(): Promise<DocumentLibrary> {
+  return request<DocumentLibrary>("/api/v1/folders");
+}
+
+export async function createFolder(params: {
+  name: string;
+  color?: string;
+}): Promise<{ folder: Omit<FolderGroup, "documents"> }> {
+  return request<{ folder: Omit<FolderGroup, "documents"> }>("/api/v1/folders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: params.name,
+      color: params.color ?? "oat",
+    }),
+  });
+}
+
+export async function moveDocumentToFolder(params: {
+  documentId: string;
+  targetFolderId: string | null;
+  targetIndex: number;
+}): Promise<{ document: FolderDocumentItem }> {
+  return request<{ document: FolderDocumentItem }>("/api/v1/folders/move-document", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      document_id: params.documentId,
+      target_folder_id: params.targetFolderId,
+      target_index: params.targetIndex,
+    }),
+  });
 }
 
 export async function fetchDocumentStatus(documentId: string): Promise<DocumentStatus> {

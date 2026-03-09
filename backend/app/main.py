@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from app.api.analytics import router as analytics_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
+from app.api.folders import router as folders_router
 from app.api.notes import router as notes_router
 from app.api.quizzes import router as quizzes_router
 from app.api.review import router as review_router
@@ -60,6 +61,7 @@ def create_app(
     )
 
     app.include_router(documents_router)
+    app.include_router(folders_router)
     app.include_router(sessions_router)
     app.include_router(chat_router)
     app.include_router(notes_router)

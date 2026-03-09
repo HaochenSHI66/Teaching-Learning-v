@@ -207,3 +207,80 @@ def test_slides_endpoint_refreshes_legacy_extracts_and_hides_stale_explanations(
     explanations_response = client.get(f"/api/v1/documents/{doc_id}/explanations")
     assert explanations_response.status_code == 200
     assert explanations_response.json()["explanations"] == []
+
+
+def test_folder_library_create_move_and_delete(tmp_path: Path) -> None:
+    app = create_app(
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        storage_dir=tmp_path / "storage",
+    )
+    client = TestClient(app)
+
+    calculus_upload = client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("calculus.pdf", _pdf_bytes(), "application/pdf")},
+    )
+    assert calculus_upload.status_code == 202
+    calculus_doc_id = calculus_upload.json()["document"]["id"]
+
+    algebra_upload = client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("algebra.pdf", _pdf_bytes(), "application/pdf")},
+    )
+    assert algebra_upload.status_code == 202
+    algebra_doc_id = algebra_upload.json()["document"]["id"]
+
+    initial_library = client.get("/api/v1/folders")
+    assert initial_library.status_code == 200
+    initial_payload = initial_library.json()
+    assert [doc["id"] for doc in initial_payload["uncategorized"]["documents"]] == [
+        calculus_doc_id,
+        algebra_doc_id,
+    ]
+    assert initial_payload["folders"] == []
+
+    create_folder = client.post(
+        "/api/v1/folders",
+        json={"name": "Calculus", "color": "oat"},
+    )
+    assert create_folder.status_code == 201
+    folder_id = create_folder.json()["folder"]["id"]
+
+    move_doc = client.post(
+        "/api/v1/folders/move-document",
+        json={"document_id": calculus_doc_id, "target_folder_id": folder_id, "target_index": 0},
+    )
+    assert move_doc.status_code == 200
+    moved_payload = move_doc.json()
+    assert moved_payload["document"]["id"] == calculus_doc_id
+    assert moved_payload["document"]["folder_id"] == folder_id
+
+    renamed = client.patch(f"/api/v1/folders/{folder_id}", json={"name": "Advanced Calculus"})
+    assert renamed.status_code == 200
+    assert renamed.json()["folder"]["name"] == "Advanced Calculus"
+
+    library_after_move = client.get("/api/v1/folders")
+    assert library_after_move.status_code == 200
+    library_payload = library_after_move.json()
+    assert library_payload["folders"][0]["name"] == "Advanced Calculus"
+    assert [doc["id"] for doc in library_payload["folders"][0]["documents"]] == [calculus_doc_id]
+    assert [doc["id"] for doc in library_payload["uncategorized"]["documents"]] == [algebra_doc_id]
+
+    move_back = client.post(
+        "/api/v1/folders/move-document",
+        json={"document_id": calculus_doc_id, "target_folder_id": None, "target_index": 1},
+    )
+    assert move_back.status_code == 200
+
+    delete_folder = client.delete(f"/api/v1/folders/{folder_id}")
+    assert delete_folder.status_code == 200
+    assert delete_folder.json()["deleted"] is True
+
+    final_library = client.get("/api/v1/folders")
+    assert final_library.status_code == 200
+    final_payload = final_library.json()
+    assert final_payload["folders"] == []
+    assert [doc["id"] for doc in final_payload["uncategorized"]["documents"]] == [
+        algebra_doc_id,
+        calculus_doc_id,
+    ]

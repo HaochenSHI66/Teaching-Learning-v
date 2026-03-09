@@ -363,6 +363,7 @@ async def upload_document(
         filename=file.filename or "uploaded_file",
         media_type=media_type,
         storage_path="",
+        sort_order=len(session.exec(select(Document).where(Document.folder_id.is_(None))).all()),
         status="processing",
     )
 
@@ -399,6 +400,8 @@ async def upload_document(
             id=document.id,
             filename=document.filename,
             media_type=document.media_type,
+            folder_id=document.folder_id,
+            sort_order=document.sort_order,
             status=document.status,
             page_count=document.page_count,
         ),
@@ -414,6 +417,8 @@ def list_documents(session: Session = Depends(get_db_session)) -> DocumentListRe
             DocumentListItem(
                 id=document.id,
                 filename=document.filename,
+                folder_id=document.folder_id,
+                sort_order=document.sort_order,
                 status=document.status,
                 page_count=document.page_count,
                 created_at=document.created_at,

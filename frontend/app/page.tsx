@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { AIPanel } from "@/components/ai-panel";
+import { DocumentLibrary } from "@/components/document-library";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { NoteEditor } from "@/components/note-editor";
 import { SlideViewer } from "@/components/slide-viewer";
@@ -246,141 +247,22 @@ export default function Page() {
             sidebarCollapsed ? "w-0 p-0 border-0 opacity-0 pointer-events-none" : "w-[320px]"
           }`}
         >
-          <div className="flex h-full flex-col p-3">
-            <div className="mb-3 rounded-[22px] border border-[#e4d8c5] bg-[#fffaf1] p-3">
-              <p className="text-[10px] uppercase tracking-[0.26em] text-[#9d876f]">Document Dock</p>
-              <p className="mt-2 text-sm font-medium text-[#463829]">资料库</p>
-              <p className="mt-1 text-xs leading-5 text-[#877563]">
-                上传文档后自动生成解析缓存，支持多文档切换。
-              </p>
-            </div>
-
-            <label
-              className={`btn btn-primary mb-3 inline-flex cursor-pointer text-xs ${
-                loading ? "opacity-70" : ""
-              }`}
-            >
-              <span>上传 PDF/图片</span>
-              <input
-                accept=".pdf,image/png,image/jpeg,image/webp"
-                className="hidden"
-                disabled={loading}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void upload.handleUpload(file);
-                  event.currentTarget.value = "";
-                }}
-                type="file"
-              />
-            </label>
-
-            <>
-              <div className="mb-2 flex items-center justify-between px-1">
-                <p className="text-xs font-medium uppercase tracking-[0.22em] text-[#9a846a]">文档库</p>
-                <span className="text-[11px] text-[#9a846a]">{documentCount} 份</span>
-              </div>
-              <div className="flex-1 space-y-2 overflow-auto pr-1">
-                {upload.documents.length === 0 ? (
-                  <div className="rounded-[22px] border border-dashed border-[#dbc8ad] bg-[#fffaf2] px-4 py-5 text-sm text-[#8b7764]">
-                    暂无文档。上传 PDF 后显示。
-                  </div>
-                ) : (
-                  upload.documents.map((doc) => (
-                    <article
-                      className={`rounded-[22px] border p-3 transition ${
-                        upload.documentId === doc.id
-                          ? "border-[#cab384] bg-[linear-gradient(135deg,#fff8ec_0%,#f2e7d2_62%,#ece4d5_100%)] shadow-[0_18px_36px_rgba(122,98,66,0.12)]"
-                          : "border-[#e0d1bc] bg-[#fffaf2] hover:border-[#cdb796] hover:bg-white"
-                      }`}
-                      key={doc.id}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <button
-                          className="min-w-0 flex-1 text-left"
-                          onClick={() => void upload.loadDocument(doc.id)}
-                          type="button"
-                        >
-                          <p className="truncate text-sm font-medium text-[#463829]">{doc.filename}</p>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#86715b]">
-                            <span className="rounded-full bg-[#f1e6d4] px-2 py-1">{doc.page_count} 页</span>
-                            <span
-                              className={`rounded-full px-2 py-1 ${
-                                doc.status === "ready"
-                                  ? "bg-[#e8efe0] text-[#607253]"
-                                  : doc.status === "processing"
-                                    ? "bg-[#f7ecd7] text-[#8c6c46]"
-                                    : "bg-[#f5e3dc] text-[#9a5e4e]"
-                              }`}
-                            >
-                              {doc.status}
-                            </span>
-                          </div>
-                        </button>
-                        <button
-                          className="btn btn-outline !rounded-full !px-2.5 !py-1 text-[11px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
-                          disabled={loading}
-                          onClick={() => void handleDeleteDocument(doc.id, doc.filename)}
-                          type="button"
-                        >
-                          删除
-                        </button>
-                      </div>
-                      <div className="mt-3 flex flex-col gap-2">
-                        {upload.generationDocId === doc.id ? (
-                          <>
-                            <div className="flex items-center justify-between text-[11px] text-[#7a6655]">
-                              <span>
-                                {upload.generationProgress
-                                  ? `${upload.generationProgress.current} / ${upload.generationProgress.total} 页`
-                                  : "准备中…"}
-                              </span>
-                              <button
-                                className="btn btn-outline !rounded-full !px-2.5 !py-0.5 !text-[10px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
-                                onClick={upload.abortGeneration}
-                                type="button"
-                              >
-                                终止
-                              </button>
-                            </div>
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#ede3d3]">
-                              <div
-                                className="h-full rounded-full bg-gradient-to-r from-[#c9a97a] to-[#8a9d76] transition-all duration-300"
-                                style={{
-                                  width: upload.generationProgress
-                                    ? `${(upload.generationProgress.current / upload.generationProgress.total) * 100}%`
-                                    : "0%",
-                                }}
-                              />
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <button
-                              className="btn btn-soft flex-1 !rounded-full !py-2 text-[11px]"
-                              disabled={loading || doc.status !== "ready"}
-                              onClick={() => void upload.regenerateDocumentExplanations(doc.id)}
-                              type="button"
-                            >
-                              生成解析
-                            </button>
-                            {upload.documentId === doc.id && (
-                              <button
-                                className={`btn !rounded-full !py-2 !px-3 text-[11px] ${notePanelOpen ? "btn-dark" : "btn-soft"}`}
-                                onClick={() => setNotePanelOpen((prev) => !prev)}
-                                type="button"
-                              >
-                                笔记
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </article>
-                  ))
-                )}
-              </div>
-            </>
-          </div>
+          <DocumentLibrary
+            activeDocumentId={upload.documentId}
+            generationDocId={upload.generationDocId}
+            generationProgress={upload.generationProgress}
+            library={upload.library}
+            loading={loading}
+            notePanelOpen={notePanelOpen}
+            onAbortGeneration={upload.abortGeneration}
+            onCreateFolder={(name) => upload.createFolder(name)}
+            onDeleteDocument={handleDeleteDocument}
+            onMoveDocument={upload.moveDocument}
+            onRegenerateDocument={upload.regenerateDocumentExplanations}
+            onSelectDocument={upload.loadDocument}
+            onToggleNotes={() => setNotePanelOpen((prev) => !prev)}
+            onUpload={upload.handleUpload}
+          />
         </aside>
 
         <section className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.92fr]">
