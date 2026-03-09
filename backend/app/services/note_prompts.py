@@ -10,7 +10,8 @@ def default_notebook_markdown(filename: str) -> str:
 
 
 def _strip_markdown(value: str) -> str:
-    text = re.sub(r"^#{1,6}\s+", "", value.strip(), flags=re.MULTILINE)
+    text = re.sub(r"<[^>]+>", " ", value.strip())
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"[*_`>#-]", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()

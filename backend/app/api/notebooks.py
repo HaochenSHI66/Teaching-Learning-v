@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.api.deps import get_db_session
@@ -26,6 +28,7 @@ from app.services.note_prompts import (
 )
 
 router = APIRouter(prefix="/api/v1/notebooks", tags=["notebooks"])
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -87,9 +90,39 @@ def _generate_notebook_markdown(
             generated = gateway.generate_text_markdown(prompt=prompt).strip()
             if generated.startswith("# ") and "<mark>" in generated:
                 return generated if generated.endswith("\n") else f"{generated}\n"
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("autogen notebook failed: %s", exc)
     return build_notebook_fallback(filename=document.filename, explanations=explanations)
+
+
+def _persist_notebook(
+    *,
+    session: Session,
+    document_id: str,
+    markdown: str,
+) -> DocumentNotebook:
+    notebook = _get_notebook(session, document_id)
+    timestamp = _utcnow()
+    if not notebook:
+        notebook = DocumentNotebook(document_id=document_id, content_md=markdown, updated_at=timestamp)
+        session.add(notebook)
+    else:
+        notebook.content_md = markdown
+        notebook.updated_at = timestamp
+        session.add(notebook)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        notebook = _get_notebook(session, document_id)
+        if notebook is None:
+            raise
+        notebook.content_md = markdown
+        notebook.updated_at = timestamp
+        session.add(notebook)
+        session.commit()
+    session.refresh(notebook)
+    return notebook
 
 
 @router.get("/{document_id}", response_model=DocumentNotebookRead)
@@ -121,16 +154,11 @@ def save_document_notebook(
     session: Session = Depends(get_db_session),
 ) -> DocumentNotebookRead:
     document = _get_document_or_404(session, document_id)
-    notebook = _get_notebook(session, document_id)
-    if not notebook:
-        notebook = DocumentNotebook(document_id=document.id, content_md=payload.markdown, updated_at=_utcnow())
-        session.add(notebook)
-    else:
-        notebook.content_md = payload.markdown
-        notebook.updated_at = _utcnow()
-        session.add(notebook)
-    session.commit()
-    session.refresh(notebook)
+    notebook = _persist_notebook(
+        session=session,
+        document_id=document.id,
+        markdown=payload.markdown,
+    )
     return _serialize_notebook(
         document_id=document.id,
         markdown=notebook.content_md,
@@ -160,16 +188,11 @@ def autogen_document_notebook(
         explanations=explanations,
         title=payload.title,
     )
-    notebook = _get_notebook(session, document.id)
-    if not notebook:
-        notebook = DocumentNotebook(document_id=document.id, content_md=markdown, updated_at=_utcnow())
-        session.add(notebook)
-    else:
-        notebook.content_md = markdown
-        notebook.updated_at = _utcnow()
-        session.add(notebook)
-    session.commit()
-    session.refresh(notebook)
+    notebook = _persist_notebook(
+        session=session,
+        document_id=document.id,
+        markdown=markdown,
+    )
     return _serialize_notebook(
         document_id=document.id,
         markdown=notebook.content_md,

@@ -1,11 +1,13 @@
 from pathlib import Path
 
 import fitz
+import logging
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.models import SlideExplanation
 from app.services.explanation_engine import CURRENT_EXPLANATION_VERSION
+from app.services.note_prompts import build_notebook_fallback
 
 
 def _two_page_pdf_bytes() -> bytes:
@@ -138,3 +140,70 @@ def test_export_document_notebook_returns_saved_markdown(tmp_path: Path) -> None
     payload = export_resp.json()
     assert payload["title"] == "deck.pdf 笔记本"
     assert "<mark>Rank</mark>" in payload["markdown"]
+
+
+def test_save_document_notebook_requires_markdown_field(tmp_path: Path) -> None:
+    app = create_app(
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        storage_dir=tmp_path / "storage",
+    )
+    client = TestClient(app)
+    document_id = _upload_ready_document(client)
+
+    response = client.put(f"/api/v1/notebooks/{document_id}", json={})
+
+    assert response.status_code == 422
+
+
+def test_autogen_document_notebook_logs_warning_and_falls_back_on_model_error(
+    tmp_path: Path, monkeypatch, caplog
+) -> None:
+    app = create_app(
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        storage_dir=tmp_path / "storage",
+    )
+    client = TestClient(app)
+    document_id = _upload_ready_document(client)
+
+    class FailingGateway:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def is_configured(self) -> bool:
+            return True
+
+        def generate_text_markdown(self, *, prompt: str) -> str:
+            raise RuntimeError("gateway boom")
+
+    monkeypatch.setattr("app.api.notebooks.ModelGateway", FailingGateway)
+
+    with caplog.at_level(logging.WARNING):
+        response = client.post(
+            f"/api/v1/notebooks/{document_id}/autogen",
+            json={"title": "自动笔记"},
+        )
+
+    assert response.status_code == 200
+    assert "<mark>" in response.json()["markdown"]
+    assert any("autogen notebook failed" in record.message for record in caplog.records)
+
+
+def test_build_notebook_fallback_strips_existing_mark_tags() -> None:
+    explanation = SlideExplanation(
+        document_id="doc-1",
+        slide_id="slide-1",
+        page_num=1,
+        markdown="## Derivative\n\n### 完整翻译与解释\n\n<mark>导数（Derivative）</mark> 表示变化率。",
+        meta={
+            "sections": {
+                "translation_md": "### 完整翻译与解释\n\n<mark>导数（Derivative）</mark> 表示变化率。",
+                "primary_md": "### 知识点总结\n\n<mark>导数（Derivative）</mark> 是本页核心术语。",
+            }
+        },
+        version=CURRENT_EXPLANATION_VERSION,
+    )
+
+    markdown = build_notebook_fallback(filename="deck.pdf", explanations=[explanation])
+
+    assert "<mark><mark>" not in markdown
+    assert markdown.count("<mark>") == markdown.count("</mark>")

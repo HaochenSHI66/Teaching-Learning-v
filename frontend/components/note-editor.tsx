@@ -6,6 +6,15 @@ import { extractNotebookOutline } from "@/lib/notebookFormat";
 
 type NoteVersion = { timestamp: number; content: string };
 
+function normalizeHeadingText(value: string) {
+  return value
+    .replace(/<[^>]+>/g, "")
+    .replace(/[*_`~]/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 type NoteEditorProps = {
   markdown: string;
   onChange: (v: string) => void;
@@ -49,7 +58,10 @@ export function NoteEditor({
     const container = previewRef.current;
     if (!container) return false;
     const headings = Array.from(container.querySelectorAll("h2"));
-    const target = headings.find((item) => item.textContent?.trim() === heading);
+    const targetHeading = normalizeHeadingText(heading);
+    const target = headings.find(
+      (item) => normalizeHeadingText(item.textContent ?? "") === targetHeading,
+    );
     if (!target) return false;
     const containerRect = container.getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();

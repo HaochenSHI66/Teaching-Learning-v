@@ -247,7 +247,7 @@ class DocumentNotebookRead(BaseModel):
 
 
 class DocumentNotebookSaveRequest(BaseModel):
-    markdown: str = Field(default="")
+    markdown: str = Field(...)
 
 
 class DocumentNotebookAutoGenerateRequest(BaseModel):

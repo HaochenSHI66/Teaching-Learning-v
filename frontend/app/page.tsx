@@ -54,6 +54,7 @@ export default function Page() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [slideGenerationLoading, setSlideGenerationLoading] = useState(false);
   const [notePanelOpen, setNotePanelOpen] = useState(false);
+  const [interactiveReady, setInteractiveReady] = useState(false);
   const notesMarkdownRef = useRef("");
   const notebookLastSavedRef = useRef("");
   const notebookDocumentRef = useRef<string | null>(null);
@@ -81,6 +82,10 @@ export default function Page() {
   }, [currentSlideIndex]);
 
   useEffect(() => {
+    setInteractiveReady(true);
+  }, []);
+
+  useEffect(() => {
     if (!currentSlide) {
       setExplanation("");
       setExplanationMeta(null);
@@ -91,9 +96,10 @@ export default function Page() {
     setExplanationMeta(cached?.meta ?? null);
   }, [currentSlide, upload.cachedExplanations, setExplanation, setExplanationMeta]);
 
-  useEffect(() => {
-    notesMarkdownRef.current = notesMarkdown;
-  }, [notesMarkdown]);
+  function updateNotesMarkdown(next: string) {
+    notesMarkdownRef.current = next;
+    setNotesMarkdown(next);
+  }
 
   const statusText =
     chat.statusText || upload.statusText || globalStatus || "待机";
@@ -153,8 +159,7 @@ export default function Page() {
       try {
         const notebook = await fetchNotebook(nextDocumentId);
         if (cancelled) return;
-        setNotesMarkdown(notebook.markdown);
-        notesMarkdownRef.current = notebook.markdown;
+        updateNotesMarkdown(notebook.markdown);
         notebookLastSavedRef.current = notebook.markdown;
       } catch (error) {
         if (cancelled) return;
@@ -218,8 +223,7 @@ export default function Page() {
     setGlobalStatus("生成文档笔记本中…");
     try {
       const result = await autogenNotebook(upload.documentId, "自动笔记");
-      setNotesMarkdown(result.markdown);
-      notesMarkdownRef.current = result.markdown;
+      updateNotesMarkdown(result.markdown);
       notebookLastSavedRef.current = result.markdown;
       setNotebookViewMode("preview");
       setNotePanelOpen(true);
@@ -315,16 +319,23 @@ export default function Page() {
       <header className="relative z-10 shrink-0 border-b border-[#d7c5aa] bg-[#fbf5eb]/85 backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3 px-4 py-2 md:px-5">
           <div className="flex items-center gap-2">
-            <button
-              className="flex h-8 w-8 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#d7c5aa] bg-[#fffaf1] hover:bg-[#f5ebda] transition-colors"
-              onClick={() => setSidebarCollapsed((prev) => !prev)}
-              type="button"
-              aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-            >
-              <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
-              <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
-              <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
-            </button>
+            {interactiveReady ? (
+              <button
+                className="flex h-8 w-8 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#d7c5aa] bg-[#fffaf1] hover:bg-[#f5ebda] transition-colors"
+                onClick={() => setSidebarCollapsed((prev) => !prev)}
+                type="button"
+                aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+              >
+                <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
+                <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
+                <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
+              </button>
+            ) : (
+              <div
+                aria-hidden="true"
+                className="h-8 w-8 rounded-xl border border-transparent"
+              />
+            )}
             <div>
               <p className="text-[9px] uppercase tracking-[0.28em] text-[#8c765f]">Learning Studio</p>
               <h1 className="text-sm font-semibold leading-tight text-[#463829]">幻灯片研习台</h1>
@@ -422,7 +433,7 @@ export default function Page() {
                     setGlobalStatus("该摘录已存在");
                     return;
                   }
-                  setNotesMarkdown(next.markdown);
+                  updateNotesMarkdown(next.markdown);
                   setGlobalStatus("已加入笔记本");
                 }}
                 onModeChange={chat.setMode}
@@ -444,12 +455,12 @@ export default function Page() {
         markdown={notesMarkdown}
         onAIOrganize={() => void handleAutoGenerateNotes()}
         onAIPolish={handleAIPolishNotes}
-        onChange={setNotesMarkdown}
+        onChange={updateNotesMarkdown}
         onCollapse={() => setNotePanelOpen(false)}
         onExport={() => void handleExportNotes()}
         onFormat={() => {
           if (!currentDocumentName) return;
-          setNotesMarkdown((prev) => formatNotebookMarkdown(prev, currentDocumentName));
+          updateNotesMarkdown(formatNotebookMarkdown(notesMarkdownRef.current, currentDocumentName));
           setGlobalStatus("笔记格式已整理");
         }}
         onOpen={() => setNotePanelOpen(true)}

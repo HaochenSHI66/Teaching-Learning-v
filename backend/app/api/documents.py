@@ -13,6 +13,7 @@ from app.api.deps import get_db_session
 from app.db import create_db_engine
 from app.models import (
     Document,
+    DocumentNotebook,
     LearningSession,
     Message,
     Note,
@@ -341,6 +342,10 @@ def _delete_document_related_records(*, session: Session, document_id: str) -> N
         session.delete(learning_session)
     for slide in slides:
         session.delete(slide)
+    for notebook in session.exec(
+        select(DocumentNotebook).where(DocumentNotebook.document_id == document_id)
+    ).all():
+        session.delete(notebook)
 
 
 @router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_202_ACCEPTED)

@@ -44,6 +44,12 @@ def test_delete_document_removes_records_and_storage(tmp_path: Path) -> None:
 
     _wait_until_ready(client, document_id)
 
+    notebook_resp = client.put(
+        f"/api/v1/notebooks/{document_id}",
+        json={"markdown": "# deck.pdf 笔记本\n\n## 第 1 页 · Systems Design\n\n- queue"},
+    )
+    assert notebook_resp.status_code == 200
+
     document_storage_dir = storage_dir / document_id
     assert document_storage_dir.exists()
 
@@ -61,5 +67,12 @@ def test_delete_document_removes_records_and_storage(tmp_path: Path) -> None:
 
     slides_resp = client.get(f"/api/v1/documents/{document_id}/slides")
     assert slides_resp.status_code == 404
+
+    with app.state.engine.begin() as connection:
+        notebook_rows = connection.exec_driver_sql(
+            "SELECT COUNT(*) FROM documentnotebook WHERE document_id = ?",
+            (document_id,),
+        ).fetchone()
+    assert notebook_rows[0] == 0
 
     assert not document_storage_dir.exists()
