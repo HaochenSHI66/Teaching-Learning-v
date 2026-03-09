@@ -33,6 +33,23 @@ export type SlideExtract = {
   code_like_blocks: SlideExtractBlock[];
   reading_order: string[];
   page_stats: Record<string, number>;
+  repeat_analysis?: {
+    status: string;
+    window_pages: number[];
+    repeat_pages: number[];
+    repeated_ratio: number;
+    new_block_ids: string[];
+    repeated_block_ids: string[];
+    repeated_blocks: {
+      current_block_id: string;
+      source_page_num: number;
+      source_block_id: string;
+      similarity: number;
+      match_type: string;
+      current_excerpt: string;
+      source_excerpt: string;
+    }[];
+  } | null;
 };
 
 export type RoiBox = {
@@ -107,6 +124,21 @@ export type SlideExplanation = {
   slide_id: string;
   page_num: number;
   markdown: string;
+  meta?: {
+    render_mode: string;
+    content_type: string;
+    title: string;
+    repeat_summary: {
+      repeat_pages: number[];
+      repeated_ratio: number;
+      has_repeat_section: boolean;
+    };
+    sections: {
+      translation_md: string;
+      primary_md: string;
+      repeat_md?: string;
+    };
+  } | null;
 };
 
 export type SlideExplanationGeneratePayload = SlideExplanation & {

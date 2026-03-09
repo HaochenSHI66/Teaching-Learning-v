@@ -82,8 +82,11 @@ def test_cross_slide_retrieval_for_chat(tmp_path: Path) -> None:
     assert first_slide_id in payload["used_slide_ids"]
     assert second_slide_id in payload["used_slide_ids"]
     assert "引用页码" in payload["answer"]
-    assert "### 核心术语 Core Terms" in payload["answer"]
-    assert "矩阵（Matrix）" in payload["answer"]
+    assert "### 完整翻译与解释" in payload["answer"]
+    assert (
+        "### 知识点总结" in payload["answer"]
+        or "### 例题完整讲解" in payload["answer"]
+    )
 
 
 def test_roi_explanation_endpoint(tmp_path: Path) -> None:

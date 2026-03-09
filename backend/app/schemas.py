@@ -60,6 +60,7 @@ class SlideExtractRead(BaseModel):
     code_like_blocks: list[SlideExtractBlockRead]
     reading_order: list[str]
     page_stats: dict[str, int]
+    repeat_analysis: dict | None = None
 
 
 class SlideRead(BaseModel):
@@ -82,12 +83,14 @@ class SlideExplanationRead(BaseModel):
     slide_id: str
     page_num: int
     markdown: str
+    meta: dict | None = None
 
 
 class SlideExplanationGenerateResponse(BaseModel):
     slide_id: str
     page_num: int
     markdown: str
+    meta: dict | None = None
     overwrote_existing: bool
 
 

@@ -5,11 +5,12 @@ import { useRef, useState } from "react";
 import { MarkdownContent } from "@/components/markdown-content";
 import { SelectionPopup } from "@/components/selection-popup";
 import type { ChatMessage } from "@/hooks/useChat";
-import type { SlideExtract } from "@/lib/api";
+import { getAssetUrl, type SlideExplanation, type SlideExtract } from "@/lib/api";
 
 type AIPanelProps = {
   disabled: boolean;
   explanation: string;
+  explanationMeta: SlideExplanation["meta"] | null;
   explanationLoading: boolean;
   explanationState: "not_generated" | "ready" | "generating" | "error";
   extraction: SlideExtract | null;
@@ -102,6 +103,17 @@ function buildExtractionMarkdown(extraction: SlideExtract | null) {
     }
   }
 
+  if (extraction.repeat_analysis) {
+    const repeat = extraction.repeat_analysis;
+    const repeatedPercent = Math.round((repeat.repeated_ratio ?? 0) * 100);
+    lines.push("", "### 重复分析");
+    lines.push(`- 状态：**${repeat.status || "unknown"}**`);
+    lines.push(`- 最近比较页：${repeat.window_pages?.length ? repeat.window_pages.join(", ") : "无"}`);
+    lines.push(`- 重复页：${repeat.repeat_pages?.length ? repeat.repeat_pages.join(", ") : "无"}`);
+    lines.push(`- 重复占比：**${repeatedPercent}%**`);
+    lines.push(`- 新增块：**${repeat.new_block_ids?.length ?? 0}**`);
+  }
+
   return lines.join("\n");
 }
 
@@ -121,6 +133,7 @@ function getExplanationBadge(
 export function AIPanel({
   disabled,
   explanation,
+  explanationMeta,
   explanationLoading,
   explanationState,
   extraction,
@@ -143,6 +156,10 @@ export function AIPanel({
   const explanationRef = useRef<HTMLDivElement>(null);
   const badge = getExplanationBadge(explanationState, explanationLoading);
   const extractionMarkdown = buildExtractionMarkdown(extraction);
+  const repeatSummary = explanationMeta?.repeat_summary;
+  const hasStructuredExplanation = Boolean(
+    explanationMeta?.sections?.translation_md && explanationMeta?.sections?.primary_md,
+  );
 
   const slideMessages = currentSlideId
     ? chatMessages.filter((m) => m.slideId === currentSlideId)
@@ -171,7 +188,14 @@ export function AIPanel({
         <>
           <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8]">
             <header className="shrink-0 flex items-center justify-between gap-2 border-b border-[#eee2cf] px-3 py-2">
-              <p className="text-[11px] font-medium text-[#4b3d2f]">当前页解析</p>
+              <div className="flex items-center gap-2">
+                <p className="text-[11px] font-medium text-[#4b3d2f]">当前页解析</p>
+                {repeatSummary?.has_repeat_section ? (
+                  <span className="rounded-full border border-[#d8bf94] bg-[#f8efdc] px-2 py-0.5 text-[10px] text-[#8a6a46]">
+                    重复 {Math.round((repeatSummary.repeated_ratio ?? 0) * 100)}% · 来自第 {repeatSummary.repeat_pages.join(", ")} 页
+                  </span>
+                ) : null}
+              </div>
               <div className="flex items-center gap-1.5">
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] ${badge.cls}`}>{badge.label}</span>
                 <button
@@ -198,7 +222,25 @@ export function AIPanel({
             )}
 
             <div ref={explanationRef} className="min-h-0 flex-1 overflow-auto p-3" data-note-source="explanation-content">
-              {explanation ? (
+              {hasStructuredExplanation ? (
+                <div className="space-y-3">
+                  <MarkdownContent content={explanationMeta?.sections.translation_md ?? ""} />
+                  <MarkdownContent content={explanationMeta?.sections.primary_md ?? ""} />
+                  {explanationMeta?.sections.repeat_md ? (
+                    <details className="overflow-hidden rounded-[18px] border border-[#dcccb6] bg-[#fbf6ec]">
+                      <summary className="cursor-pointer list-none px-3 py-2 text-[11px] font-medium text-[#6e5942]">
+                        重复部分讲解
+                        <span className="ml-2 text-[10px] font-normal text-[#9a846a]">
+                          来自第 {repeatSummary?.repeat_pages?.join(", ") || "前序"} 页
+                        </span>
+                      </summary>
+                      <div className="border-t border-[#ede3d3] px-3 py-3">
+                        <MarkdownContent content={explanationMeta.sections.repeat_md} />
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+              ) : explanation ? (
                 <MarkdownContent content={explanation} />
               ) : (
                 <MarkdownContent
@@ -234,7 +276,7 @@ export function AIPanel({
                     <img
                       alt={figure.label ?? figure.id}
                       className="mb-1.5 h-24 w-full rounded-[12px] object-cover"
-                      src={figure.preview_image_url}
+                      src={getAssetUrl(figure.preview_image_url)}
                     />
                   ) : null}
                   <p className="text-[11px] font-medium text-[#4f4031]">

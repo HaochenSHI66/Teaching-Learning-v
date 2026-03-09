@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 
-import { askRoiQuestion, askSlideQuestion, type RoiBox, type Slide } from "@/lib/api";
+import { askRoiQuestion, askSlideQuestion, type RoiBox, type Slide, type SlideExplanation } from "@/lib/api";
 
 export type ChatMessage = {
   id: string;
@@ -19,6 +19,7 @@ function nextId() {
 type ChatState = {
   chatMessages: ChatMessage[];
   explanation: string;
+  explanationMeta: SlideExplanation["meta"] | null;
   chatInput: string;
   loading: boolean;
   statusText: string;
@@ -29,6 +30,7 @@ type ChatActions = {
   setChatInput: (v: string) => void;
   setMode: (m: "slide" | "global") => void;
   setExplanation: (markdown: string) => void;
+  setExplanationMeta: (meta: SlideExplanation["meta"] | null) => void;
   ask: (message: string, sessionId: string, slide?: Slide) => Promise<void>;
   askRoi: (roi: RoiBox, sessionId: string, slide: Slide) => Promise<void>;
   clearSlideMessages: (slideId: string) => void;
@@ -38,6 +40,7 @@ type ChatActions = {
 export function useChat(): ChatState & ChatActions {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [explanation, setExplanation] = useState("");
+  const [explanationMeta, setExplanationMeta] = useState<SlideExplanation["meta"] | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("");
@@ -115,6 +118,7 @@ export function useChat(): ChatState & ChatActions {
   return {
     chatMessages,
     explanation,
+    explanationMeta,
     chatInput,
     loading,
     statusText,
@@ -122,6 +126,7 @@ export function useChat(): ChatState & ChatActions {
     setChatInput,
     setMode,
     setExplanation,
+    setExplanationMeta,
     ask,
     askRoi,
     clearSlideMessages,

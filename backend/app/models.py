@@ -47,6 +47,8 @@ class SlideExplanation(SQLModel, table=True):
     slide_id: str = Field(index=True)
     page_num: int
     markdown: str
+    meta: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    version: int = Field(default=1)
     generated_at: datetime = Field(default_factory=_utcnow)
 
 

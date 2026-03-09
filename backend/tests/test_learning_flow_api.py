@@ -51,8 +51,9 @@ def test_slide_bound_chat_and_markdown_export(tmp_path: Path) -> None:
     )
     assert chat_resp.status_code == 200
     answer = chat_resp.json()["answer"]
-    assert "## Slide 1 讲解" in answer
-    assert "1分钟自测" in answer
+    assert "## Slide 1" in answer
+    assert "### 完整翻译与解释" in answer
+    assert "1分钟自测" not in answer
 
     export_resp = client.post(
         "/api/v1/notes/export",

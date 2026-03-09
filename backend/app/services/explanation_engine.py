@@ -1,20 +1,97 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from app.models import Slide
 from app.services.model_gateway import ModelGateway
 from app.services.prompt_templates import (
     build_roi_explanation_prompt,
     build_slide_explanation_prompt,
-    format_bilingual_terms_markdown,
+    extract_bilingual_terms,
 )
+
+CURRENT_EXPLANATION_VERSION = 4
+_PLACEHOLDER_HEADING_RE = re.compile(
+    r"^##\s*(?:Slide 标题|\[页面实际标题\]|Slide Title|Title)\s*$",
+    flags=re.MULTILINE,
+)
+_DISALLOWED_SECTION_RE = re.compile(
+    r"(?ms)^###\s*(?:1分钟自测|Quick Check|自测|Quiz)\b.*?(?=^##\s|^###\s|\Z)"
+)
+_SECTION_RE = re.compile(r"^###\s+.+$", flags=re.MULTILINE)
+
+
+def explanation_markdown_is_stale(markdown: str) -> bool:
+    return bool(_PLACEHOLDER_HEADING_RE.search(markdown or ""))
+
+
+def explanation_meta_is_current(meta: dict | None) -> bool:
+    if not meta:
+        return False
+    if meta.get("render_mode") != "repeat-aware":
+        return False
+    sections = meta.get("sections") or {}
+    return bool(sections.get("translation_md") and sections.get("primary_md"))
+
+
+def _best_title(*, slide: Slide, extracted_text: str, extract_payload: dict | None) -> str:
+    payload = extract_payload or {}
+    for candidate in payload.get("title_candidates") or []:
+        cleaned = str(candidate).strip()
+        if cleaned:
+            return cleaned
+
+    summary = str(payload.get("summary") or "").strip()
+    if summary:
+        return summary
+
+    for line in extracted_text.splitlines():
+        cleaned = line.strip()
+        if cleaned:
+            return cleaned[:120]
+
+    return f"Slide {slide.page_num}"
+
+
+def _strip_disallowed_sections(markdown: str) -> str:
+    cleaned = _DISALLOWED_SECTION_RE.sub("", markdown)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def sanitize_slide_markdown(
+    *,
+    slide: Slide,
+    markdown: str,
+    extracted_text: str,
+    extract_payload: dict | None,
+) -> str:
+    cleaned = markdown.strip()
+    if not cleaned:
+        return cleaned
+
+    title = _best_title(slide=slide, extracted_text=extracted_text, extract_payload=extract_payload)
+    if _PLACEHOLDER_HEADING_RE.search(cleaned):
+        cleaned = _PLACEHOLDER_HEADING_RE.sub(f"## {title}", cleaned, count=1)
+
+    if not re.search(r"^##\s+.+$", cleaned, flags=re.MULTILINE):
+        cleaned = f"## {title}\n\n{cleaned}"
+
+    return _strip_disallowed_sections(cleaned)
+
+
+def sanitize_roi_markdown(markdown: str) -> str:
+    cleaned = markdown.strip()
+    if not cleaned:
+        return cleaned
+    return _strip_disallowed_sections(cleaned)
 
 
 def _summary_from_text(extracted_text: str, question: str) -> str:
     cleaned = " ".join(extracted_text.split())
     if cleaned:
-        return cleaned[:180]
+        return cleaned[:220]
     return f"页面文本有限，当前围绕“{question}”做保守讲解。"
 
 
@@ -48,6 +125,21 @@ def _extraction_text_for_prompt(extracted_text: str, extract_payload: dict | Non
             if text:
                 lines.append(f"- {text}")
 
+    repeat_analysis = payload.get("repeat_analysis") or {}
+    if repeat_analysis:
+        lines.append("Repeat Analysis:")
+        lines.append(f"- status: {repeat_analysis.get('status') or 'unknown'}")
+        lines.append(f"- window_pages: {repeat_analysis.get('window_pages') or []}")
+        lines.append(f"- repeat_pages: {repeat_analysis.get('repeat_pages') or []}")
+        lines.append(f"- repeated_ratio: {repeat_analysis.get('repeated_ratio') or 0}")
+        repeated_blocks = repeat_analysis.get("repeated_blocks") or []
+        if repeated_blocks:
+            lines.append("- repeated_blocks:")
+            for item in repeated_blocks[:5]:
+                lines.append(
+                    f"  - current={item.get('current_block_id')} source_page={item.get('source_page_num')} text={item.get('current_excerpt')}"
+                )
+
     if extracted_text.strip():
         lines.append("Raw Extracted Text:")
         lines.append(extracted_text.strip())
@@ -55,47 +147,268 @@ def _extraction_text_for_prompt(extracted_text: str, extract_payload: dict | Non
     return "\n".join(lines).strip() or "（无稳定结构化提取结果）"
 
 
+def _looks_like_example_page(*, extracted_text: str, question: str, extract_payload: dict | None) -> bool:
+    payload = extract_payload or {}
+    haystack = "\n".join(
+        [
+            extracted_text,
+            question,
+            str(payload.get("summary") or ""),
+            " ".join(str(item) for item in payload.get("title_candidates") or []),
+        ]
+    ).lower()
+    keywords = (
+        "example",
+        "worked example",
+        "exercise",
+        "solution",
+        "solve",
+        "problem",
+        "例题",
+        "题目",
+        "解答",
+        "求解",
+    )
+    return any(keyword in haystack for keyword in keywords)
+
+
+def _terms_sentence(extracted_text: str) -> str:
+    pairs = extract_bilingual_terms(extracted_text)
+    if not pairs:
+        return "核心概念（Key Concept）"
+    return "、".join(f"{chinese}（{english}）" for chinese, english in pairs[:4])
+
+
+def _split_sections(markdown: str) -> dict[str, str]:
+    matches = list(_SECTION_RE.finditer(markdown))
+    sections: dict[str, str] = {}
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
+        section_md = markdown[start:end].strip()
+        heading = match.group(0).strip()
+        sections[heading] = section_md
+    return sections
+
+
+def _build_repeat_summary(extract_payload: dict | None) -> dict:
+    repeat_analysis = (extract_payload or {}).get("repeat_analysis") or {}
+    repeat_pages = [int(page) for page in repeat_analysis.get("repeat_pages") or []]
+    repeated_ratio = float(repeat_analysis.get("repeated_ratio") or 0.0)
+    has_repeat_section = bool(
+        repeat_pages
+        and (
+            repeated_ratio >= 0.30
+            or len(repeat_analysis.get("repeated_block_ids") or []) >= 2
+        )
+    )
+    return {
+        "repeat_pages": repeat_pages,
+        "repeated_ratio": round(repeated_ratio, 4),
+        "has_repeat_section": has_repeat_section,
+    }
+
+
+def _build_intro_note(*, related_pages: list[int], repeat_summary: dict) -> str:
+    citations = ", ".join(str(page) for page in sorted(set(related_pages))) or "无"
+    lines = ["> [!NOTE]", f"> 引用页码：{citations}"]
+    if repeat_summary["has_repeat_section"]:
+        repeat_pages = ", ".join(str(page) for page in repeat_summary["repeat_pages"])
+        percent = int(round(float(repeat_summary["repeated_ratio"]) * 100))
+        lines.append(f"> 重复占比：{percent}%")
+        lines.append(f"> 重复来源：第 {repeat_pages} 页")
+    else:
+        lines.append("> 本页以新增或独立内容为主。")
+    return "\n".join(lines)
+
+
+def _build_translation_fallback(*, summary: str, extracted_text: str, terms: str) -> str:
+    body = (
+        "当前这份讲解是离线回退版本，只依据页面中稳定提取到的文字信息生成。"
+        "如果原页里还有图示、表格、手写标注或公式细节没有被提取到，这里不会擅自补写，"
+        "而是只把目前能确认的内容讲清楚。"
+    )
+    extracted_excerpt = " ".join(extracted_text.split())[:220]
+    addition = f"当前页可稳定识别的内容主要包括：{extracted_excerpt}。" if extracted_excerpt else ""
+    return (
+        "### 完整翻译与解释\n\n"
+        f"{body} 本页可稳定识别的关键信息主要围绕 <mark>{summary}</mark> 展开。"
+        f"{addition} 最值得先抓住的术语包括 {terms}。"
+        "阅读这一页时，应先把标题、正文和图示旁注连起来理解，不要把页面上的英文关键词当作孤立标签去背。"
+    ).strip()
+
+
+def _build_primary_fallback(
+    *,
+    is_example: bool,
+    repeat_summary: dict,
+    extracted_text: str,
+    question: str,
+) -> tuple[str, str]:
+    if is_example:
+        extra = (
+            "本页和前面页面有明显重复，因此主讲部分只强调这次相对前文新增的步骤、条件变化或结论变化。"
+            if repeat_summary["has_repeat_section"]
+            else "本页内容以当前题目本身为主，应先把题意、条件和目标说清楚。"
+        )
+        return (
+            "example",
+            (
+                "### 例题完整讲解\n\n"
+                "从提取结果判断，这一页更像例题或示例页。理解时应先明确题目给定了什么、要求你求什么，"
+                "再判断页面选择的解题方法为什么适用。"
+                f"{extra}"
+                "真正重要的不是把步骤机械抄下来，而是看清每一步是在利用什么前提、为什么能从上一步走到下一步。"
+            ).strip(),
+        )
+
+    summary = _summary_from_text(extracted_text, question)
+    extra = (
+        "由于本页和前序页存在明显重复，主讲部分应优先盯住本页相对前文新增、补充或深化的知识点。"
+        if repeat_summary["has_repeat_section"]
+        else "这页主要应围绕当前页自身的定义、关系和图示来理解。"
+    )
+    content_type = "transition" if len(extracted_text.split()) < 8 else "concept"
+    return (
+        content_type,
+        (
+            "### 知识点总结\n\n"
+            "从提取结果判断，这一页更像知识点说明页。真正需要掌握的，不只是表面上的术语翻译，"
+            "而是这些概念为什么被引入、它们之间如何连接，以及页面里的公式、图示或定义分别承担什么角色。"
+            f"{extra}"
+            f"当前页可直接确认的主线可概括为：<mark>{summary}</mark>。"
+        ).strip(),
+    )
+
+
+def _build_repeat_fallback(*, extract_payload: dict | None) -> str:
+    repeat_analysis = (extract_payload or {}).get("repeat_analysis") or {}
+    repeated_blocks = repeat_analysis.get("repeated_blocks") or []
+    repeat_pages = [int(page) for page in repeat_analysis.get("repeat_pages") or []]
+    if not repeat_pages:
+        return ""
+
+    unique_lines: list[str] = []
+    seen: set[str] = set()
+    for item in repeated_blocks:
+        excerpt = str(item.get("current_excerpt") or "").strip()
+        if not excerpt or excerpt in seen:
+            continue
+        unique_lines.append(excerpt)
+        seen.add(excerpt)
+        if len(unique_lines) >= 3:
+            break
+
+    repeat_pages_label = "、".join(f"第 {page} 页" for page in repeat_pages)
+    body = (
+        f"这一部分与前面的 {repeat_pages_label} 有明显重复，可以把它看作对前文核心内容的回顾。"
+        "复习时重点重新确认这些重复内容的定义、条件和它在整套推导中的位置，"
+        "不必把整页重新从头背一遍。"
+    )
+    if unique_lines:
+        body += " 当前重复出现的核心内容包括：" + "；".join(unique_lines) + "。"
+    return f"### 重复部分讲解\n\n{body}".strip()
+
+
+def _canonicalize_slide_explanation(
+    *,
+    slide: Slide,
+    markdown: str,
+    extracted_text: str,
+    extract_payload: dict | None,
+    related_pages: list[int],
+    question: str,
+) -> tuple[str, dict]:
+    cleaned = sanitize_slide_markdown(
+        slide=slide,
+        markdown=markdown,
+        extracted_text=extracted_text,
+        extract_payload=extract_payload,
+    )
+    title = _best_title(slide=slide, extracted_text=extracted_text, extract_payload=extract_payload)
+    repeat_summary = _build_repeat_summary(extract_payload)
+    sections = _split_sections(cleaned)
+    translation_md = sections.get("### 完整翻译与解释")
+    example_md = sections.get("### 例题完整讲解")
+    concept_md = sections.get("### 知识点总结")
+    repeat_md = sections.get("### 重复部分讲解")
+
+    is_example = _looks_like_example_page(
+        extracted_text=extracted_text,
+        question=question,
+        extract_payload=extract_payload,
+    )
+    terms = _terms_sentence(extracted_text)
+    summary = _summary_from_text(extracted_text, question)
+
+    if not translation_md:
+        translation_md = _build_translation_fallback(
+            summary=summary,
+            extracted_text=extracted_text,
+            terms=terms,
+        )
+
+    if example_md:
+        content_type = "example"
+        primary_md = example_md
+    elif concept_md:
+        content_type = "concept"
+        primary_md = concept_md
+    else:
+        content_type, primary_md = _build_primary_fallback(
+            is_example=is_example,
+            repeat_summary=repeat_summary,
+            extracted_text=extracted_text,
+            question=question,
+        )
+
+    if repeat_summary["has_repeat_section"] and not repeat_md:
+        repeat_md = _build_repeat_fallback(extract_payload=extract_payload)
+
+    canonical_parts = [
+        f"## {title}",
+        "",
+        _build_intro_note(related_pages=related_pages, repeat_summary=repeat_summary),
+        "",
+        translation_md.strip(),
+        "",
+        primary_md.strip(),
+    ]
+    if repeat_md:
+        canonical_parts.extend(["", repeat_md.strip()])
+
+    canonical_markdown = "\n".join(part for part in canonical_parts if part is not None).strip()
+    meta = {
+        "render_mode": "repeat-aware",
+        "content_type": content_type,
+        "title": title,
+        "repeat_summary": repeat_summary,
+        "sections": {
+            "translation_md": translation_md.strip(),
+            "primary_md": primary_md.strip(),
+            "repeat_md": repeat_md.strip() if repeat_md else "",
+        },
+    }
+    return canonical_markdown, meta
+
+
 def _template_slide_explanation(
     *,
     slide: Slide,
     question: str,
     extracted_text: str,
+    extract_payload: dict | None,
     related_pages: list[int],
-) -> str:
-    citation = ", ".join(str(page_num) for page_num in sorted(set(related_pages)))
-    terms_markdown = format_bilingual_terms_markdown(extracted_text)
-    summary = _summary_from_text(extracted_text, question)
-    return (
-        f"## Slide {slide.page_num} 讲解\n\n"
-        f"> [!NOTE]\n"
-        f"> **问题聚焦**：围绕“*{question}*”建立本页理解框架。\n"
-        f"> **引用页码**：{citation}\n"
-        f"> **输出约束**：中文解释 + 英文术语标注，遵循结构化 Markdown。\n\n"
-        "### 本页在讲什么 Summary\n"
-        f"<mark>{summary}</mark>\n\n"
-        "### 核心术语 Core Terms\n"
-        f"{terms_markdown}\n\n"
-        "### 知识链路 Reasoning Flow\n"
-        "1. **主题定位**：先判断本页是在给出定义（Definition）、方法（Method）还是结论（Conclusion）。\n"
-        "2. *推理展开*：把输入条件、关键步骤、输出结果按顺序复原。\n"
-        "3. **跨页连接**：确认它和相关页码中的前置概念、延伸概念分别是什么。\n\n"
-        "### 示例复盘 Example Walkthrough\n"
-        "- 用“**已知条件 -> 推理步骤 -> 结论**”复述一次。\n"
-        "- 如果这是方法页，优先说明它解决什么问题，以及何时不该使用。\n\n"
-        "> [!TIP]\n"
-        "> 复述时尽量把符号翻译成自然语言，会更容易发现理解漏洞。\n\n"
-        "### 易错点 Pitfalls\n"
-        "- 容易只记英文术语，不建立中文语义。\n"
-        "- 容易只背结论，不检查它依赖的前提条件。\n"
-        "- 容易把相关页当作重复内容，忽略它们提供的上下文。\n\n"
-        "> [!WARNING]\n"
-        "> 常见误区：只背结论、不查前提；只看公式、不解释符号。\n\n"
-        "### 1分钟自测 Quick Check\n"
-        "1. 本页核心结论是什么？\n"
-        "2. 哪个前提变化会让结论失效？\n"
-        "3. 你能用自己的话说出推理路径吗？\n"
-        "\n"
+) -> tuple[str, dict]:
+    canonical_markdown, meta = _canonicalize_slide_explanation(
+        slide=slide,
+        markdown="",
+        extracted_text=extracted_text,
+        extract_payload=extract_payload,
+        related_pages=related_pages,
+        question=question,
     )
+    return canonical_markdown, meta
 
 
 def _template_roi_explanation(
@@ -103,28 +416,45 @@ def _template_roi_explanation(
     slide: Slide,
     question: str,
     extracted_text: str,
+    extract_payload: dict | None,
     roi_bbox: tuple[float, float, float, float],
     region_size: tuple[int, int],
 ) -> str:
     x, y, w, h = roi_bbox
     region_width, region_height = region_size
-    terms_markdown = format_bilingual_terms_markdown(extracted_text)
+    summary = _summary_from_text(extracted_text, question)
+    is_example = _looks_like_example_page(
+        extracted_text=extracted_text,
+        question=question,
+        extract_payload=extract_payload,
+    )
+    section_title = "例题完整讲解" if is_example else "区域知识点总结"
+    explanation = (
+        "当前为离线回退讲解，只依据区域对应的稳定提取文本做保守说明。"
+        "如果框选里真正关键的信息来自图像细节、颜色、箭头或公式排版，而这些内容没有被稳定提取到，"
+        "那这份解释只能先给出一个可靠下限，不会伪造更具体的结论。"
+    )
+
+    if is_example:
+        deep_dive = (
+            "从可见文字判断，这个区域更像例题或解题步骤。阅读时先抓题目条件和目标，"
+            "再顺着页面的推导顺序看每一步为什么成立，重点检查每一步是否使用了前面已经给出的条件或公式。"
+        )
+    else:
+        deep_dive = (
+            "从可见文字判断，这个区域更像概念、公式或图示说明。理解时要先认出它在整页中的角色，"
+            "再看它是在定义概念、补充条件、解释图示，还是承接前后页的过渡内容。"
+        )
+
     return (
-        f"## 区域解释（Slide {slide.page_num}）\n\n"
+        f"## 区域解释（第 {slide.page_num} 页）\n\n"
         f"> [!NOTE]\n"
-        f"> **区域坐标**：`x={x:.3f}, y={y:.3f}, w={w:.3f}, h={h:.3f}`\n"
-        f"> **区域像素**：`{region_width} x {region_height}`\n"
-        f"> **解释策略**：局部先解释，再回到整页主线。\n\n"
-        f"**问题**：*{question}*\n\n"
-        "### 术语定位 Terms\n"
-        f"{terms_markdown}\n\n"
-        "### 知识点提炼 Key Concepts\n"
-        "1. 识别该区域的核心对象（符号、变量、概念名）。\n"
-        "2. 判断其角色：*定义（Definition）*、*推导（Derivation）* 还是 *结论（Conclusion）*。\n"
-        "3. 用一句话概括：「本区域说明了 ___，其作用是 ___。」\n\n"
-        "> [!TIP]\n"
-        "> 把这句话写进笔记，后续复习效率最高。\n"
-        "\n"
+        f"> 区域坐标：`x={x:.3f}, y={y:.3f}, w={w:.3f}, h={h:.3f}`\n"
+        f"> 区域像素：`{region_width} x {region_height}`\n\n"
+        "### 区域内容翻译与解释\n\n"
+        f"{explanation} 当前区域能稳定识别的内容主要集中在 <mark>{summary}</mark>。\n\n"
+        f"### {section_title}\n\n"
+        f"{deep_dive}\n"
     )
 
 
@@ -137,12 +467,12 @@ def generate_slide_explanation(
     extract_payload: dict | None = None,
     gateway: ModelGateway | None = None,
     related_pages: list[int] | None = None,
-) -> tuple[str, list[str], bool]:
+) -> tuple[str, list[str], bool, dict]:
     related_pages = related_pages or [slide.page_num]
     follow_ups = [
-        "请把这一页和前一页串起来讲一遍",
-        "给我一个更直觉的例子",
-        "出两道针对这页的判断题",
+        "把这页和前一页串起来讲一遍",
+        "把这页最难的公式再展开解释",
+        "给我一个更直觉的理解方式",
     ]
     prompt_extraction_text = _extraction_text_for_prompt(extracted_text, extract_payload)
     prompt_contract = build_slide_explanation_prompt(
@@ -150,6 +480,7 @@ def generate_slide_explanation(
         question=question,
         extracted_text=prompt_extraction_text,
         related_pages=related_pages,
+        repeat_analysis=(extract_payload or {}).get("repeat_analysis"),
     )
 
     degraded = False
@@ -161,17 +492,26 @@ def generate_slide_explanation(
                 slide_image_path=slide_image_path,
                 extraction_text=prompt_extraction_text,
             )
-            return answer, follow_ups, degraded
+            canonical_markdown, meta = _canonicalize_slide_explanation(
+                slide=slide,
+                markdown=answer,
+                extracted_text=extracted_text,
+                extract_payload=extract_payload,
+                related_pages=related_pages,
+                question=question,
+            )
+            return canonical_markdown, follow_ups, degraded, meta
         except Exception:
             degraded = True
 
-    answer = _template_slide_explanation(
+    answer, meta = _template_slide_explanation(
         slide=slide,
         question=question,
         extracted_text=extracted_text,
+        extract_payload=extract_payload,
         related_pages=related_pages,
     )
-    return answer, follow_ups, degraded
+    return answer, follow_ups, degraded, meta
 
 
 def generate_roi_explanation(
@@ -204,7 +544,7 @@ def generate_roi_explanation(
                 roi_image_path=roi_image_path,
                 extraction_text=prompt_extraction_text,
             )
-            return answer, degraded
+            return sanitize_roi_markdown(answer), degraded
         except Exception:
             degraded = True
 
@@ -212,7 +552,8 @@ def generate_roi_explanation(
         slide=slide,
         question=question,
         extracted_text=extracted_text,
+        extract_payload=extract_payload,
         roi_bbox=roi_bbox,
         region_size=region_size,
     )
-    return answer, degraded
+    return sanitize_roi_markdown(answer), degraded

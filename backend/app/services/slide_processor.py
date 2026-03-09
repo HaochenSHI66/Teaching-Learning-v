@@ -6,9 +6,12 @@ from pathlib import Path
 import fitz
 from PIL import Image
 
+from app.services.repetition import analyze_repeat_window
+
 
 SUPPORTED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
 SUPPORTED_TYPES = SUPPORTED_IMAGE_TYPES | {"application/pdf"}
+CURRENT_EXTRACT_SCHEMA_VERSION = 3
 
 
 @dataclass
@@ -74,6 +77,31 @@ def _classify_text_block(text: str) -> str:
     return "text"
 
 
+def _looks_like_page_number(text: str) -> bool:
+    stripped = text.strip()
+    return stripped.isdigit() and len(stripped) <= 4
+
+
+def extract_payload_is_current(payload: dict | None) -> bool:
+    if not payload:
+        return False
+    if int(payload.get("schema_version") or 0) != CURRENT_EXTRACT_SCHEMA_VERSION:
+        return False
+    required_keys = {
+        "title_candidates",
+        "text_blocks",
+        "bullet_blocks",
+        "figures",
+        "tables",
+        "equation_like_blocks",
+        "code_like_blocks",
+        "reading_order",
+        "page_stats",
+        "repeat_analysis",
+    }
+    return required_keys.issubset(payload.keys())
+
+
 def _save_figure_previews(
     *,
     slide_file: Path,
@@ -130,6 +158,8 @@ def _extract_pdf_payload(
             text, max_font_size = _extract_text_from_block(block)
             if not text:
                 continue
+            if _looks_like_page_number(text):
+                continue
 
             block_type = _classify_text_block(text)
             item = {
@@ -174,6 +204,7 @@ def _extract_pdf_payload(
     summary = ordered_titles[0] if ordered_titles else (text_blocks[0]["text"] if text_blocks else "")
 
     payload = {
+        "schema_version": CURRENT_EXTRACT_SCHEMA_VERSION,
         "page_num": page_num,
         "text": raw_text,
         "summary": summary,
@@ -198,6 +229,7 @@ def _extract_pdf_payload(
 
 def _extract_image_payload(*, image_rel_path: str, page_num: int, width: int, height: int) -> tuple[str, dict]:
     payload = {
+        "schema_version": CURRENT_EXTRACT_SCHEMA_VERSION,
         "page_num": page_num,
         "text": "",
         "summary": "",
@@ -306,10 +338,13 @@ def process_document(
     document_dir: Path,
     render_scale: float = 2.0,
 ) -> list[SlideAsset]:
+    assets: list[SlideAsset]
     if media_type == "application/pdf":
-        return _render_pdf(source_file, document_dir, render_scale=render_scale)
+        assets = _render_pdf(source_file, document_dir, render_scale=render_scale)
+    elif media_type in SUPPORTED_IMAGE_TYPES:
+        assets = _render_image(source_file, document_dir)
+    else:
+        raise ValueError(f"Unsupported file type: {media_type}")
 
-    if media_type in SUPPORTED_IMAGE_TYPES:
-        return _render_image(source_file, document_dir)
-
-    raise ValueError(f"Unsupported file type: {media_type}")
+    analyze_repeat_window(assets)
+    return assets

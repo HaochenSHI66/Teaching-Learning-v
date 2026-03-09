@@ -98,7 +98,7 @@ def chat_on_slide(
         used_slide_ids = [slide.id for slide in related_slides] or [target_slide.id]
         related_pages = [slide.page_num for slide in related_slides] or [target_slide.page_num]
 
-        answer, follow_ups, degraded = generate_slide_explanation(
+        answer, follow_ups, degraded, _ = generate_slide_explanation(
             slide=target_slide,
             question=payload.message,
             extracted_text=extracted_text,
@@ -122,7 +122,7 @@ def chat_on_slide(
             if not document:
                 raise HTTPException(status_code=404, detail="Document not found")
             extract_payload = _get_slide_extract_payload(session, reference_slide.id)
-            answer, follow_ups, degraded = generate_slide_explanation(
+            answer, follow_ups, degraded, _ = generate_slide_explanation(
                 slide=reference_slide,
                 question=payload.message,
                 extracted_text=str(extract_payload.get("text") or ""),
@@ -132,17 +132,13 @@ def chat_on_slide(
             )
         else:
             answer = (
-                "本页在讲什么（一句话）：\n"
-                "你当前处于全局模式，我会结合课程上下文回答你的问题。\n\n"
-                "知识点拆解：\n"
-                "1. 先明确问题与目标。\n"
-                "2. 回溯相关章节。\n"
-                "3. 给出可执行结论。\n\n"
-                "引用页码：无\n\n"
-                "1分钟自测：\n"
-                "1. 你能复述答案主线吗？\n"
-                "2. 哪个知识点仍然不清楚？\n"
-                "3. 下一步你会练哪道题？\n"
+                "## 全局讲解\n\n"
+                "> [!NOTE]\n"
+                "> 引用页码：无\n\n"
+                "### 完整翻译与解释\n\n"
+                "你当前处于全局模式，因此我会结合整套课件的上下文回答你的问题，而不是只围绕单页作答。\n\n"
+                "### 知识点总结\n\n"
+                "建议先明确你的问题对应哪一段课程主线，再回到相关页面逐页核对定义、推导和例题。"
             )
             follow_ups = ["把这题拆成三步", "给我一个反例", "和前一页有什么关系"]
             degraded = True

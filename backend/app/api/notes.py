@@ -6,10 +6,25 @@ from sqlmodel import Session, select
 from app.api.deps import get_db_session
 from app.models import LearningSession, Message, Slide, SlideExplanation
 from app.schemas import NotesAutoGenerateRequest, NotesExportRequest, NotesExportResponse
+from app.services.explanation_engine import (
+    CURRENT_EXPLANATION_VERSION,
+    explanation_markdown_is_stale,
+    explanation_meta_is_current,
+)
 from app.services.explanation_cache import build_document_explanations_markdown
 from app.services.notes_exporter import build_markdown
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
+
+
+def _current_explanations_only(items: list[SlideExplanation]) -> list[SlideExplanation]:
+    return [
+        item
+        for item in items
+        if int(getattr(item, "version", 0) or 0) == CURRENT_EXPLANATION_VERSION
+        and not explanation_markdown_is_stale(item.markdown)
+        and explanation_meta_is_current(getattr(item, "meta", None))
+    ]
 
 
 @router.post("/export", response_model=NotesExportResponse)
@@ -55,6 +70,7 @@ def autogen_notes_from_cached_explanations(
         .where(SlideExplanation.document_id == learning_session.document_id)
         .order_by(SlideExplanation.page_num)
     ).all()
+    explanations = _current_explanations_only(explanations)
 
     if not explanations:
         raise HTTPException(status_code=409, detail="No cached explanations available")

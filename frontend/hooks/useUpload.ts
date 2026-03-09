@@ -14,6 +14,7 @@ import {
   uploadDocument,
   type DocumentListItem,
   type Slide,
+  type SlideExplanation,
 } from "@/lib/api";
 
 type GenerationProgress = { current: number; total: number };
@@ -23,7 +24,7 @@ type UploadState = {
   sessionId: string | null;
   slides: Slide[];
   documents: DocumentListItem[];
-  cachedExplanations: Record<string, string>;
+  cachedExplanations: Record<string, SlideExplanation>;
   loading: boolean;
   statusText: string;
   generationDocId: string | null;
@@ -36,7 +37,7 @@ type UploadActions = {
   deleteDocument: (documentId: string) => Promise<void>;
   regenerateDocumentExplanations: (documentId: string) => Promise<void>;
   abortGeneration: () => void;
-  setCachedExplanation: (slideId: string, markdown: string) => void;
+  setCachedExplanation: (slideId: string, explanation: SlideExplanation) => void;
   refreshDocuments: () => Promise<void>;
   reset: () => void;
 };
@@ -46,7 +47,7 @@ export function useUpload(): UploadState & UploadActions {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [slides, setSlides] = useState<Slide[]>([]);
   const [documents, setDocuments] = useState<DocumentListItem[]>([]);
-  const [cachedExplanations, setCachedExplanations] = useState<Record<string, string>>({});
+  const [cachedExplanations, setCachedExplanations] = useState<Record<string, SlideExplanation>>({});
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("请先上传 PDF/图片开始学习。");
   const [generationDocId, setGenerationDocId] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export function useUpload(): UploadState & UploadActions {
 
     setDocumentId(targetDocumentId);
     setSlides(fetchedSlides);
-    setCachedExplanations(Object.fromEntries(explanations.map((item) => [item.slide_id, item.markdown])));
+    setCachedExplanations(Object.fromEntries(explanations.map((item) => [item.slide_id, item])));
 
     if (options?.resetSession ?? true) {
       const newSession =
@@ -188,7 +189,7 @@ export function useUpload(): UploadState & UploadActions {
         const result = await generateSlideExplanation(targetDocumentId, slide.id);
         completed++;
         setGenerationProgress({ current: completed, total });
-        setCachedExplanations((prev) => ({ ...prev, [slide.id]: result.markdown }));
+        setCachedExplanations((prev) => ({ ...prev, [slide.id]: result }));
         setSlides((prev) =>
           prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
         );
@@ -213,8 +214,8 @@ export function useUpload(): UploadState & UploadActions {
     abortRef.current = true;
   }
 
-  function setCachedExplanation(slideId: string, markdown: string) {
-    setCachedExplanations((prev) => ({ ...prev, [slideId]: markdown }));
+  function setCachedExplanation(slideId: string, explanation: SlideExplanation) {
+    setCachedExplanations((prev) => ({ ...prev, [slideId]: explanation }));
     setSlides((prev) =>
       prev.map((slide) =>
         slide.id === slideId ? { ...slide, explanation_state: "ready" } : slide,

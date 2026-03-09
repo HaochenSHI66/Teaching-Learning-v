@@ -42,8 +42,17 @@ from app.schemas import (
 from app.services.explanation_cache import (
     build_document_explanations_markdown,
 )
-from app.services.explanation_engine import generate_slide_explanation
-from app.services.slide_processor import SUPPORTED_TYPES, process_document
+from app.services.explanation_engine import (
+    CURRENT_EXPLANATION_VERSION,
+    explanation_meta_is_current,
+    explanation_markdown_is_stale,
+    generate_slide_explanation,
+)
+from app.services.slide_processor import (
+    SUPPORTED_TYPES,
+    extract_payload_is_current,
+    process_document,
+)
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -119,7 +128,7 @@ def _process_document_background(
                 )
             )
             slide_image_path = document_dir / asset.image_rel_path
-            explanation_markdown, _, _ = generate_slide_explanation(
+            explanation_markdown, _, _, explanation_meta = generate_slide_explanation(
                 slide=slide,
                 question="请生成这一页的完整讲解",
                 extracted_text=asset.extracted_text,
@@ -133,6 +142,8 @@ def _process_document_background(
                     slide_id=slide.id,
                     page_num=asset.page_num,
                     markdown=explanation_markdown,
+                    meta=explanation_meta,
+                    version=CURRENT_EXPLANATION_VERSION,
                 )
             )
 
@@ -165,7 +176,80 @@ def _payload_to_extract_read(*, document_id: str, slide: Slide, payload: dict | 
         code_like_blocks=normalize_blocks(source.get("code_like_blocks")),
         reading_order=list(source.get("reading_order") or []),
         page_stats={str(key): int(value) for key, value in (source.get("page_stats") or {}).items()},
+        repeat_analysis=source.get("repeat_analysis"),
     )
+
+
+def _find_original_source_file(document_dir: Path) -> Path:
+    original_dir = document_dir / "original"
+    candidates = sorted(path for path in original_dir.iterdir() if path.is_file()) if original_dir.exists() else []
+    if not candidates:
+        raise HTTPException(status_code=404, detail="Original document source not found")
+    return candidates[0]
+
+
+def _explanation_is_current(explanation: SlideExplanation | None) -> bool:
+    if explanation is None:
+        return False
+    if int(getattr(explanation, "version", 0) or 0) != CURRENT_EXPLANATION_VERSION:
+        return False
+    if explanation_markdown_is_stale(explanation.markdown):
+        return False
+    if not explanation_meta_is_current(getattr(explanation, "meta", None)):
+        return False
+    return True
+
+
+def _refresh_document_extracts_if_needed(
+    *,
+    session: Session,
+    document: Document,
+    storage_root: Path,
+) -> dict[str, dict]:
+    slides = session.exec(select(Slide).where(Slide.document_id == document.id).order_by(Slide.page_num)).all()
+    extract_rows = session.exec(select(SlideExtract).where(SlideExtract.slide_id.in_([slide.id for slide in slides]))).all() if slides else []
+    extract_map = {item.slide_id: item for item in extract_rows}
+
+    if slides and all(extract_payload_is_current(extract_map.get(slide.id).payload if extract_map.get(slide.id) else None) for slide in slides):
+        return {slide_id: row.payload for slide_id, row in extract_map.items()}
+
+    document_dir = storage_root / document.storage_path
+    source_file = _find_original_source_file(document_dir)
+    render_scale = float(os.getenv("PDF_RENDER_SCALE", "2.0"))
+    assets = process_document(
+        source_file=source_file,
+        media_type=document.media_type,
+        document_dir=document_dir,
+        render_scale=render_scale,
+    )
+    slide_by_page = {slide.page_num: slide for slide in slides}
+
+    refreshed_payloads: dict[str, dict] = {}
+    for asset in assets:
+        slide = slide_by_page.get(asset.page_num)
+        if slide is None:
+            continue
+        slide.image_path = asset.image_rel_path
+        slide.thumbnail_path = asset.thumbnail_rel_path
+        slide.width = asset.width
+        slide.height = asset.height
+        session.add(slide)
+
+        payload = asset.extract_payload or {
+            "page_num": asset.page_num,
+            "text": asset.extracted_text,
+            "summary": asset.extracted_text.splitlines()[0] if asset.extracted_text else "",
+        }
+        extract_row = extract_map.get(slide.id)
+        if extract_row is None:
+            extract_row = SlideExtract(slide_id=slide.id, payload=payload)
+        else:
+            extract_row.payload = payload
+        session.add(extract_row)
+        refreshed_payloads[slide.id] = payload
+
+    session.commit()
+    return refreshed_payloads
 
 
 def _upsert_slide_explanation(
@@ -183,7 +267,7 @@ def _upsert_slide_explanation(
         raise HTTPException(status_code=404, detail="Document not found")
 
     slide_image_path = storage_root / document.storage_path / slide.image_path
-    markdown, _, _ = generate_slide_explanation(
+    markdown, _, _, meta = generate_slide_explanation(
         slide=slide,
         question="请生成这一页的完整讲解",
         extracted_text=extracted_text,
@@ -195,6 +279,8 @@ def _upsert_slide_explanation(
 
     if explanation:
         explanation.markdown = markdown
+        explanation.meta = meta
+        explanation.version = CURRENT_EXPLANATION_VERSION
         explanation.generated_at = datetime.now(timezone.utc)
         session.add(explanation)
         return explanation, overwrote_existing
@@ -204,6 +290,8 @@ def _upsert_slide_explanation(
         slide_id=slide.id,
         page_num=slide.page_num,
         markdown=markdown,
+        meta=meta,
+        version=CURRENT_EXPLANATION_VERSION,
     )
     session.add(explanation)
     session.flush()
@@ -353,6 +441,7 @@ def get_document_status(
 @router.get("/{document_id}/slides", response_model=SlidesResponse)
 def list_document_slides(
     document_id: str,
+    request: Request,
     session: Session = Depends(get_db_session),
 ) -> SlidesResponse:
     document = session.get(Document, document_id)
@@ -363,24 +452,19 @@ def list_document_slides(
     if document.status == "error":
         raise HTTPException(status_code=422, detail="Document processing failed")
 
-    query = select(Slide).where(Slide.document_id == document_id).order_by(Slide.page_num)
-    slides = session.exec(query).all()
+    extract_map = _refresh_document_extracts_if_needed(
+        session=session,
+        document=document,
+        storage_root=request.app.state.storage_dir,
+    )
+    slides = session.exec(select(Slide).where(Slide.document_id == document_id).order_by(Slide.page_num)).all()
     slide_ids = [slide.id for slide in slides]
-
-    extract_map = {
-        item.slide_id: item.payload
-        for item in (
-            session.exec(select(SlideExtract).where(SlideExtract.slide_id.in_(slide_ids))).all() if slide_ids else []
-        )
-    }
-    explanation_slide_ids = {
-        item.slide_id
-        for item in (
-            session.exec(select(SlideExplanation).where(SlideExplanation.slide_id.in_(slide_ids))).all()
-            if slide_ids
-            else []
-        )
-    }
+    explanations = (
+        session.exec(select(SlideExplanation).where(SlideExplanation.slide_id.in_(slide_ids))).all()
+        if slide_ids
+        else []
+    )
+    explanation_map = {item.slide_id: item for item in explanations}
 
     return SlidesResponse(
         document_id=document_id,
@@ -397,7 +481,12 @@ def list_document_slides(
                     slide=slide,
                     payload=extract_map.get(slide.id),
                 ),
-                explanation_state="ready" if slide.id in explanation_slide_ids else "not_generated",
+                explanation_state=(
+                    "ready"
+                    if _explanation_is_current(explanation_map.get(slide.id))
+                    and extract_payload_is_current(extract_map.get(slide.id))
+                    else "not_generated"
+                ),
             )
             for slide in slides
         ],
@@ -420,6 +509,7 @@ def list_document_explanations(
         .where(SlideExplanation.document_id == document_id)
         .order_by(SlideExplanation.page_num)
     ).all()
+    explanations = [item for item in explanations if _explanation_is_current(item)]
 
     return DocumentExplanationsResponse(
         document_id=document_id,
@@ -428,6 +518,7 @@ def list_document_explanations(
                 slide_id=item.slide_id,
                 page_num=item.page_num,
                 markdown=item.markdown,
+                meta=item.meta,
             )
             for item in explanations
         ],
@@ -454,8 +545,12 @@ def regenerate_slide_explanation(
     if not slide or slide.document_id != document_id:
         raise HTTPException(status_code=404, detail="Slide not found")
 
-    extract = session.exec(select(SlideExtract).where(SlideExtract.slide_id == slide_id)).first()
-    extract_payload = extract.payload if extract else {}
+    extract_map = _refresh_document_extracts_if_needed(
+        session=session,
+        document=document,
+        storage_root=request.app.state.storage_dir,
+    )
+    extract_payload = extract_map.get(slide_id) or {}
     extracted_text = str(extract_payload.get("text") or "")
     explanation, overwrote_existing = _upsert_slide_explanation(
         session=session,
@@ -472,6 +567,7 @@ def regenerate_slide_explanation(
         slide_id=slide.id,
         page_num=slide.page_num,
         markdown=explanation.markdown,
+        meta=explanation.meta,
         overwrote_existing=overwrote_existing,
     )
 
@@ -491,11 +587,12 @@ def regenerate_document_explanations(
     if document.status != "ready":
         raise HTTPException(status_code=409, detail="Document is not ready")
 
+    extract_map = _refresh_document_extracts_if_needed(
+        session=session,
+        document=document,
+        storage_root=request.app.state.storage_dir,
+    )
     slides = session.exec(select(Slide).where(Slide.document_id == document_id).order_by(Slide.page_num)).all()
-    extract_map = {
-        item.slide_id: item.payload
-        for item in session.exec(select(SlideExtract).where(SlideExtract.slide_id.in_([slide.id for slide in slides]))).all()
-    } if slides else {}
 
     generated_count = 0
     overwrote_existing = False

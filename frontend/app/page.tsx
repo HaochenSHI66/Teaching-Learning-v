@@ -44,7 +44,7 @@ function formatNotesMarkdown(input: string) {
 export default function Page() {
   const upload = useUpload();
   const chat = useChat();
-  const { setExplanation } = chat;
+  const { setExplanation, setExplanationMeta } = chat;
 
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [roi, setRoi] = useState<RoiBox | null>(null);
@@ -77,10 +77,13 @@ export default function Page() {
   useEffect(() => {
     if (!currentSlide) {
       setExplanation("");
+      setExplanationMeta(null);
       return;
     }
-    setExplanation(upload.cachedExplanations[currentSlide.id] ?? "");
-  }, [currentSlide, upload.cachedExplanations, setExplanation]);
+    const cached = upload.cachedExplanations[currentSlide.id];
+    setExplanation(cached?.markdown ?? "");
+    setExplanationMeta(cached?.meta ?? null);
+  }, [currentSlide, upload.cachedExplanations, setExplanation, setExplanationMeta]);
 
   const statusText =
     chat.statusText || upload.statusText || globalStatus || "待机";
@@ -153,6 +156,7 @@ export default function Page() {
       });
       const elaboration = `\n\n---\n\n**补充解析**\n\n${response.answer}`;
       setExplanation(chat.explanation ? `${chat.explanation}${elaboration}` : response.answer);
+      setExplanationMeta(null);
       setGlobalStatus("已追加至解析");
     } catch (error) {
       setGlobalStatus(`深入解析失败：${getErrorMessage(error)}`);
@@ -184,8 +188,9 @@ export default function Page() {
     setGlobalStatus("重新生成解析中…");
     try {
       const result = await generateSlideExplanation(upload.documentId, currentSlide.id);
-      upload.setCachedExplanation(currentSlide.id, result.markdown);
+      upload.setCachedExplanation(currentSlide.id, result);
       setExplanation(result.markdown);
+      setExplanationMeta(result.meta ?? null);
       setGlobalStatus("解析已更新");
     } catch (error) {
       setGlobalStatus(`解析生成失败：${getErrorMessage(error)}`);
@@ -411,6 +416,7 @@ export default function Page() {
                   explanationLoading={slideGenerationLoading}
                   extraction={currentSlide?.extract ?? null}
                   explanation={chat.explanation}
+                  explanationMeta={chat.explanationMeta}
                   loading={loading}
                   mode={chat.mode}
                   onChatInputChange={chat.setChatInput}
