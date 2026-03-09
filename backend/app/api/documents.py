@@ -608,8 +608,10 @@ def regenerate_document_explanations(
         )
         generated_count += 1
         overwrote_existing = overwrote_existing or overwrote
+        # Commit slide-by-slide to avoid holding a long SQLite write lock for the
+        # full document regeneration window.
+        session.commit()
 
-    session.commit()
     return DocumentExplanationGenerateResponse(
         document_id=document_id,
         generated_count=generated_count,
