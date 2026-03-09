@@ -90,6 +90,14 @@ class Note(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class DocumentNotebook(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    document_id: str = Field(index=True, unique=True)
+    content_md: str
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class Quiz(SQLModel, table=True):
     id: str = Field(default_factory=_new_id, primary_key=True)
     session_id: str = Field(index=True)

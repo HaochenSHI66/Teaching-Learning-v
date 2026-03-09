@@ -91,6 +91,14 @@ class ModelGateway:
         )
         return self._post_chat_completion(payload)
 
+    def generate_text_markdown(self, *, prompt: str) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+            "temperature": float(os.getenv("MODEL_TEMPERATURE", "0.2")),
+        }
+        return self._post_chat_completion(payload)
+
     def _build_payload(self, *, prompt_text: str, image_paths: list[Path]) -> dict[str, Any]:
         content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
         for image_path in image_paths:

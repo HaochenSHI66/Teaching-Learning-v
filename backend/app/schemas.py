@@ -239,6 +239,26 @@ class NotesExportResponse(BaseModel):
     markdown: str
 
 
+class DocumentNotebookRead(BaseModel):
+    document_id: str
+    markdown: str
+    updated_at: datetime | None = None
+    exists: bool = False
+
+
+class DocumentNotebookSaveRequest(BaseModel):
+    markdown: str = Field(default="")
+
+
+class DocumentNotebookAutoGenerateRequest(BaseModel):
+    title: str = "自动笔记"
+
+
+class DocumentNotebookExportResponse(BaseModel):
+    title: str
+    markdown: str
+
+
 class NotesAutoGenerateRequest(BaseModel):
     session_id: str
     title: str = "自动笔记"

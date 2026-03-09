@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownContent } from "@/components/markdown-content";
+import { extractNotebookOutline } from "@/lib/notebookFormat";
 
 type NoteVersion = { timestamp: number; content: string };
 
@@ -12,9 +13,13 @@ type NoteEditorProps = {
   onAIOrganize: () => void;
   onAIPolish: (content: string) => Promise<string>;
   onExport: () => void;
+  onCollapse?: () => void;
   loading: boolean;
   disabled: boolean;
   documentName?: string;
+  viewMode: "edit" | "preview";
+  onViewModeChange: (mode: "edit" | "preview") => void;
+  saveStateLabel?: string;
 };
 
 export function NoteEditor({
@@ -24,15 +29,34 @@ export function NoteEditor({
   onAIOrganize,
   onAIPolish,
   onExport,
+  onCollapse,
   loading,
   disabled,
   documentName,
+  viewMode,
+  onViewModeChange,
+  saveStateLabel,
 }: NoteEditorProps) {
-  const [previewMode, setPreviewMode] = useState(false);
   const [history, setHistory] = useState<NoteVersion[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [polishing, setPolishing] = useState(false);
   const [diffView, setDiffView] = useState<{ before: string; after: string } | null>(null);
+  const [pendingHeading, setPendingHeading] = useState<string | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const outline = useMemo(() => extractNotebookOutline(markdown), [markdown]);
+
+  function scrollPreviewToHeading(heading: string) {
+    const container = previewRef.current;
+    if (!container) return false;
+    const headings = Array.from(container.querySelectorAll("h2"));
+    const target = headings.find((item) => item.textContent?.trim() === heading);
+    if (!target) return false;
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const nextScrollTop = container.scrollTop + (targetRect.top - containerRect.top) - 12;
+    container.scrollTop = Math.max(0, nextScrollTop);
+    return true;
+  }
 
   async function handleAIPolish() {
     if (!markdown.trim()) return;
@@ -62,25 +86,53 @@ export function NoteEditor({
     setHistoryOpen(false);
   }
 
+  useEffect(() => {
+    if (!pendingHeading || viewMode !== "preview" || !previewRef.current) return;
+    const container = previewRef.current;
+    const frame = window.requestAnimationFrame(() => {
+      scrollPreviewToHeading(pendingHeading);
+      setPendingHeading(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingHeading, viewMode, markdown]);
+
+  function jumpToHeading(heading: string) {
+    if (viewMode === "preview") {
+      window.setTimeout(() => {
+        scrollPreviewToHeading(heading);
+      }, 0);
+    } else {
+      setPendingHeading(heading);
+      onViewModeChange("preview");
+    }
+  }
+
   return (
     <section className="flex h-full min-h-0 flex-col rounded-[30px] border border-[#d9c7ab] bg-[linear-gradient(180deg,#fffaf2,#f6ebdb)] p-3 shadow-[0_28px_60px_rgba(122,98,66,0.12)]">
       {/* Header */}
       <header className="mb-2 shrink-0 flex items-center justify-between gap-2">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.26em] text-[#9d876f]">笔记</p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] uppercase tracking-[0.26em] text-[#9d876f]">Notebook</p>
+            {saveStateLabel ? (
+              <span className="rounded-full border border-[#e2d4bf] bg-[#fffdf8] px-2 py-0.5 text-[10px] text-[#8f7a63]">
+                {saveStateLabel}
+              </span>
+            ) : null}
+          </div>
           {documentName && <p className="text-xs font-medium text-[#463829] truncate max-w-[160px]">{documentName}</p>}
         </div>
         <div className="flex items-center gap-1">
           <button
-            className={`btn btn-segment !px-2.5 !py-1 !text-[10px] ${!previewMode ? "btn-segment-active" : "btn-segment-idle"}`}
-            onClick={() => setPreviewMode(false)}
+            className={`btn btn-segment !px-2.5 !py-1 !text-[10px] ${viewMode === "edit" ? "btn-segment-active" : "btn-segment-idle"}`}
+            onClick={() => onViewModeChange("edit")}
             type="button"
           >
             编辑
           </button>
           <button
-            className={`btn btn-segment !px-2.5 !py-1 !text-[10px] ${previewMode ? "btn-segment-active" : "btn-segment-idle"}`}
-            onClick={() => setPreviewMode(true)}
+            className={`btn btn-segment !px-2.5 !py-1 !text-[10px] ${viewMode === "preview" ? "btn-segment-active" : "btn-segment-idle"}`}
+            onClick={() => onViewModeChange("preview")}
             type="button"
           >
             预览
@@ -92,6 +144,15 @@ export function NoteEditor({
           >
             版本 {history.length > 0 && `(${history.length})`}
           </button>
+          {onCollapse ? (
+            <button
+              className="btn btn-outline !px-2.5 !py-1 !text-[10px]"
+              onClick={onCollapse}
+              type="button"
+            >
+              收起笔记本
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -115,6 +176,25 @@ export function NoteEditor({
           导出
         </button>
       </div>
+
+      {outline.length > 1 ? (
+        <div
+          className="mb-2 shrink-0 flex gap-1 overflow-x-auto rounded-[18px] border border-[#e0d0bb] bg-[#fffdf8] p-2"
+          data-testid="notebook-outline"
+        >
+          {outline.map((item) => (
+            <button
+              key={item.heading}
+              className="btn btn-outline shrink-0 !rounded-full !px-3 !py-1 !text-[10px]"
+              onClick={() => jumpToHeading(item.heading)}
+              title={item.title}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {/* Diff banner */}
       {diffView && (
@@ -153,8 +233,12 @@ export function NoteEditor({
 
       {/* Main editor / preview */}
       <div className="min-h-0 flex-1">
-        {previewMode ? (
-          <div className="h-full overflow-auto rounded-[22px] border border-[#deccb1] bg-[#fffdf8] p-3">
+        {viewMode === "preview" ? (
+          <div
+            className="h-full overflow-auto rounded-[22px] border border-[#deccb1] bg-[#fffdf8] p-3"
+            data-testid="notebook-preview"
+            ref={previewRef}
+          >
             {markdown.trim() ? (
               <MarkdownContent content={markdown} />
             ) : (

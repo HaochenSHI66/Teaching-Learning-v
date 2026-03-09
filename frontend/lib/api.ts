@@ -208,6 +208,13 @@ export type SessionAnalyticsPayload = {
   }[];
 };
 
+export type DocumentNotebook = {
+  document_id: string;
+  markdown: string;
+  updated_at?: string | null;
+  exists: boolean;
+};
+
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -486,5 +493,43 @@ export async function autogenNotes(params: {
       session_id: params.sessionId,
       title: params.title,
     }),
+  });
+}
+
+export async function fetchNotebook(documentId: string): Promise<DocumentNotebook> {
+  return request<DocumentNotebook>(`/api/v1/notebooks/${documentId}`);
+}
+
+export async function saveNotebook(
+  documentId: string,
+  markdown: string,
+): Promise<DocumentNotebook> {
+  return request<DocumentNotebook>(`/api/v1/notebooks/${documentId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ markdown }),
+  });
+}
+
+export async function autogenNotebook(
+  documentId: string,
+  title: string = "自动笔记",
+): Promise<DocumentNotebook> {
+  return request<DocumentNotebook>(`/api/v1/notebooks/${documentId}/autogen`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function exportNotebook(
+  documentId: string,
+): Promise<{ title: string; markdown: string }> {
+  return request<{ title: string; markdown: string }>(`/api/v1/notebooks/${documentId}/export`, {
+    method: "POST",
   });
 }

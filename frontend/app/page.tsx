@@ -1,23 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AIPanel } from "@/components/ai-panel";
 import { DocumentLibrary } from "@/components/document-library";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { NoteEditor } from "@/components/note-editor";
+import { NotebookWindow } from "@/components/notebook-window";
 import { SlideViewer } from "@/components/slide-viewer";
 import { useChat } from "@/hooks/useChat";
 import { useUpload } from "@/hooks/useUpload";
 import {
   askSlideQuestion,
-  autogenNotes,
+  autogenNotebook,
+  exportNotebook,
+  fetchNotebook,
   exportDocumentExplanations,
-  exportNotes,
   generateSlideExplanation,
+  saveNotebook,
   type RoiBox,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errorMessage";
+import {
+  formatNotebookMarkdown,
+  inferPageTitle,
+  insertSelectionIntoNotebook,
+} from "@/lib/notebookFormat";
 
 function downloadMarkdown(filename: string, markdown: string) {
   const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
@@ -31,17 +38,6 @@ function downloadMarkdown(filename: string, markdown: string) {
   URL.revokeObjectURL(url);
 }
 
-function formatNotesMarkdown(input: string) {
-  const trimmed = input.replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
-  if (!trimmed) {
-    return "# 笔记\n\n";
-  }
-  if (trimmed.startsWith("#")) {
-    return `${trimmed}\n`;
-  }
-  return `# 笔记\n\n${trimmed}\n`;
-}
-
 export default function Page() {
   const upload = useUpload();
   const chat = useChat();
@@ -51,20 +47,29 @@ export default function Page() {
   const [roi, setRoi] = useState<RoiBox | null>(null);
   const [notesMarkdown, setNotesMarkdown] = useState("");
   const [globalStatus, setGlobalStatus] = useState("");
-  const [notesLoading, setNotesLoading] = useState(false);
+  const [notebookBusy, setNotebookBusy] = useState(false);
+  const [notebookSaving, setNotebookSaving] = useState(false);
+  const [notebookSaveState, setNotebookSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [notebookViewMode, setNotebookViewMode] = useState<"edit" | "preview">("edit");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [slideGenerationLoading, setSlideGenerationLoading] = useState(false);
   const [notePanelOpen, setNotePanelOpen] = useState(false);
+  const notesMarkdownRef = useRef("");
+  const notebookLastSavedRef = useRef("");
+  const notebookDocumentRef = useRef<string | null>(null);
 
   const currentSlide = useMemo(
     () => upload.slides[currentSlideIndex],
     [upload.slides, currentSlideIndex],
   );
+  const currentDocumentName = useMemo(
+    () => upload.documents.find((d) => d.id === upload.documentId)?.filename,
+    [upload.documents, upload.documentId],
+  );
 
   useEffect(() => {
     setCurrentSlideIndex(0);
     setRoi(null);
-    setNotesMarkdown("");
     setGlobalStatus("");
     chat.setChatInput("");
     chat.clearStatus();
@@ -86,58 +91,144 @@ export default function Page() {
     setExplanationMeta(cached?.meta ?? null);
   }, [currentSlide, upload.cachedExplanations, setExplanation, setExplanationMeta]);
 
+  useEffect(() => {
+    notesMarkdownRef.current = notesMarkdown;
+  }, [notesMarkdown]);
+
   const statusText =
     chat.statusText || upload.statusText || globalStatus || "待机";
 
   const loading =
-    upload.loading || chat.loading || notesLoading || slideGenerationLoading;
+    upload.loading || chat.loading || notebookBusy || slideGenerationLoading;
   const documentCount = upload.documents.length;
   const pageCount = upload.slides.length;
 
-  async function handleExportNotes() {
-    if (!upload.sessionId) return;
-    setNotesLoading(true);
-    setGlobalStatus("导出会话笔记中…");
+  async function persistNotebook(targetDocumentId: string, markdown: string, silent: boolean = false) {
+    if (!targetDocumentId) return;
+    setNotebookSaving(true);
+    setNotebookSaveState("saving");
     try {
-      const result = await exportNotes({ sessionId: upload.sessionId, title: "会话笔记" });
-      setNotesMarkdown(result.markdown);
-      downloadMarkdown("session-notes.md", result.markdown);
-      setGlobalStatus("笔记已导出");
+      await saveNotebook(targetDocumentId, markdown);
+      notebookLastSavedRef.current = markdown;
+      setNotebookSaveState("saved");
+      if (!silent) {
+        setGlobalStatus("笔记本已保存");
+      }
+    } catch (error) {
+      setNotebookSaveState("error");
+      if (!silent) {
+        setGlobalStatus(`笔记保存失败：${getErrorMessage(error)}`);
+      }
+    } finally {
+      setNotebookSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadNotebookForDocument() {
+      const previousDocumentId = notebookDocumentRef.current;
+      const nextDocumentId = upload.documentId;
+      if (
+        previousDocumentId &&
+        previousDocumentId !== nextDocumentId &&
+        notebookLastSavedRef.current !== notesMarkdownRef.current
+      ) {
+        await persistNotebook(previousDocumentId, notesMarkdownRef.current, true);
+      }
+
+      notebookDocumentRef.current = nextDocumentId;
+      if (!nextDocumentId) {
+        setNotesMarkdown("");
+        notesMarkdownRef.current = "";
+        notebookLastSavedRef.current = "";
+        setNotebookSaveState("idle");
+        setNotePanelOpen(false);
+        return;
+      }
+
+      setNotebookBusy(true);
+      setNotebookSaveState("idle");
+      try {
+        const notebook = await fetchNotebook(nextDocumentId);
+        if (cancelled) return;
+        setNotesMarkdown(notebook.markdown);
+        notesMarkdownRef.current = notebook.markdown;
+        notebookLastSavedRef.current = notebook.markdown;
+      } catch (error) {
+        if (cancelled) return;
+        setGlobalStatus(`笔记本加载失败：${getErrorMessage(error)}`);
+      } finally {
+        if (!cancelled) {
+          setNotebookBusy(false);
+        }
+      }
+    }
+
+    void loadNotebookForDocument();
+    return () => {
+      cancelled = true;
+    };
+  }, [upload.documentId]);
+
+  useEffect(() => {
+    if (!upload.documentId) return;
+    if (notesMarkdown === notebookLastSavedRef.current) return;
+    setNotebookSaveState("saving");
+    const timer = window.setTimeout(() => {
+      void persistNotebook(upload.documentId!, notesMarkdown, true);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [notesMarkdown, upload.documentId]);
+
+  async function handleExportNotes() {
+    if (!upload.documentId || !currentDocumentName) return;
+    setNotebookBusy(true);
+    setGlobalStatus("导出笔记本中…");
+    try {
+      const result = await exportNotebook(upload.documentId);
+      downloadMarkdown(`${currentDocumentName.replace(/\.[^.]+$/, "")}-notebook.md`, result.markdown);
+      setGlobalStatus("笔记本已导出");
     } catch (error) {
       setGlobalStatus(`导出失败：${getErrorMessage(error)}`);
     } finally {
-      setNotesLoading(false);
+      setNotebookBusy(false);
     }
   }
 
   async function handleExportAllExplanations() {
     if (!upload.documentId) return;
-    setNotesLoading(true);
+    setNotebookBusy(true);
     setGlobalStatus("导出解析中…");
     try {
       const result = await exportDocumentExplanations(upload.documentId);
-      setNotesMarkdown(result.markdown);
       downloadMarkdown("all-slides-explanations.md", result.markdown);
       setGlobalStatus("解析已导出");
     } catch (error) {
       setGlobalStatus(`导出失败：${getErrorMessage(error)}`);
     } finally {
-      setNotesLoading(false);
+      setNotebookBusy(false);
     }
   }
 
   async function handleAutoGenerateNotes() {
-    if (!upload.sessionId) return;
-    setNotesLoading(true);
-    setGlobalStatus("生成结构化笔记中…");
+    if (!upload.documentId) return;
+    setNotebookBusy(true);
+    setGlobalStatus("生成文档笔记本中…");
     try {
-      const result = await autogenNotes({ sessionId: upload.sessionId, title: "自动笔记" });
+      const result = await autogenNotebook(upload.documentId, "自动笔记");
       setNotesMarkdown(result.markdown);
-      setGlobalStatus("笔记已生成");
+      notesMarkdownRef.current = result.markdown;
+      notebookLastSavedRef.current = result.markdown;
+      setNotebookViewMode("preview");
+      setNotePanelOpen(true);
+      setNotebookSaveState("saved");
+      setGlobalStatus("笔记本已生成");
     } catch (error) {
       setGlobalStatus(`笔记生成失败：${getErrorMessage(error)}`);
     } finally {
-      setNotesLoading(false);
+      setNotebookBusy(false);
     }
   }
 
@@ -172,7 +263,11 @@ export default function Page() {
     try {
       const response = await askSlideQuestion({
         sessionId: upload.sessionId,
-        message: `请优化整理以下学习笔记，改善结构与表达，保留所有核心要点，以 Markdown 格式输出：\n\n${content}`,
+        message:
+          "请优化整理以下学习笔记，保留现有 Markdown 结构与所有核心信息，保留已有 <mark> 荧光标注，" +
+          "并且只在真正值得记忆的定义、结论、公式、关键词上补充少量 <mark> 标注。" +
+          "不要满屏高亮，不要改成讲义式长篇讲解，不要删除原有核心内容，输出纯 Markdown，不要包代码块。\n\n" +
+          content,
         mode: "global",
       });
       setGlobalStatus("润色完成");
@@ -205,6 +300,15 @@ export default function Page() {
     if (!confirmed) return;
     await upload.deleteDocument(targetDocumentId);
   }
+
+  const notebookSaveLabel =
+    notebookSaveState === "saving"
+      ? "自动保存中"
+      : notebookSaveState === "saved"
+        ? "已保存"
+        : notebookSaveState === "error"
+          ? "保存失败"
+          : "已加载";
 
   return (
     <main className="relative flex h-screen min-h-screen flex-col overflow-hidden">
@@ -243,8 +347,8 @@ export default function Page() {
 
       <div className="relative z-10 flex min-h-0 flex-1 gap-4 overflow-hidden p-4 md:p-5">
         <aside
-          className={`min-h-0 overflow-hidden rounded-[28px] border border-[#d9c7ab] bg-[#f7f0e3]/95 shadow-[0_20px_50px_rgba(109,85,58,0.12)] backdrop-blur-xl transition-all duration-300 ${
-            sidebarCollapsed ? "w-0 p-0 border-0 opacity-0 pointer-events-none" : "w-[320px]"
+          className={`min-h-0 shrink-0 overflow-hidden rounded-[28px] border border-[#d9c7ab] bg-[#f7f0e3]/95 shadow-[0_20px_50px_rgba(109,85,58,0.12)] backdrop-blur-xl transition-all duration-300 ${
+            sidebarCollapsed ? "w-0 basis-0 min-w-0 p-0 border-0 opacity-0 pointer-events-none" : "w-[320px] basis-[320px]"
           }`}
         >
           <DocumentLibrary
@@ -276,65 +380,84 @@ export default function Page() {
               />
             </ErrorBoundary>
             <ErrorBoundary>
-              {notePanelOpen ? (
-                <NoteEditor
-                  markdown={notesMarkdown}
-                  onChange={setNotesMarkdown}
-                  onFormat={() => setNotesMarkdown((prev) => formatNotesMarkdown(prev))}
-                  onAIOrganize={() => void handleAutoGenerateNotes()}
-                  onAIPolish={handleAIPolishNotes}
-                  onExport={() => void handleExportNotes()}
-                  loading={loading}
-                  disabled={!currentSlide}
-                  documentName={upload.documents.find((d) => d.id === upload.documentId)?.filename}
-                />
-              ) : (
-                <AIPanel
-                  chatInput={chat.chatInput}
-                  chatMessages={chat.chatMessages}
-                  currentSlideId={currentSlide?.id}
-                  disabled={!currentSlide}
-                  explanationState={currentSlide?.explanation_state ?? "not_generated"}
-                  explanationLoading={slideGenerationLoading}
-                  extraction={currentSlide?.extract ?? null}
-                  explanation={chat.explanation}
-                  explanationMeta={chat.explanationMeta}
-                  loading={loading}
-                  mode={chat.mode}
-                  onChatInputChange={chat.setChatInput}
-                  onClearSlideMessages={() => {
-                    if (currentSlide) chat.clearSlideMessages(currentSlide.id);
-                  }}
-                  onElaborateSelection={handleElaborateSelection}
-                  onExplainRoi={() => {
-                    if (currentSlide && roi && upload.sessionId) {
-                      void chat.askRoi(roi, upload.sessionId, currentSlide);
-                    }
-                  }}
-                  onGenerateExplanation={() => void handleGenerateCurrentSlideExplanation()}
-                  onInsertToNotes={(text) => {
-                    setNotesMarkdown((prev) => {
-                      const quoted = text
-                        .split("\n")
-                        .map((line) => `> ${line}`)
-                        .join("\n");
-                      const prefix = prev.trim() ? `${prev.trimEnd()}\n\n` : "# 笔记\n\n";
-                      return `${prefix}## 摘录\n${quoted}\n`;
-                    });
-                    setGlobalStatus("已摘录");
-                  }}
-                  onModeChange={chat.setMode}
-                  onSendChat={() => {
-                    const message = chat.chatInput;
-                    chat.setChatInput("");
-                    if (upload.sessionId) void chat.ask(message, upload.sessionId, currentSlide);
-                  }}
-                  roiReady={Boolean(roi)}
-                />
-              )}
+              <AIPanel
+                chatInput={chat.chatInput}
+                chatMessages={chat.chatMessages}
+                currentSlideId={currentSlide?.id}
+                disabled={!currentSlide}
+                explanationState={currentSlide?.explanation_state ?? "not_generated"}
+                explanationLoading={slideGenerationLoading}
+                extraction={currentSlide?.extract ?? null}
+                explanation={chat.explanation}
+                explanationMeta={chat.explanationMeta}
+                loading={loading}
+                mode={chat.mode}
+                onChatInputChange={chat.setChatInput}
+                onClearSlideMessages={() => {
+                  if (currentSlide) chat.clearSlideMessages(currentSlide.id);
+                }}
+                onElaborateSelection={handleElaborateSelection}
+                onExplainRoi={() => {
+                  if (currentSlide && roi && upload.sessionId) {
+                    void chat.askRoi(roi, upload.sessionId, currentSlide);
+                  }
+                }}
+                onGenerateExplanation={() => void handleGenerateCurrentSlideExplanation()}
+                onInsertToNotes={(text) => {
+                  if (!currentSlide || !currentDocumentName) return;
+                  const next = insertSelectionIntoNotebook({
+                    markdown: notesMarkdownRef.current,
+                    filename: currentDocumentName,
+                    pageNum: currentSlide.page_num,
+                    pageTitle: inferPageTitle({
+                      fallbackPageNum: currentSlide.page_num,
+                      explanationTitle: chat.explanationMeta?.title ?? null,
+                      extractTitle: currentSlide.extract?.title_candidates?.[0] ?? null,
+                    }),
+                    selectedText: text,
+                    sourceLabel: "当前页解析",
+                  });
+                  setNotePanelOpen(true);
+                  if (!next.inserted) {
+                    setGlobalStatus("该摘录已存在");
+                    return;
+                  }
+                  setNotesMarkdown(next.markdown);
+                  setGlobalStatus("已加入笔记本");
+                }}
+                onModeChange={chat.setMode}
+                onSendChat={() => {
+                  const message = chat.chatInput;
+                  chat.setChatInput("");
+                  if (upload.sessionId) void chat.ask(message, upload.sessionId, currentSlide);
+                }}
+                roiReady={Boolean(roi)}
+              />
             </ErrorBoundary>
         </section>
       </div>
+
+      <NotebookWindow
+        disabled={!upload.documentId}
+        documentName={currentDocumentName}
+        loading={loading || notebookSaving}
+        markdown={notesMarkdown}
+        onAIOrganize={() => void handleAutoGenerateNotes()}
+        onAIPolish={handleAIPolishNotes}
+        onChange={setNotesMarkdown}
+        onCollapse={() => setNotePanelOpen(false)}
+        onExport={() => void handleExportNotes()}
+        onFormat={() => {
+          if (!currentDocumentName) return;
+          setNotesMarkdown((prev) => formatNotebookMarkdown(prev, currentDocumentName));
+          setGlobalStatus("笔记格式已整理");
+        }}
+        onOpen={() => setNotePanelOpen(true)}
+        onViewModeChange={setNotebookViewMode}
+        open={notePanelOpen}
+        saveStateLabel={notebookSaveLabel}
+        viewMode={notebookViewMode}
+      />
     </main>
   );
 }
