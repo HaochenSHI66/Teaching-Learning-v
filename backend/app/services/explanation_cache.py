@@ -17,9 +17,8 @@ def build_cached_slide_explanation(*, page_num: int, extracted_text: str) -> str
     terms_markdown = format_bilingual_terms_markdown(extracted_text)
     return (
         f"## Slide {page_num}\n\n"
-        f"> [!NOTE]\n"
-        f"> **本页核心**：<mark>{summary}</mark>\n"
-        f"> **讲解语言**：中文解释为主，关键术语保留英文标注。\n\n"
+        f"**本页核心**：<mark>{summary}</mark>\n"
+        f"**讲解语言**：中文解释为主，关键术语保留英文标注。\n\n"
         "### 本页在讲什么 Summary\n"
         "这页适合先抓主题，再定位术语，再回到例子或推导链路。\n\n"
         "### 核心术语 Core Terms\n"

@@ -72,7 +72,7 @@ def test_list_documents_and_export_cached_explanations(tmp_path: Path) -> None:
     assert explanations_resp.status_code == 200
     explanations = explanations_resp.json()["explanations"]
     assert len(explanations) == 2
-    assert "[!NOTE]" in explanations[0]["markdown"]
+    assert "[!NOTE]" not in explanations[0]["markdown"]
     assert "### 完整翻译与解释" in explanations[0]["markdown"]
     assert (
         "### 知识点总结" in explanations[0]["markdown"]
@@ -206,6 +206,7 @@ def test_slide_generation_falls_back_when_gateway_fails(tmp_path: Path) -> None:
     assert degraded is True
     assert follow_ups
     assert "Prompt Contract" not in markdown
+    assert "[!NOTE]" not in markdown
     assert "### 完整翻译与解释" in markdown
     assert "### 知识点总结" in markdown
     assert meta["render_mode"] == "repeat-aware"

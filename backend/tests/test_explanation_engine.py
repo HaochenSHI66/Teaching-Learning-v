@@ -35,6 +35,7 @@ def test_sanitize_slide_markdown_replaces_placeholder_heading() -> None:
 
     assert sanitized.startswith("## Supervised Learning (Classification) Space")
     assert "## Slide 标题" not in sanitized
+    assert "[!NOTE]" not in sanitized
 
 
 def test_sanitize_slide_markdown_strips_quick_check_section() -> None:

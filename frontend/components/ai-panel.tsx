@@ -41,7 +41,7 @@ type TabKey = (typeof TABS)[number]["key"];
 
 function buildExtractionMarkdown(extraction: SlideExtract | null) {
   if (!extraction) {
-    return "> [!NOTE]\n> 当前页尚未提取出结构化内容。";
+    return "**当前页尚未提取出结构化内容。**";
   }
 
   const stats = extraction.page_stats;
@@ -52,8 +52,7 @@ function buildExtractionMarkdown(extraction: SlideExtract | null) {
   const figureCount = stats.figure_count ?? extraction.figures.length;
 
   const lines = [
-    "> [!NOTE]",
-    "> 非大模型提取，用于定位页面结构与阅读顺序。",
+    "_非大模型提取，用于定位页面结构与阅读顺序。_",
     "",
     "### 页面统计",
     `- 文字量（词）：**${wordCount}**`,
@@ -245,7 +244,7 @@ export function AIPanel({
               ) : (
                 <MarkdownContent
                   content={
-                    "> [!NOTE]\n> 当前页解析尚未生成，点击「生成解析」开始。"
+                    "**当前页解析尚未生成。** 点击「生成解析」开始。"
                   }
                 />
               )}

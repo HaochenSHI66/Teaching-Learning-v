@@ -19,6 +19,7 @@ _PLACEHOLDER_HEADING_RE = re.compile(
 _DISALLOWED_SECTION_RE = re.compile(
     r"(?ms)^###\s*(?:1分钟自测|Quick Check|自测|Quiz)\b.*?(?=^##\s|^###\s|\Z)"
 )
+_NOTE_CALLOUT_RE = re.compile(r"(?ms)^>\s*\[!NOTE\]\s*\n(?:^>.*\n?)*")
 _SECTION_RE = re.compile(r"^###\s+.+$", flags=re.MULTILINE)
 
 
@@ -56,6 +57,7 @@ def _best_title(*, slide: Slide, extracted_text: str, extract_payload: dict | No
 
 def _strip_disallowed_sections(markdown: str) -> str:
     cleaned = _DISALLOWED_SECTION_RE.sub("", markdown)
+    cleaned = _NOTE_CALLOUT_RE.sub("", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
@@ -209,16 +211,16 @@ def _build_repeat_summary(extract_payload: dict | None) -> dict:
     }
 
 
-def _build_intro_note(*, related_pages: list[int], repeat_summary: dict) -> str:
+def _build_intro_meta(*, related_pages: list[int], repeat_summary: dict) -> str:
     citations = ", ".join(str(page) for page in sorted(set(related_pages))) or "无"
-    lines = ["> [!NOTE]", f"> 引用页码：{citations}"]
+    lines = [f"**引用页码**：{citations}"]
     if repeat_summary["has_repeat_section"]:
         repeat_pages = ", ".join(str(page) for page in repeat_summary["repeat_pages"])
         percent = int(round(float(repeat_summary["repeated_ratio"]) * 100))
-        lines.append(f"> 重复占比：{percent}%")
-        lines.append(f"> 重复来源：第 {repeat_pages} 页")
+        lines.append(f"**重复占比**：{percent}%")
+        lines.append(f"**重复来源**：第 {repeat_pages} 页")
     else:
-        lines.append("> 本页以新增或独立内容为主。")
+        lines.append("**内容性质**：本页以新增或独立内容为主。")
     return "\n".join(lines)
 
 
@@ -368,7 +370,7 @@ def _canonicalize_slide_explanation(
     canonical_parts = [
         f"## {title}",
         "",
-        _build_intro_note(related_pages=related_pages, repeat_summary=repeat_summary),
+        _build_intro_meta(related_pages=related_pages, repeat_summary=repeat_summary),
         "",
         translation_md.strip(),
         "",
@@ -448,9 +450,8 @@ def _template_roi_explanation(
 
     return (
         f"## 区域解释（第 {slide.page_num} 页）\n\n"
-        f"> [!NOTE]\n"
-        f"> 区域坐标：`x={x:.3f}, y={y:.3f}, w={w:.3f}, h={h:.3f}`\n"
-        f"> 区域像素：`{region_width} x {region_height}`\n\n"
+        f"**区域坐标**：`x={x:.3f}, y={y:.3f}, w={w:.3f}, h={h:.3f}`\n"
+        f"**区域像素**：`{region_width} x {region_height}`\n\n"
         "### 区域内容翻译与解释\n\n"
         f"{explanation} 当前区域能稳定识别的内容主要集中在 <mark>{summary}</mark>。\n\n"
         f"### {section_title}\n\n"
