@@ -21,6 +21,19 @@ _DISALLOWED_SECTION_RE = re.compile(
 )
 _NOTE_CALLOUT_RE = re.compile(r"(?ms)^>\s*\[!NOTE\]\s*\n(?:^>.*\n?)*")
 _SECTION_RE = re.compile(r"^###\s+.+$", flags=re.MULTILINE)
+_TOC_KEYWORDS = (
+    "agenda",
+    "outline",
+    "contents",
+    "content",
+    "roadmap",
+    "overview",
+    "table of contents",
+    "目录",
+    "大纲",
+    "提纲",
+    "议程",
+)
 
 
 def explanation_markdown_is_stale(markdown: str) -> bool:
@@ -30,7 +43,10 @@ def explanation_markdown_is_stale(markdown: str) -> bool:
 def explanation_meta_is_current(meta: dict | None) -> bool:
     if not meta:
         return False
-    if meta.get("render_mode") != "repeat-aware":
+    render_mode = meta.get("render_mode")
+    if render_mode == "compact-static":
+        return bool(meta.get("content_type") and meta.get("title"))
+    if render_mode != "repeat-aware":
         return False
     sections = meta.get("sections") or {}
     return bool(sections.get("translation_md") and sections.get("primary_md"))
@@ -179,6 +195,95 @@ def _terms_sentence(extracted_text: str) -> str:
     if not pairs:
         return "核心概念（Key Concept）"
     return "、".join(f"{chinese}（{english}）" for chinese, english in pairs[:4])
+
+
+def _payload_blocks(extract_payload: dict | None, key: str) -> list[dict]:
+    return list((extract_payload or {}).get(key) or [])
+
+
+def _normalized_lines(extract_payload: dict | None) -> list[str]:
+    lines: list[str] = []
+    for key in ("text_blocks", "bullet_blocks"):
+        for block in _payload_blocks(extract_payload, key):
+            text = str(block.get("text") or "").strip()
+            if text:
+                lines.append(text.lstrip("-*• ").strip())
+    return lines
+
+
+def _looks_like_toc_page(*, extracted_text: str, extract_payload: dict | None) -> bool:
+    payload = extract_payload or {}
+    summary_and_titles = " ".join(
+        [
+            str(payload.get("summary") or ""),
+            " ".join(str(item) for item in payload.get("title_candidates") or []),
+            extracted_text,
+        ]
+    ).lower()
+    has_keyword = any(keyword in summary_and_titles for keyword in _TOC_KEYWORDS)
+    return has_keyword
+
+
+def _detect_compact_slide_type(*, extracted_text: str, extract_payload: dict | None) -> str | None:
+    payload = extract_payload or {}
+    page_stats = payload.get("page_stats") or {}
+    word_count = int(page_stats.get("word_count") or len(extracted_text.split()))
+    text_blocks = _payload_blocks(payload, "text_blocks")
+    bullet_blocks = _payload_blocks(payload, "bullet_blocks")
+    title_candidates = [str(item).strip() for item in payload.get("title_candidates") or [] if str(item).strip()]
+    has_dense_content = any(
+        _payload_blocks(payload, key)
+        for key in ("equation_like_blocks", "code_like_blocks", "tables")
+    )
+    if has_dense_content:
+        return None
+    if _looks_like_toc_page(extracted_text=extracted_text, extract_payload=payload):
+        return "toc"
+    if not text_blocks and not title_candidates:
+        return None
+    title_like_line = title_candidates[0] if title_candidates else str(text_blocks[0].get("text") or "").strip()
+    title_like_word_count = len(title_like_line.split())
+    has_topic_punctuation = any(marker in title_like_line for marker in (":", ";", ","))
+    if (
+        word_count <= 6
+        and title_like_word_count <= 4
+        and len(text_blocks) <= 2
+        and not bullet_blocks
+        and len(_payload_blocks(payload, "figures")) <= 1
+        and not has_topic_punctuation
+    ):
+        return "title"
+    return None
+
+
+def _build_compact_slide_explanation(
+    *,
+    slide: Slide,
+    extracted_text: str,
+    extract_payload: dict | None,
+    compact_type: str,
+) -> tuple[str, dict]:
+    title = _best_title(slide=slide, extracted_text=extracted_text, extract_payload=extract_payload)
+    lines = [f"## {title}"]
+
+    if compact_type == "toc":
+        outline_items = []
+        for item in _normalized_lines(extract_payload):
+            if item == title:
+                continue
+            if item not in outline_items:
+                outline_items.append(item)
+        if outline_items:
+            lines.extend(["", *[f"- {item}" for item in outline_items[:12]]])
+
+    markdown = "\n".join(lines).strip()
+    meta = {
+        "render_mode": "compact-static",
+        "content_type": compact_type,
+        "title": title,
+        "compact_md": markdown,
+    }
+    return markdown, meta
 
 
 def _split_sections(markdown: str) -> dict[str, str]:
@@ -475,6 +580,19 @@ def generate_slide_explanation(
         "把这页最难的公式再展开解释",
         "给我一个更直觉的理解方式",
     ]
+    compact_type = _detect_compact_slide_type(
+        extracted_text=extracted_text,
+        extract_payload=extract_payload,
+    )
+    if compact_type:
+        markdown, meta = _build_compact_slide_explanation(
+            slide=slide,
+            extracted_text=extracted_text,
+            extract_payload=extract_payload,
+            compact_type=compact_type,
+        )
+        return markdown, follow_ups, False, meta
+
     prompt_extraction_text = _extraction_text_for_prompt(extracted_text, extract_payload)
     prompt_contract = build_slide_explanation_prompt(
         page_num=slide.page_num,

@@ -35,6 +35,21 @@ def _repeat_heavy_pdf_bytes() -> bytes:
     return document.tobytes()
 
 
+def _title_and_toc_pdf_bytes() -> bytes:
+    document = fitz.open()
+
+    p1 = document.new_page(width=1000, height=700)
+    p1.insert_text((64, 120), "Machine Learning", fontsize=28)
+
+    p2 = document.new_page(width=1000, height=700)
+    p2.insert_text((64, 100), "Agenda", fontsize=24)
+    p2.insert_text((64, 160), "- Introduction", fontsize=20)
+    p2.insert_text((64, 195), "- Optimization", fontsize=20)
+    p2.insert_text((64, 230), "- Evaluation", fontsize=20)
+
+    return document.tobytes()
+
+
 def _wait_until_ready(client: TestClient, document_id: str, max_attempts: int = 20) -> None:
     for _ in range(max_attempts):
         status_resp = client.get(f"/api/v1/documents/{document_id}/status")
@@ -116,6 +131,33 @@ def test_cached_explanation_contains_repeat_sections_meta(tmp_path: Path) -> Non
     assert second_page["meta"]["sections"]["primary_md"]
     assert second_page["meta"]["sections"]["repeat_md"]
     assert "### 重复部分讲解" in second_page["markdown"]
+
+
+def test_cached_explanations_compact_title_and_toc_pages(tmp_path: Path) -> None:
+    app = create_app(
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        storage_dir=tmp_path / "storage",
+    )
+    client = TestClient(app)
+
+    upload_resp = client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("outline.pdf", _title_and_toc_pdf_bytes(), "application/pdf")},
+    )
+    assert upload_resp.status_code == 202
+    document_id = upload_resp.json()["document"]["id"]
+
+    _wait_until_ready(client, document_id)
+
+    explanations_resp = client.get(f"/api/v1/documents/{document_id}/explanations")
+    assert explanations_resp.status_code == 200
+    explanations = explanations_resp.json()["explanations"]
+    assert [item["meta"]["content_type"] for item in explanations] == ["title", "toc"]
+    assert explanations[0]["markdown"].strip() == "## Machine Learning"
+    assert explanations[1]["markdown"].startswith("## Agenda")
+    assert "- Introduction" in explanations[1]["markdown"]
+    assert "### 完整翻译与解释" not in explanations[0]["markdown"]
+    assert "### 完整翻译与解释" not in explanations[1]["markdown"]
 
 
 def test_autogen_notes_from_cached_explanations(tmp_path: Path) -> None:

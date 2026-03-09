@@ -1,5 +1,7 @@
 from app.models import Slide
-from app.services.explanation_engine import sanitize_slide_markdown
+from pathlib import Path
+
+from app.services.explanation_engine import generate_slide_explanation, sanitize_slide_markdown
 from app.services.prompt_templates import build_slide_explanation_prompt
 
 
@@ -74,3 +76,77 @@ def test_build_slide_explanation_prompt_matches_full_translation_contract() -> N
     assert "### 知识点总结" in prompt
     assert "不要输出「1分钟自测」「Quick Check」" in prompt
     assert "不要把讲解写成一行一行的碎片化短句" in prompt
+
+
+def test_generate_slide_explanation_compacts_title_page_without_model_call(tmp_path: Path) -> None:
+    class SpyGateway:
+        called = False
+
+        def generate_slide_markdown(self, **_: object) -> str:
+            self.called = True
+            raise AssertionError("gateway should not be used for title pages")
+
+    gateway = SpyGateway()
+    slide_image = tmp_path / "slide.png"
+    slide_image.write_bytes(b"fake")
+
+    markdown, _, degraded, meta = generate_slide_explanation(
+        slide=_slide(),
+        question="请生成这页讲解",
+        extracted_text="Machine Learning",
+        slide_image_path=slide_image,
+        extract_payload={
+            "summary": "Machine Learning",
+            "title_candidates": ["Machine Learning"],
+            "text_blocks": [
+                {"id": "text-10-1", "type": "text", "text": "Machine Learning", "bbox": [0, 0, 1, 1], "order": 1}
+            ],
+            "bullet_blocks": [],
+            "figures": [],
+            "tables": [],
+            "equation_like_blocks": [],
+            "code_like_blocks": [],
+            "page_stats": {"word_count": 2, "text_block_count": 1, "bullet_count": 0, "figure_count": 0, "table_count": 0},
+        },
+        gateway=gateway,
+    )
+
+    assert gateway.called is False
+    assert degraded is False
+    assert markdown.strip() == "## Machine Learning"
+    assert "### " not in markdown
+    assert meta["render_mode"] == "compact-static"
+    assert meta["content_type"] == "title"
+
+
+def test_generate_slide_explanation_compacts_toc_page_to_outline() -> None:
+    markdown, _, degraded, meta = generate_slide_explanation(
+        slide=_slide(),
+        question="请生成这页讲解",
+        extracted_text="Agenda\nIntroduction\nOptimization\nEvaluation",
+        extract_payload={
+            "summary": "Agenda",
+            "title_candidates": ["Agenda"],
+            "text_blocks": [
+                {"id": "text-10-1", "type": "text", "text": "Agenda", "bbox": [0, 0, 1, 1], "order": 1}
+            ],
+            "bullet_blocks": [
+                {"id": "bullet-10-1", "type": "bullet", "text": "- Introduction", "bbox": [0, 0, 1, 1], "order": 2},
+                {"id": "bullet-10-2", "type": "bullet", "text": "- Optimization", "bbox": [0, 0, 1, 1], "order": 3},
+                {"id": "bullet-10-3", "type": "bullet", "text": "- Evaluation", "bbox": [0, 0, 1, 1], "order": 4},
+            ],
+            "figures": [],
+            "tables": [],
+            "equation_like_blocks": [],
+            "code_like_blocks": [],
+            "page_stats": {"word_count": 4, "text_block_count": 1, "bullet_count": 3, "figure_count": 0, "table_count": 0},
+        },
+    )
+
+    assert degraded is False
+    assert markdown.startswith("## Agenda")
+    assert "- Introduction" in markdown
+    assert "- Optimization" in markdown
+    assert "### " not in markdown
+    assert meta["render_mode"] == "compact-static"
+    assert meta["content_type"] == "toc"
