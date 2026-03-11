@@ -150,8 +150,11 @@ test("document notebook opens as floating window while AI panel stays visible", 
   await expect(page.getByTestId("notebook-window")).toBeVisible();
   await expect(page.getByTestId("notebook-window")).toContainText("笔记本");
 
-  await page.getByRole("button", { name: "收起笔记本" }).click();
-  await expect(page.getByTestId("notebook-dock")).toBeVisible();
+  await page.getByTestId("notebook-window").getByRole("button", { name: "收起笔记本" }).click();
+  await expect(page.getByTestId("notebook-window")).toHaveCount(0);
+  await expect(page.getByTestId("header-notebook-toggle")).toBeVisible();
+  await page.getByTestId("header-notebook-toggle").click();
+  await expect(page.getByTestId("notebook-window")).toBeVisible();
 });
 
 test("autogen notebook switches to preview and renders mark highlights", async ({ page }) => {

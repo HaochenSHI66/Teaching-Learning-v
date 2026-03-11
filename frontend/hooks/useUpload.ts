@@ -31,6 +31,9 @@ type UploadState = {
   library: DocumentLibrary;
   cachedExplanations: Record<string, SlideExplanation>;
   loading: boolean;
+  /** True while a newly-uploaded document is being processed in the background.
+   *  Does NOT block foreground interactions (switching documents, etc.). */
+  backgroundProcessing: boolean;
   statusText: string;
   generationDocId: string | null;
   generationProgress: GenerationProgress | null;
@@ -48,6 +51,7 @@ type UploadActions = {
   refreshDocuments: () => Promise<void>;
   reset: () => void;
 };
+
 
 const EMPTY_LIBRARY: DocumentLibrary = {
   folders: [],
@@ -119,6 +123,7 @@ export function useUpload(): UploadState & UploadActions {
   const [library, setLibrary] = useState<DocumentLibrary>(EMPTY_LIBRARY);
   const [cachedExplanations, setCachedExplanations] = useState<Record<string, SlideExplanation>>({});
   const [loading, setLoading] = useState(false);
+  const [backgroundProcessing, setBackgroundProcessing] = useState(false);
   const [statusText, setStatusText] = useState("请先上传 PDF/图片开始学习。");
   const [generationDocId, setGenerationDocId] = useState<string | null>(null);
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
@@ -189,17 +194,34 @@ export function useUpload(): UploadState & UploadActions {
   }
 
   async function handleUpload(file: File) {
-    setLoading(true);
+    setBackgroundProcessing(true);
     setStatusText("正在上传文件...");
     try {
-      const upload = await uploadDocument(file);
+      const uploaded = await uploadDocument(file);
+      // Refresh immediately so the new doc appears in the library with "processing" status.
       await refreshDocuments();
-      await loadDocument(upload.document.id);
+      setStatusText("文件已上传，后台处理中，可继续使用其他文档…");
+
+      // Poll in the background — does NOT block foreground interactions.
+      void (async () => {
+        try {
+          await pollDocumentReady(uploaded.document.id, (progress) => {
+            if (progress.status === "processing") {
+              setStatusText(`后台处理中（${progress.page_count} 页已完成）…`);
+            }
+          });
+          await refreshDocuments();
+          setStatusText("新文档处理完成，可在文档库中点击查看。");
+        } catch {
+          setStatusText("新文档处理超时或失败，请重新上传。");
+        } finally {
+          setBackgroundProcessing(false);
+        }
+      })();
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知错误";
       setStatusText(`上传失败：${message}`);
-    } finally {
-      setLoading(false);
+      setBackgroundProcessing(false);
     }
   }
 
@@ -355,6 +377,7 @@ export function useUpload(): UploadState & UploadActions {
     library,
     cachedExplanations,
     loading,
+    backgroundProcessing,
     statusText,
     generationDocId,
     generationProgress,

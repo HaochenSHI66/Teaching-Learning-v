@@ -47,6 +47,20 @@ connection.close()
   ]);
 }
 
+async function waitForSeededDocuments(page: Page, filenames: string[]) {
+  await expect
+    .poll(async () => {
+      const response = await page.request.get("http://127.0.0.1:8000/api/v1/documents");
+      const payload = await response.json();
+      const existing = new Set((payload.documents ?? []).map((item: { filename?: string }) => item.filename));
+      return filenames.every((filename) => existing.has(filename));
+    }, { timeout: 15000 })
+    .toBeTruthy();
+
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+}
+
 async function dragToFolder(page: Page, documentName: string, folderName: string) {
   const source = page.getByTestId(`document-item-${documentName}`);
   const target = page.getByTestId(`folder-target-${folderName}`);
@@ -78,6 +92,7 @@ test("documents can be grouped into folders and dragged between groups", async (
 
   await page.goto("/");
   await page.waitForLoadState("networkidle");
+  await waitForSeededDocuments(page, [calculusName, algebraName]);
   await expect(page.locator("aside")).toContainText(calculusName, { timeout: 15000 });
   await expect(page.locator("aside")).toContainText(algebraName, { timeout: 15000 });
 
@@ -91,4 +106,50 @@ test("documents can be grouped into folders and dragged between groups", async (
   await expect(page.getByTestId(`folder-dropzone-${folderName}`)).toContainText(calculusName);
   await expect(page.getByTestId("uncategorized-dropzone")).toContainText(algebraName);
   await expect(page.getByTestId("uncategorized-dropzone")).not.toContainText(calculusName);
+});
+
+test("dragging shows overlay preview and target highlight feedback", async ({ page }, testInfo) => {
+  const fixtureDir = testInfo.outputPath("folder-fixtures-feedback");
+  const suffix = `${Date.now()}`;
+  const calculusName = `Calculus-Feedback-${suffix}.pdf`;
+  const folderName = `Feedback-${suffix}`;
+  writeBinary(fixtureDir, calculusName, CALCULUS_PDF_BASE64);
+  seedReadyDocument(calculusName);
+
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await waitForSeededDocuments(page, [calculusName]);
+  await expect(page.locator("aside")).toContainText(calculusName, { timeout: 15000 });
+
+  await page.getByRole("button", { name: "新建文件夹" }).click();
+  await page.getByPlaceholder("文件夹名称").fill(folderName);
+  await page.getByRole("button", { name: "创建文件夹" }).click();
+
+  const source = page.getByTestId(`document-item-${calculusName}`);
+  const target = page.getByTestId(`folder-target-${folderName}`);
+  await source.scrollIntoViewIfNeeded();
+  await target.scrollIntoViewIfNeeded();
+
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox) {
+    throw new Error("Drag source or target is not visible");
+  }
+
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2 + 20, sourceBox.y + 18, { steps: 6 });
+
+  await expect(page.getByTestId("document-drag-overlay")).toBeVisible();
+  await expect(source).toHaveAttribute("data-drag-state", "source");
+
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+    steps: 12,
+  });
+  await expect(target).toHaveAttribute("data-drag-over", "true");
+
+  await page.mouse.up();
+
+  await expect(page.getByTestId("document-drag-overlay")).toHaveCount(0);
+  await expect(page.getByTestId(`folder-dropzone-${folderName}`)).toContainText(calculusName);
 });

@@ -91,7 +91,7 @@ test.describe("Note Panel", () => {
 
   test("笔记 tab is removed from AI panel tabs", async ({ page }) => {
     // 笔记 should not appear as a tab button in the AI panel
-    const notesTabBtn = page.getByRole("button", { name: "笔记" });
+    const notesTabBtn = page.getByRole("button", { name: "笔记", exact: true });
     await expect(notesTabBtn).toHaveCount(0);
   });
 
@@ -108,11 +108,11 @@ test.describe("UX Logic Verification", () => {
     await page.waitForLoadState("networkidle");
   });
 
-  test("sidebar description is present and academic", async ({ page }) => {
-    // Old AI-flavored text must not be present
+  test("sidebar intro module is removed", async ({ page }) => {
     await expect(page.getByText("你的学习资料库")).toHaveCount(0);
-    // New concise description
-    await expect(page.getByText("上传文档后自动生成解析缓存")).toBeVisible();
+    await expect(page.getByText("Document Dock")).toHaveCount(0);
+    await expect(page.getByText("资料库")).toHaveCount(0);
+    await expect(page.getByText("上传文档后自动生成解析缓存")).toHaveCount(0);
   });
 
   test("document library label is shown", async ({ page }) => {

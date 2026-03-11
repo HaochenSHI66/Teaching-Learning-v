@@ -3,11 +3,16 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   pointerWithin,
   useDroppable,
   useSensor,
   useSensors,
+  defaultDropAnimationSideEffects,
+  type DragCancelEvent,
+  type DragOverEvent,
+  type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
@@ -25,6 +30,8 @@ type DocumentLibraryProps = {
   library: DocumentLibrary;
   activeDocumentId: string | null;
   loading: boolean;
+  /** True while a newly-uploaded document is processing in the background. Only disables the upload button. */
+  backgroundProcessing: boolean;
   generationDocId: string | null;
   generationProgress: GenerationProgress;
   notePanelOpen: boolean;
@@ -92,6 +99,7 @@ function SortableDocumentCard({
   onDeleteDocument,
   onRegenerateDocument,
   onAbortGeneration,
+  dragState,
 }: {
   document: FolderDocumentItem;
   activeDocumentId: string | null;
@@ -104,6 +112,7 @@ function SortableDocumentCard({
   onDeleteDocument: (documentId: string, filename: string) => Promise<void>;
   onRegenerateDocument: (documentId: string) => Promise<void>;
   onAbortGeneration: () => void;
+  dragState?: "idle" | "source";
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: documentDragId(document.id),
@@ -112,17 +121,23 @@ function SortableDocumentCard({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+  const resolvedDragState = dragState ?? "idle";
 
   return (
     <article
       ref={setNodeRef}
       style={style}
       data-testid={`document-item-${document.filename}`}
+      data-drag-state={resolvedDragState}
       className={`rounded-[22px] border p-3 transition ${
         activeDocumentId === document.id
           ? "border-[#cab384] bg-[linear-gradient(135deg,#fff8ec_0%,#f2e7d2_62%,#ece4d5_100%)] shadow-[0_18px_36px_rgba(122,98,66,0.12)]"
           : "border-[#e0d1bc] bg-[#fffaf2] hover:border-[#cdb796] hover:bg-white"
-      } ${isDragging ? "opacity-80 shadow-[0_18px_36px_rgba(122,98,66,0.2)]" : ""}`}
+      } ${
+        isDragging || resolvedDragState === "source"
+          ? "document-card-source shadow-[0_18px_36px_rgba(122,98,66,0.2)]"
+          : "document-card-idle"
+      }`}
       {...attributes}
       {...listeners}
     >
@@ -216,11 +231,13 @@ function FolderDropzone({
   name,
   documents,
   children,
+  isActiveDrop,
 }: {
   folderId: string | null;
   name: string;
   documents: FolderDocumentItem[];
   children: ReactNode;
+  isActiveDrop?: boolean;
 }) {
   const { isOver, setNodeRef } = useDroppable({
     id: groupSectionId(folderId),
@@ -230,8 +247,14 @@ function FolderDropzone({
     <section
       ref={setNodeRef}
       data-testid={folderId ? `folder-dropzone-${name}` : "uncategorized-dropzone"}
-      className={`rounded-[24px] border px-3 py-3 transition ${
-        isOver ? "border-[#b89b70] bg-[#fff8ee]" : "border-[#e1d2be] bg-[#fffaf3]"
+      data-drag-over={isOver ? "true" : "false"}
+      data-drop-flash={isActiveDrop ? "true" : "false"}
+      className={`document-dropzone rounded-[24px] border px-3 py-3 transition ${
+        isOver
+          ? "document-dropzone-over border-[#b89b70] bg-[#fff8ee]"
+          : isActiveDrop
+            ? "document-dropzone-flash border-[#c9a36c] bg-[#fff7e9]"
+            : "border-[#e1d2be] bg-[#fffaf3]"
       }`}
     >
       <div className="mb-3 flex items-center justify-between">
@@ -248,9 +271,11 @@ function FolderDropzone({
 function FolderShelfChip({
   folderId,
   name,
+  isActiveDrop,
 }: {
   folderId: string | null;
   name: string;
+  isActiveDrop?: boolean;
 }) {
   const { isOver, setNodeRef } = useDroppable({
     id: groupTargetId(folderId),
@@ -260,13 +285,39 @@ function FolderShelfChip({
     <div
       ref={setNodeRef}
       data-testid={folderId ? `folder-target-${name}` : "folder-target-uncategorized"}
-      className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
+      data-drag-over={isOver ? "true" : "false"}
+      data-drop-flash={isActiveDrop ? "true" : "false"}
+      className={`document-folder-chip shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
         isOver
-          ? "border-[#b38e5e] bg-[#f4e6cd] text-[#5f4a33]"
-          : "border-[#dcc9af] bg-[#fffaf2] text-[#7a6655]"
+          ? "document-folder-chip-over border-[#b38e5e] bg-[#f4e6cd] text-[#5f4a33]"
+          : isActiveDrop
+            ? "document-folder-chip-flash border-[#c39b5c] bg-[#f8ecd1] text-[#5f4a33]"
+            : "border-[#dcc9af] bg-[#fffaf2] text-[#7a6655]"
       }`}
     >
       {name}
+    </div>
+  );
+}
+
+function DragPreviewCard({ document }: { document: FolderDocumentItem }) {
+  return (
+    <div
+      className="document-drag-overlay w-[280px] rounded-[24px] border border-[#cfb183] bg-[linear-gradient(145deg,#fffaf0_0%,#f5e8d0_100%)] p-3 shadow-[0_24px_50px_rgba(94,72,46,0.26)]"
+      data-testid="document-drag-overlay"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-[#3f3125]">{document.filename}</p>
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-[#7f6a58]">
+            <span className="rounded-full bg-[#f3e4cc] px-2 py-1">{document.page_count} 页</span>
+            <span className="rounded-full bg-[#e7efdf] px-2 py-1 text-[#607253]">{document.status}</span>
+          </div>
+        </div>
+        <span className="rounded-full border border-[#ddc8aa] bg-white/70 px-2 py-1 text-[10px] font-medium text-[#8c7358]">
+          拖拽中
+        </span>
+      </div>
     </div>
   );
 }
@@ -275,6 +326,7 @@ export function DocumentLibrary({
   library,
   activeDocumentId,
   loading,
+  backgroundProcessing,
   generationDocId,
   generationProgress,
   notePanelOpen,
@@ -289,9 +341,12 @@ export function DocumentLibrary({
 }: DocumentLibraryProps) {
   const [folderDraftOpen, setFolderDraftOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
+  const [activeDragDocumentId, setActiveDragDocumentId] = useState<string | null>(null);
+  const [activeDropGroupId, setActiveDropGroupId] = useState<string | null>(null);
+  const [flashGroupId, setFlashGroupId] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
+      activationConstraint: { distance: 6 },
     }),
   );
 
@@ -317,6 +372,42 @@ export function DocumentLibrary({
     await onCreateFolder(trimmed);
     setFolderName("");
     setFolderDraftOpen(false);
+  }
+
+  function setFlashTarget(targetFolderId: string | null) {
+    const flashId = targetFolderId ?? "__uncategorized__";
+    setFlashGroupId(flashId);
+    window.setTimeout(() => {
+      setFlashGroupId((current) => (current === flashId ? null : current));
+    }, 650);
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    const activeId = String(event.active.id);
+    if (!activeId.startsWith("doc:")) return;
+    setActiveDragDocumentId(activeId.replace("doc:", ""));
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const overId = event.over ? String(event.over.id) : "";
+    if (!overId) {
+      setActiveDropGroupId(null);
+      return;
+    }
+    if (overId.startsWith("doc:")) {
+      const overDocumentId = overId.replace("doc:", "");
+      const targetGroup = findGroupForDocument(library, overDocumentId);
+      setActiveDropGroupId(targetGroup?.id ?? "__uncategorized__");
+      return;
+    }
+    if (overId.startsWith("folder:") || overId.startsWith("folder-section:")) {
+      const normalizedOverId = overId.replace("folder-section:", "folder:");
+      setActiveDropGroupId(
+        normalizedOverId === "folder:uncategorized" ? "__uncategorized__" : normalizedOverId.replace("folder:", ""),
+      );
+      return;
+    }
+    setActiveDropGroupId(null);
   }
 
   function resolveDrop(event: DragEndEvent): { documentId: string; targetFolderId: string | null; targetIndex: number } | null {
@@ -352,7 +443,10 @@ export function DocumentLibrary({
   }
 
   async function handleDragEnd(event: DragEndEvent) {
+    const activeId = String(event.active.id);
     const move = resolveDrop(event);
+    setActiveDragDocumentId(null);
+    setActiveDropGroupId(null);
     if (!move) return;
     const sourceDocument = getDocumentById(library, move.documentId);
     if (!sourceDocument) return;
@@ -360,24 +454,27 @@ export function DocumentLibrary({
       return;
     }
     await onMoveDocument(move.documentId, move.targetFolderId, move.targetIndex);
+    setFlashTarget(move.targetFolderId);
+    if (activeId.startsWith("doc:")) {
+      setActiveDragDocumentId(null);
+    }
   }
+
+  function handleDragCancel(_event: DragCancelEvent) {
+    setActiveDragDocumentId(null);
+    setActiveDropGroupId(null);
+  }
+
+  const activeDragDocument = activeDragDocumentId ? getDocumentById(library, activeDragDocumentId) : null;
 
   return (
     <div className="flex h-full flex-col p-3">
-      <div className="mb-3 rounded-[22px] border border-[#e4d8c5] bg-[#fffaf1] p-3">
-        <p className="text-[10px] uppercase tracking-[0.26em] text-[#9d876f]">Document Dock</p>
-        <p className="mt-2 text-sm font-medium text-[#463829]">资料库</p>
-        <p className="mt-1 text-xs leading-5 text-[#877563]">
-          上传文档后自动生成解析缓存，支持按学科整理与拖拽迁移。
-        </p>
-      </div>
-
-      <label className={`btn btn-primary mb-3 inline-flex cursor-pointer text-xs ${loading ? "opacity-70" : ""}`}>
-        <span>上传 PDF/图片</span>
+      <label className={`btn btn-primary mb-3 inline-flex cursor-pointer text-xs ${backgroundProcessing ? "opacity-70" : ""}`}>
+        <span>{backgroundProcessing ? "处理中…" : "上传 PDF/图片"}</span>
         <input
           accept=".pdf,image/png,image/jpeg,image/webp"
           className="hidden"
-          disabled={loading}
+          disabled={backgroundProcessing}
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) void onUpload(file);
@@ -426,17 +523,42 @@ export function DocumentLibrary({
         </span>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={(event) => void handleDragEnd(event)}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={pointerWithin}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={(event) => void handleDragEnd(event)}
+        onDragCancel={handleDragCancel}
+      >
         <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
           {groups.map((group) => (
-            <FolderShelfChip key={`chip-${group.id ?? "uncategorized"}`} folderId={group.id} name={group.name} />
+            <FolderShelfChip
+              key={`chip-${group.id ?? "uncategorized"}`}
+              folderId={group.id}
+              isActiveDrop={(group.id ?? "__uncategorized__") === activeDropGroupId || (group.id ?? "__uncategorized__") === flashGroupId}
+              name={group.name}
+            />
           ))}
         </div>
+
+        {activeDragDocument ? (
+          <div className="mb-3 rounded-[18px] border border-dashed border-[#d7bf96] bg-[#fff7ea] px-3 py-2 text-[11px] text-[#7a6655]">
+            正在拖动 <span className="font-semibold text-[#4f3c29]">{activeDragDocument.filename}</span>。
+            拖到上方文件夹标签或下方区域即可完成转移。
+          </div>
+        ) : null}
 
         <div className="flex-1 overflow-auto pr-1">
           <div className="space-y-3">
             {groups.map((group) => (
-              <FolderDropzone key={groupSectionId(group.id)} folderId={group.id} name={group.name} documents={group.documents}>
+              <FolderDropzone
+                key={groupSectionId(group.id)}
+                documents={group.documents}
+                folderId={group.id}
+                isActiveDrop={(group.id ?? "__uncategorized__") === activeDropGroupId || (group.id ?? "__uncategorized__") === flashGroupId}
+                name={group.name}
+              >
                 <SortableContext
                   items={group.documents.map((document) => documentDragId(document.id))}
                   strategy={verticalListSortingStrategy}
@@ -461,6 +583,7 @@ export function DocumentLibrary({
                           onDeleteDocument={onDeleteDocument}
                           onRegenerateDocument={onRegenerateDocument}
                           onAbortGeneration={onAbortGeneration}
+                          dragState={document.id === activeDragDocumentId ? "source" : "idle"}
                         />
                       ))
                     )}
@@ -470,6 +593,21 @@ export function DocumentLibrary({
             ))}
           </div>
         </div>
+        <DragOverlay
+          dropAnimation={{
+            duration: 180,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            sideEffects: defaultDropAnimationSideEffects({
+              styles: {
+                active: {
+                  opacity: "0.18",
+                },
+              },
+            }),
+          }}
+        >
+          {activeDragDocument ? <DragPreviewCard document={activeDragDocument} /> : null}
+        </DragOverlay>
       </DndContext>
     </div>
   );

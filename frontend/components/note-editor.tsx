@@ -119,85 +119,159 @@ export function NoteEditor({
     }
   }
 
+  const saveDot =
+    saveStateLabel === "自动保存中"
+      ? "bg-amber-400 animate-pulse"
+      : saveStateLabel === "已保存"
+        ? "bg-emerald-400"
+        : saveStateLabel === "保存失败"
+          ? "bg-red-400"
+          : "bg-[#c8b496]";
+
   return (
-    <section className="flex h-full min-h-0 flex-col rounded-[30px] border border-[#d9c7ab] bg-[linear-gradient(180deg,#fffaf2,#f6ebdb)] p-3 shadow-[0_28px_60px_rgba(122,98,66,0.12)]">
+    <section className="flex h-full min-h-0 flex-col rounded-[28px] border border-[#d5c3a5] bg-[linear-gradient(165deg,#fffcf5_0%,#f7edda_100%)] shadow-[0_32px_64px_rgba(100,76,46,0.16),0_2px_8px_rgba(100,76,46,0.06)]">
+
       {/* Header */}
-      <header className="mb-2 shrink-0 flex items-center justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="text-[10px] uppercase tracking-[0.26em] text-[#9d876f]">Notebook</p>
-            {saveStateLabel ? (
-              <span className="rounded-full border border-[#e2d4bf] bg-[#fffdf8] px-2 py-0.5 text-[10px] text-[#8f7a63]">
-                {saveStateLabel}
-              </span>
-            ) : null}
+      <header className="shrink-0 px-4 pt-4 pb-2.5">
+        <div className="flex items-start justify-between gap-2">
+
+          {/* Left: brand + document */}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-[0.34em] text-[#a08b72]">Notebook</span>
+              {saveStateLabel && (
+                <span className="flex items-center gap-1">
+                  <span className={`h-1.5 w-1.5 rounded-full ${saveDot} transition-colors duration-500`} />
+                  <span className="text-[9px] text-[#b09a80]">{saveStateLabel}</span>
+                </span>
+              )}
+            </div>
+            {documentName && (
+              <p className="truncate text-[13px] font-semibold leading-snug text-[#3a2c1c] max-w-[200px]" title={documentName}>
+                {documentName}
+              </p>
+            )}
           </div>
-          {documentName && <p className="text-xs font-medium text-[#463829] truncate max-w-[160px]">{documentName}</p>}
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            className={`btn btn-segment !px-2.5 !py-1 !text-[10px] ${viewMode === "edit" ? "btn-segment-active" : "btn-segment-idle"}`}
-            onClick={() => onViewModeChange("edit")}
-            type="button"
-          >
-            编辑
-          </button>
-          <button
-            className={`btn btn-segment !px-2.5 !py-1 !text-[10px] ${viewMode === "preview" ? "btn-segment-active" : "btn-segment-idle"}`}
-            onClick={() => onViewModeChange("preview")}
-            type="button"
-          >
-            预览
-          </button>
-          <button
-            className={`btn btn-segment !px-2.5 !py-1 !text-[10px] ${historyOpen ? "btn-segment-active" : "btn-segment-idle"}`}
-            onClick={() => setHistoryOpen((v) => !v)}
-            type="button"
-          >
-            版本 {history.length > 0 && `(${history.length})`}
-          </button>
-          {onCollapse ? (
+
+          {/* Right: view mode toggle + history + collapse */}
+          <div className="flex items-center gap-1.5 pt-0.5 shrink-0">
+            {/* Pill toggle */}
+            <div className="flex items-center rounded-full border border-[#d0bfa4] bg-[#ede3d3] p-[3px]">
+              <button
+                className={`rounded-full px-3 py-[3px] text-[10px] font-medium transition-all duration-150 ${
+                  viewMode === "edit"
+                    ? "btn-segment-active bg-[#fffbf3] text-[#3a2c1c] shadow-[0_1px_3px_rgba(100,76,46,0.18)]"
+                    : "text-[#9a8570] hover:text-[#5a4535]"
+                }`}
+                onClick={() => onViewModeChange("edit")}
+                type="button"
+              >
+                编辑
+              </button>
+              <button
+                className={`rounded-full px-3 py-[3px] text-[10px] font-medium transition-all duration-150 ${
+                  viewMode === "preview"
+                    ? "btn-segment-active bg-[#fffbf3] text-[#3a2c1c] shadow-[0_1px_3px_rgba(100,76,46,0.18)]"
+                    : "text-[#9a8570] hover:text-[#5a4535]"
+                }`}
+                onClick={() => onViewModeChange("preview")}
+                type="button"
+              >
+                预览
+              </button>
+            </div>
+
+            {/* History icon button */}
             <button
-              className="btn btn-outline !px-2.5 !py-1 !text-[10px]"
-              onClick={onCollapse}
+              className={`flex h-[26px] w-[26px] items-center justify-center rounded-full border transition-colors ${
+                historyOpen
+                  ? "border-[#c4a97c] bg-[#f0dfc0] text-[#6b4f2c]"
+                  : "border-[#d0bfa4] bg-transparent text-[#9a8570] hover:border-[#bfab8a] hover:text-[#5a4535]"
+              }`}
+              onClick={() => setHistoryOpen((v) => !v)}
+              title={`版本历史${history.length > 0 ? ` (${history.length})` : ""}`}
               type="button"
             >
-              收起笔记本
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 1 0 .49-3.51" />
+              </svg>
             </button>
-          ) : null}
+
+            {/* Collapse */}
+            {onCollapse ? (
+              <button
+                aria-label="收起笔记本"
+                className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-[#d0bfa4] text-[#9a8570] transition-colors hover:border-[#bfab8a] hover:text-[#5a4535]"
+                onClick={onCollapse}
+                title="收起笔记本"
+                type="button"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="18 15 12 9 6 15" />
+                </svg>
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
       {/* Toolbar */}
-      <div className="mb-2 shrink-0 flex flex-wrap gap-1">
-        <button className="btn btn-soft !py-1 !px-2.5 !text-[11px]" disabled={loading || disabled} onClick={onFormat} type="button">
-          整理
-        </button>
-        <button className="btn btn-soft !py-1 !px-2.5 !text-[11px]" disabled={loading || disabled} onClick={onAIOrganize} type="button">
-          结构化
-        </button>
-        <button
-          className="btn btn-primary !py-1 !px-2.5 !text-[11px]"
-          disabled={loading || disabled || polishing || !markdown.trim()}
-          onClick={handleAIPolish}
-          type="button"
-        >
-          {polishing ? "润色中…" : "润色"}
-        </button>
-        <button className="btn btn-soft !py-1 !px-2.5 !text-[11px] ml-auto" disabled={loading || disabled} onClick={onExport} type="button">
-          导出
-        </button>
+      <div className="shrink-0 px-4 pb-2.5">
+        <div className="flex items-center gap-1">
+          {/* Formatting group */}
+          <button
+            className="rounded-lg border border-[#d0bfa4] bg-[#f0e5d1] px-2.5 py-[5px] text-[11px] font-medium text-[#6b5540] transition-colors hover:bg-[#e8d8c0] disabled:opacity-40"
+            disabled={loading || disabled}
+            onClick={onFormat}
+            type="button"
+          >
+            整理
+          </button>
+          <button
+            className="rounded-lg border border-[#d0bfa4] bg-[#f0e5d1] px-2.5 py-[5px] text-[11px] font-medium text-[#6b5540] transition-colors hover:bg-[#e8d8c0] disabled:opacity-40"
+            disabled={loading || disabled}
+            onClick={onAIOrganize}
+            type="button"
+          >
+            结构化
+          </button>
+
+          {/* Divider */}
+          <span className="mx-1 h-3.5 w-px rounded-full bg-[#d0bfa4]" />
+
+          {/* Polish — gold primary action */}
+          <button
+            className="rounded-lg border border-[#c4a055] bg-[linear-gradient(140deg,#e8c870,#d09438)] px-3 py-[5px] text-[11px] font-semibold text-[#3d2108] shadow-[0_1px_4px_rgba(180,130,40,0.30)] transition-all hover:brightness-105 hover:shadow-[0_2px_8px_rgba(180,130,40,0.40)] disabled:opacity-40 disabled:shadow-none"
+            disabled={loading || disabled || polishing || !markdown.trim()}
+            onClick={handleAIPolish}
+            type="button"
+          >
+            {polishing ? "润色中…" : "✦ 润色"}
+          </button>
+
+          {/* Export — ghost, right-aligned */}
+          <button
+            className="ml-auto rounded-lg border border-[#d0bfa4] bg-transparent px-2.5 py-[5px] text-[11px] text-[#9a8570] transition-colors hover:bg-[#ede3d3] hover:text-[#5a4535] disabled:opacity-40"
+            disabled={loading || disabled}
+            onClick={onExport}
+            type="button"
+          >
+            导出 ↗
+          </button>
+        </div>
       </div>
 
+      {/* Page outline navigation */}
       {outline.length > 1 ? (
         <div
-          className="mb-2 shrink-0 flex gap-1 overflow-x-auto rounded-[18px] border border-[#e0d0bb] bg-[#fffdf8] p-2"
+          className="mx-4 mb-2.5 shrink-0 flex gap-1 overflow-x-auto rounded-[18px] border border-[#ddd0bb] bg-[#faf5ec] px-2 py-1.5"
           data-testid="notebook-outline"
         >
           {outline.map((item) => (
             <button
               key={item.heading}
-              className="btn btn-outline shrink-0 !rounded-full !px-3 !py-1 !text-[10px]"
+              className="shrink-0 rounded-full border border-[#d0bfa4] bg-white/70 px-2.5 py-[3px] text-[10px] font-medium text-[#7a6248] transition-colors hover:border-[#b8a080] hover:bg-white hover:text-[#3a2c1c]"
               onClick={() => jumpToHeading(item.heading)}
               title={item.title}
               type="button"
@@ -210,28 +284,42 @@ export function NoteEditor({
 
       {/* Diff banner */}
       {diffView && (
-        <div className="mb-2 shrink-0 rounded-[16px] border border-[#c8d5b9] bg-[#edf2e4] px-3 py-2">
-          <p className="mb-1.5 text-[11px] font-medium text-[#607253]">润色已完成，确认应用变更？</p>
-          <div className="flex gap-1.5">
-            <button className="btn btn-success !py-0.5 !px-3 !text-[11px]" onClick={acceptDiff} type="button">应用</button>
-            <button className="btn btn-outline !py-0.5 !px-3 !text-[11px]" onClick={revertDiff} type="button">还原</button>
+        <div className="mx-4 mb-2.5 shrink-0 rounded-[16px] border border-[#aecf96] bg-[linear-gradient(140deg,#eef6e5,#e3f0d8)] px-3.5 py-2.5">
+          <p className="mb-2 text-[11px] font-semibold text-[#476836]">润色完成 · 确认应用变更？</p>
+          <div className="flex gap-2">
+            <button
+              className="rounded-lg border border-[#78b05e] bg-[#5d9845] px-3.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-[#4f8439]"
+              onClick={acceptDiff}
+              type="button"
+            >
+              应用
+            </button>
+            <button
+              className="rounded-lg border border-[#c8b496] bg-transparent px-3.5 py-1 text-[11px] text-[#7a6248] transition-colors hover:bg-[#ede3d3]"
+              onClick={revertDiff}
+              type="button"
+            >
+              还原
+            </button>
           </div>
         </div>
       )}
 
       {/* History panel */}
       {historyOpen && (
-        <div className="mb-2 shrink-0 rounded-[16px] border border-[#e0d0bb] bg-[#fffdf8] p-2 max-h-40 overflow-auto">
+        <div className="mx-4 mb-2.5 shrink-0 max-h-36 overflow-auto rounded-[16px] border border-[#ddd0bb] bg-[#faf5ec] p-2">
           {history.length === 0 ? (
-            <p className="text-[11px] text-[#a08b78]">暂无版本记录。润色后自动保留快照。</p>
+            <p className="px-1 py-1.5 text-[11px] text-[#a08b72]">暂无版本记录。润色后自动保留快照。</p>
           ) : (
             history.map((v) => (
-              <div key={v.timestamp} className="flex items-center justify-between py-1 border-b border-[#f0e8db] last:border-0">
-                <p className="text-[11px] text-[#7a6655]">
-                  {new Date(v.timestamp).toLocaleTimeString()} — {v.content.slice(0, 40).replace(/\n/g, " ")}…
+              <div key={v.timestamp} className="flex items-center justify-between gap-2 px-1 py-1.5 border-b border-[#ede3d4] last:border-0">
+                <p className="min-w-0 flex-1 truncate text-[11px] text-[#7a6655]">
+                  <span className="text-[#b09a80]">{new Date(v.timestamp).toLocaleTimeString()}</span>
+                  {" · "}
+                  {v.content.slice(0, 32).replace(/\n/g, " ")}
                 </p>
                 <button
-                  className="btn btn-outline !py-0.5 !px-2 !text-[10px]"
+                  className="shrink-0 rounded-md border border-[#d0bfa4] px-2 py-0.5 text-[10px] text-[#7a6248] transition-colors hover:bg-[#e8d8c0]"
                   onClick={() => restoreVersion(v)}
                   type="button"
                 >
@@ -244,22 +332,22 @@ export function NoteEditor({
       )}
 
       {/* Main editor / preview */}
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 px-3 pb-3">
         {viewMode === "preview" ? (
           <div
-            className="h-full overflow-auto rounded-[22px] border border-[#deccb1] bg-[#fffdf8] p-3"
+            className="h-full overflow-auto rounded-[20px] border border-[#ddd0bb] bg-[#fffdf8] px-4 py-3"
             data-testid="notebook-preview"
             ref={previewRef}
           >
             {markdown.trim() ? (
               <MarkdownContent content={markdown} />
             ) : (
-              <p className="text-xs text-[#a08b78]">笔记为空。</p>
+              <p className="text-xs text-[#b09a80]">笔记为空。</p>
             )}
           </div>
         ) : (
           <textarea
-            className="h-full w-full min-h-[120px] rounded-[22px] border border-[#deccb1] bg-[#fffdf8] p-3 font-mono text-[11px] leading-5 text-[#5a4938] shadow-inner resize-none outline-none focus:border-[#8a9d76]"
+            className="h-full w-full min-h-[120px] rounded-[20px] border border-[#ddd0bb] bg-[#fffdf8] px-4 py-3 font-mono text-[11.5px] leading-[1.7] text-[#4a3828] shadow-[inset_0_1px_4px_rgba(110,82,46,0.06)] resize-none outline-none placeholder:text-[#c8b496] transition-colors focus:border-[#b8a878] focus:shadow-[inset_0_1px_4px_rgba(110,82,46,0.08),0_0_0_3px_rgba(200,180,140,0.15)]"
             onChange={(e) => onChange(e.target.value)}
             placeholder="在此记录笔记，支持 Markdown。"
             value={markdown}

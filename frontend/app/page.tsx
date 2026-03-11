@@ -343,6 +343,38 @@ export default function Page() {
           </div>
 
           <div className="flex items-center gap-1.5">
+            <button
+              aria-label={notePanelOpen ? "收起笔记本" : "打开笔记本"}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-medium transition-colors ${
+                upload.documentId
+                  ? notePanelOpen
+                    ? "border-[#b59669] bg-[#ead6b8] text-[#553d20] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
+                    : "border-[#d7c5aa] bg-[#fffaf1] text-[#5e4a34] hover:bg-[#f5ebda]"
+                  : "cursor-not-allowed border-[#e5dac7] bg-[#f7f1e7] text-[#af9d86]"
+              }`}
+              data-testid="header-notebook-toggle"
+              disabled={!upload.documentId}
+              onClick={() => setNotePanelOpen((prev) => !prev)}
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+              <span>{notePanelOpen ? "收起笔记" : "笔记本"}</span>
+            </button>
             <div className="rounded-full border border-[#cbb998] bg-[#f5ebda] px-2.5 py-0.5 text-[11px] text-[#5f6d52]">
               {documentCount} 篇
             </div>
@@ -364,6 +396,7 @@ export default function Page() {
         >
           <DocumentLibrary
             activeDocumentId={upload.documentId}
+            backgroundProcessing={upload.backgroundProcessing}
             generationDocId={upload.generationDocId}
             generationProgress={upload.generationProgress}
             library={upload.library}
@@ -463,7 +496,6 @@ export default function Page() {
           updateNotesMarkdown(formatNotebookMarkdown(notesMarkdownRef.current, currentDocumentName));
           setGlobalStatus("笔记格式已整理");
         }}
-        onOpen={() => setNotePanelOpen(true)}
         onViewModeChange={setNotebookViewMode}
         open={notePanelOpen}
         saveStateLabel={notebookSaveLabel}
