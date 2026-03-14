@@ -83,39 +83,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return }
             guard let button = self.statusItem.button else { return }
 
-            let size = NSSize(width: 18, height: 18)
-
-            // Load AppIcon from bundle and scale to 18x18
-            if let appIcon = NSImage(named: "AppIcon") {
-                let menuIcon = NSImage(size: size, flipped: false) { rect in
-                    appIcon.draw(in: rect)
-
-                    // Draw small health dot in bottom-right corner
-                    let dotRadius: CGFloat = 4
-                    let dotX = rect.maxX - dotRadius - 1
-                    let dotY = rect.minY + 1
-                    let dotRect = NSRect(x: dotX - dotRadius, y: dotY, width: dotRadius * 2, height: dotRadius * 2)
-
-                    NSColor.black.withAlphaComponent(0.4).setFill()
-                    NSBezierPath(ovalIn: dotRect.insetBy(dx: -1, dy: -1)).fill()
-
-                    let dotColor: NSColor = self.isHealthy ? .systemGreen : .systemRed
-                    dotColor.setFill()
-                    NSBezierPath(ovalIn: dotRect).fill()
-                    return true
-                }
-                menuIcon.isTemplate = false
-                button.image = menuIcon
-                button.imageScaling = .scaleProportionallyDown
-                button.attributedTitle = NSAttributedString(string: "")
-            } else {
-                // Fallback: colored dot text
-                let color: NSColor = self.isHealthy ? .systemGreen : .systemRed
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .foregroundColor: color,
-                    .font: NSFont.systemFont(ofSize: 16, weight: .bold)
-                ]
-                button.attributedTitle = NSAttributedString(string: "●", attributes: attrs)
+            // Load AppIcon.icns from bundle Resources
+            let iconPath = Bundle.main.resourcePath.map { $0 + "/AppIcon.icns" } ?? ""
+            if let appIcon = NSImage(contentsOfFile: iconPath) {
+                appIcon.size = NSSize(width: 18, height: 18)
+                appIcon.isTemplate = false
+                button.image = appIcon
+                button.imageScaling = .scaleProportionallyUpOrDown
+                button.title = ""
             }
         }
     }
