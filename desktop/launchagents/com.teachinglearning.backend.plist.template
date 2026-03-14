@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.teachinglearning.backend</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON3__</string>
+    <string>-m</string>
+    <string>uvicorn</string>
+    <string>app.main:app</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>8000</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_ROOT__/backend</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__BREW_BIN__:/usr/bin:/bin</string>
+    <key>PYTHONPATH</key>
+    <string>__PROJECT_ROOT__/backend</string>
+    <key>API_KEY</key>
+    <string>__API_KEY__</string>
+    <key>BASE_URL</key>
+    <string>__BASE_URL__</string>
+    <key>MODEL</key>
+    <string>__MODEL__</string>
+    <key>CORS_ORIGINS</key>
+    <string>http://127.0.0.1:3000</string>
+  </dict>
+
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/TeachingLearning/backend.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/TeachingLearning/backend.err</string>
+</dict>
+</plist>
