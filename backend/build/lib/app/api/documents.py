@@ -104,7 +104,6 @@ def _process_document_background(
         document.status = "ready"
         session.add(document)
 
-        slides: list[Slide] = []
         for asset in assets:
             slide = Slide(
                 document_id=document.id,
@@ -129,25 +128,15 @@ def _process_document_background(
                     },
                 )
             )
-            slides.append(slide)
-
-        # Commit slides and mark document ready before generating explanations,
-        # so the document is immediately accessible in the UI.
-        session.commit()
-
-        for slide, asset in zip(slides, assets):
             slide_image_path = document_dir / asset.image_rel_path
-            try:
-                explanation_markdown, _, _, explanation_meta = generate_slide_explanation(
-                    slide=slide,
-                    question="请生成这一页的完整讲解",
-                    extracted_text=asset.extracted_text,
-                    slide_image_path=slide_image_path,
-                    extract_payload=asset.extract_payload,
-                    related_pages=[asset.page_num],
-                )
-            except Exception:
-                continue
+            explanation_markdown, _, _, explanation_meta = generate_slide_explanation(
+                slide=slide,
+                question="请生成这一页的完整讲解",
+                extracted_text=asset.extracted_text,
+                slide_image_path=slide_image_path,
+                extract_payload=asset.extract_payload,
+                related_pages=[asset.page_num],
+            )
             session.add(
                 SlideExplanation(
                     document_id=document.id,
@@ -158,7 +147,8 @@ def _process_document_background(
                     version=CURRENT_EXPLANATION_VERSION,
                 )
             )
-            session.commit()
+
+        session.commit()
 
 
 def _payload_to_extract_read(*, document_id: str, slide: Slide, payload: dict | None) -> SlideExtractRead:
@@ -226,7 +216,7 @@ def _refresh_document_extracts_if_needed(
 
     document_dir = storage_root / document.storage_path
     source_file = _find_original_source_file(document_dir)
-    render_scale = float(os.getenv("PDF_RENDER_SCALE", "3.0"))
+    render_scale = float(os.getenv("PDF_RENDER_SCALE", "2.0"))
     assets = process_document(
         source_file=source_file,
         media_type=document.media_type,
@@ -397,7 +387,7 @@ async def upload_document(
     session.commit()
     session.refresh(document)
 
-    render_scale = float(os.getenv("PDF_RENDER_SCALE", "3.0"))
+    render_scale = float(os.getenv("PDF_RENDER_SCALE", "2.0"))
     database_url = str(request.app.state.engine.url)
 
     background_tasks.add_task(

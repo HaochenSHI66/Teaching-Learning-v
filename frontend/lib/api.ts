@@ -217,20 +217,80 @@ export type DocumentNotebook = {
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBase}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.headers ?? {}),
-    },
-  });
+/** Network-layer failure (DNS, CORS, connection refused). */
+export class NetworkError extends Error {
+  readonly type = "network" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "NetworkError";
+  }
+}
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+/** Server returned a 5xx status. */
+export class ServerError extends Error {
+  readonly type = "server" as const;
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ServerError";
+    this.status = status;
+  }
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  options?: { timeoutMs?: number; retries?: number },
+): Promise<T> {
+  const { timeoutMs = 30_000, retries = 1 } = options ?? {};
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 2 ** (attempt - 1) * 1000));
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(`${apiBase}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: { ...(init?.headers ?? {}) },
+      });
+      clearTimeout(timer);
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        if (response.status >= 500) {
+          // 5xx — retryable
+          lastError = new ServerError(text || `服务器错误 (${response.status})`, response.status);
+          continue;
+        }
+        // 4xx — not retryable
+        throw new Error(text || `请求失败 (${response.status})`);
+      }
+
+      return (await response.json()) as T;
+    } catch (err) {
+      clearTimeout(timer);
+      if (err instanceof Error && err.name === "AbortError") {
+        lastError = new NetworkError("请求超时，请检查网络连接。");
+        continue;
+      }
+      if (err instanceof NetworkError || err instanceof ServerError) {
+        lastError = err;
+        continue;
+      }
+      if (err instanceof TypeError) {
+        lastError = new NetworkError("网络连接失败，请确认后端服务正在运行。");
+        continue;
+      }
+      throw err;
+    }
   }
 
-  return (await response.json()) as T;
+  throw lastError ?? new NetworkError("请求失败");
 }
 
 export function getAssetUrl(path: string): string {
@@ -293,19 +353,25 @@ export async function fetchDocumentStatus(documentId: string): Promise<DocumentS
   return request<DocumentStatus>(`/api/v1/documents/${documentId}/status`);
 }
 
+export async function deleteFolder(folderId: string): Promise<{ id: string; deleted: boolean }> {
+  return request<{ id: string; deleted: boolean }>(`/api/v1/folders/${folderId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function deleteDocument(documentId: string): Promise<{ id: string; deleted: boolean }> {
   return request<{ id: string; deleted: boolean }>(`/api/v1/documents/${documentId}`, {
     method: "DELETE",
   });
 }
 
-/** Poll until document status is "ready" or "error". Max wait ~60s. */
+/** Poll until document status is "ready" or "error". Max wait ~3min. */
 export async function pollDocumentReady(
   documentId: string,
   onProgress?: (status: DocumentStatus) => void,
 ): Promise<DocumentStatus> {
   const INTERVAL_MS = 1500;
-  const MAX_ATTEMPTS = 40;
+  const MAX_ATTEMPTS = 120;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const status = await fetchDocumentStatus(documentId);

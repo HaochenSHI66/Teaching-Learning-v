@@ -1,6 +1,20 @@
 #!/bin/bash
 set -euo pipefail
 
+# ─── Fix Swift CLT 6.1.2 duplicate SwiftBridging module bug ──────────────────
+# Both module.modulemap and bridging.modulemap define SwiftBridging, causing
+# compilation failures. We back up the old file if it exists.
+MODULEMAP="/Library/Developer/CommandLineTools/usr/include/swift/module.modulemap"
+MODULEMAP_BAK="${MODULEMAP}.bak"
+BRIDGING_MAP="/Library/Developer/CommandLineTools/usr/include/swift/bridging.modulemap"
+if [[ -f "$MODULEMAP" && -f "$BRIDGING_MAP" ]]; then
+  echo "⚠️  Detected Swift CLT SwiftBridging conflict (known CLT 6.1.2 bug)."
+  echo "   Backing up $MODULEMAP → ${MODULEMAP_BAK}"
+  echo "   (Requires your password for sudo)"
+  sudo mv "$MODULEMAP" "$MODULEMAP_BAK"
+  echo "✓ Fixed. Re-run build.sh if you see any Swift errors."
+fi
+
 # ─── Paths ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

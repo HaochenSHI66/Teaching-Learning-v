@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
+
+import { ParseProgressBar } from "@/components/parse-progress-bar";
 import {
   DndContext,
   DragOverlay,
@@ -39,6 +41,7 @@ type DocumentLibraryProps = {
   onUpload: (file: File) => Promise<void>;
   onSelectDocument: (documentId: string) => Promise<void>;
   onDeleteDocument: (documentId: string, filename: string) => Promise<void>;
+  onDeleteFolder: (folderId: string, name: string) => Promise<void>;
   onCreateFolder: (name: string) => Promise<void>;
   onMoveDocument: (documentId: string, targetFolderId: string | null, targetIndex: number) => Promise<void>;
   onRegenerateDocument: (documentId: string) => Promise<void>;
@@ -87,7 +90,7 @@ function findGroupForDocument(library: DocumentLibrary, documentId: string): Gro
   return null;
 }
 
-function SortableDocumentCard({
+const SortableDocumentCard = memo(function SortableDocumentCard({
   document,
   activeDocumentId,
   loading,
@@ -173,33 +176,27 @@ function SortableDocumentCard({
         </button>
       </div>
       <div className="mt-3 flex flex-col gap-2">
-        {generationDocId === document.id ? (
-          <>
-            <div className="flex items-center justify-between text-[11px] text-[#7a6655]">
-              <span>
-                {generationProgress
-                  ? `${generationProgress.current} / ${generationProgress.total} 页`
-                  : "准备中…"}
-              </span>
+        {document.status === "processing" ? (
+          <div className="rounded-[16px] border border-[#ddd0b8] bg-[#fffbf3] p-3">
+            <ParseProgressBar current={0} total={0} filename={document.filename} />
+          </div>
+        ) : generationDocId === document.id ? (
+          <div className="rounded-[16px] border border-[#ddd0b8] bg-[#fffbf3] p-3 shadow-[0_4px_16px_rgba(122,98,66,0.06)]">
+            <ParseProgressBar
+              current={generationProgress?.current ?? 0}
+              total={generationProgress?.total ?? 0}
+              filename={document.filename}
+            />
+            <div className="mt-2.5 flex justify-end">
               <button
-                className="btn btn-outline !rounded-full !px-2.5 !py-0.5 !text-[10px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
+                className="btn btn-outline !rounded-full !px-3 !py-1 !text-[10px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
                 onClick={onAbortGeneration}
                 type="button"
               >
-                终止
+                终止解析
               </button>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#ede3d3]">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[#c9a97a] to-[#8a9d76] transition-all duration-300"
-                style={{
-                  width: generationProgress
-                    ? `${(generationProgress.current / generationProgress.total) * 100}%`
-                    : "0%",
-                }}
-              />
-            </div>
-          </>
+          </div>
         ) : (
           <div className="flex items-center gap-2">
             <button
@@ -224,7 +221,7 @@ function SortableDocumentCard({
       </div>
     </article>
   );
-}
+});
 
 function FolderDropzone({
   folderId,
@@ -232,13 +229,16 @@ function FolderDropzone({
   documents,
   children,
   isActiveDrop,
+  onDeleteFolder,
 }: {
   folderId: string | null;
   name: string;
   documents: FolderDocumentItem[];
   children: ReactNode;
   isActiveDrop?: boolean;
+  onDeleteFolder?: (folderId: string, name: string) => Promise<void>;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
   const { isOver, setNodeRef } = useDroppable({
     id: groupSectionId(folderId),
   });
@@ -257,13 +257,35 @@ function FolderDropzone({
             : "border-[#e1d2be] bg-[#fffaf3]"
       }`}
     >
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <p className="text-sm font-semibold text-[#463829]">{name}</p>
-          <p className="text-[11px] text-[#8c765f]">{documents.length} 份文档</p>
-        </div>
+      <div className={`flex items-center justify-between ${collapsed ? "" : "mb-3"}`}>
+        <button
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          onClick={() => setCollapsed((v) => !v)}
+          type="button"
+        >
+          <svg
+            className={`h-3 w-3 shrink-0 text-[#8c765f] transition-transform duration-200 ${collapsed ? "-rotate-90" : ""}`}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+            strokeLinecap="round" strokeLinejoin="round"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-[#463829]">{name}</p>
+            <p className="text-[11px] text-[#8c765f]">{documents.length} 份文档</p>
+          </div>
+        </button>
+        {folderId && onDeleteFolder && (
+          <button
+            className="btn btn-outline !rounded-full !px-2.5 !py-1 text-[11px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
+            onClick={() => void onDeleteFolder(folderId, name)}
+            type="button"
+          >
+            删除
+          </button>
+        )}
       </div>
-      {children}
+      {!collapsed && children}
     </section>
   );
 }
@@ -335,6 +357,7 @@ export function DocumentLibrary({
   onSelectDocument,
   onDeleteDocument,
   onCreateFolder,
+  onDeleteFolder,
   onMoveDocument,
   onRegenerateDocument,
   onAbortGeneration,
@@ -558,6 +581,7 @@ export function DocumentLibrary({
                 folderId={group.id}
                 isActiveDrop={(group.id ?? "__uncategorized__") === activeDropGroupId || (group.id ?? "__uncategorized__") === flashGroupId}
                 name={group.name}
+                onDeleteFolder={onDeleteFolder}
               >
                 <SortableContext
                   items={group.documents.map((document) => documentDragId(document.id))}

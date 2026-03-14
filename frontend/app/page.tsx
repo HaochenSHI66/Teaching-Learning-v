@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AIPanel } from "@/components/ai-panel";
 import { DocumentLibrary } from "@/components/document-library";
@@ -96,10 +96,10 @@ export default function Page() {
     setExplanationMeta(cached?.meta ?? null);
   }, [currentSlide, upload.cachedExplanations, setExplanation, setExplanationMeta]);
 
-  function updateNotesMarkdown(next: string) {
+  const updateNotesMarkdown = useCallback((next: string) => {
     notesMarkdownRef.current = next;
     setNotesMarkdown(next);
-  }
+  }, []);
 
   const statusText =
     chat.statusText || upload.statusText || globalStatus || "待机";
@@ -299,11 +299,17 @@ export default function Page() {
     }
   }
 
-  async function handleDeleteDocument(targetDocumentId: string, filename: string) {
+  const handleDeleteDocument = useCallback(async (targetDocumentId: string, filename: string) => {
     const confirmed = window.confirm(`确认删除《${filename}》？该操作将清除缓存与会话记录。`);
     if (!confirmed) return;
     await upload.deleteDocument(targetDocumentId);
-  }
+  }, [upload.deleteDocument]);
+
+  const handleDeleteFolder = useCallback(async (folderId: string, name: string) => {
+    const confirmed = window.confirm(`确认删除文件夹《${name}》？文件夹内的文档将移至未分类。`);
+    if (!confirmed) return;
+    await upload.deleteFolder(folderId);
+  }, [upload.deleteFolder]);
 
   const notebookSaveLabel =
     notebookSaveState === "saving"
@@ -378,9 +384,25 @@ export default function Page() {
             <div className="rounded-full border border-[#cbb998] bg-[#f5ebda] px-2.5 py-0.5 text-[11px] text-[#5f6d52]">
               {documentCount} 篇
             </div>
-            <div className="rounded-full border border-[#d8bf94] bg-[#f7ecd6] px-2.5 py-0.5 text-[11px] text-[#8c6c46]">
-              {currentSlide ? `P${currentSlide.page_num}/${pageCount || 0}` : "—"}
-            </div>
+            {/* Global parse progress capsule replaces page badge while generating */}
+            {upload.generationProgress ? (
+              <div className="flex items-center gap-1.5 rounded-full border border-[#c9b07e] bg-[#fffbf0] px-3 py-0.5 shadow-sm">
+                <span className="text-[10px] animate-pulse">✦</span>
+                <div className="relative h-1.5 w-20 overflow-hidden rounded-full bg-[#ede3cf]">
+                  <div
+                    className="absolute inset-y-0 left-0 w-full origin-left rounded-full bg-gradient-to-r from-[#c9a97a] to-[#8a9d76] transition-transform duration-500 ease-out"
+                    style={{ transform: `scaleX(${upload.generationProgress.current / upload.generationProgress.total})` }}
+                  />
+                </div>
+                <span className="tabular-nums text-[10px] text-[#8c6c46]">
+                  {upload.generationProgress.current}/{upload.generationProgress.total}
+                </span>
+              </div>
+            ) : (
+              <div className="rounded-full border border-[#d8bf94] bg-[#f7ecd6] px-2.5 py-0.5 text-[11px] text-[#8c6c46]">
+                {currentSlide ? `P${currentSlide.page_num}/${pageCount || 0}` : "—"}
+              </div>
+            )}
             <div className="max-w-[300px] truncate rounded-full border border-[#dbc9ae] bg-[#fffaf1] px-2.5 py-0.5 text-[11px] text-[#746452]">
               {statusText}
             </div>
@@ -405,6 +427,7 @@ export default function Page() {
             onAbortGeneration={upload.abortGeneration}
             onCreateFolder={(name) => upload.createFolder(name)}
             onDeleteDocument={handleDeleteDocument}
+            onDeleteFolder={handleDeleteFolder}
             onMoveDocument={upload.moveDocument}
             onRegenerateDocument={upload.regenerateDocumentExplanations}
             onSelectDocument={upload.loadDocument}
@@ -414,7 +437,7 @@ export default function Page() {
         </aside>
 
         <section className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.92fr]">
-            <ErrorBoundary>
+            <ErrorBoundary resetKey={upload.documentId}>
               <SlideViewer
                 currentIndex={currentSlideIndex}
                 onRoiChange={setRoi}
@@ -423,7 +446,7 @@ export default function Page() {
                 slides={upload.slides}
               />
             </ErrorBoundary>
-            <ErrorBoundary>
+            <ErrorBoundary resetKey={upload.documentId}>
               <AIPanel
                 chatInput={chat.chatInput}
                 chatMessages={chat.chatMessages}

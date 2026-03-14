@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 
 import { getAssetUrl, type RoiBox, type Slide } from "@/lib/api";
 
@@ -23,6 +23,12 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [draftRoi, setDraftRoi] = useState<RoiBox | null>(null);
+  const [mainImageLoaded, setMainImageLoaded] = useState(false);
+
+  // Reset skeleton on slide change
+  useEffect(() => {
+    setMainImageLoaded(false);
+  }, [currentSlide?.id]);
 
   const activeRoi = draftRoi ?? roi;
 
@@ -98,12 +104,31 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
   if (!currentSlide) {
     return (
       <section className="flex h-full items-center justify-center rounded-[30px] border border-[#d9c7ab] bg-[#fbf6ed]/96 p-6 shadow-[0_24px_54px_rgba(122,98,66,0.12)]">
-        <div className="max-w-md rounded-[24px] border border-dashed border-[#dbc8ad] bg-[#fffaf2] px-6 py-8 text-center">
-          <p className="text-xs uppercase tracking-[0.26em] text-[#9c876e]">Viewer</p>
-          <p className="mt-3 text-lg font-medium text-[#473829]">上传文档后会在这里显示 PPT 页面。</p>
+        <div className="max-w-sm rounded-[28px] border border-dashed border-[#dbc8ad] bg-gradient-to-b from-[#fffaf2] to-[#f7eedd] px-8 py-10 text-center shadow-[0_8px_32px_rgba(122,98,66,0.07)]">
+          {/* Decorative illustration — Forest Canopy × Golden Hour */}
+          <svg aria-hidden="true" className="mx-auto mb-5 h-20 w-20 opacity-80" viewBox="0 0 80 80" fill="none">
+            <rect x="12" y="20" width="56" height="44" rx="6" fill="#f4e8d0" stroke="#d6b87a" strokeWidth="1.5"/>
+            <rect x="18" y="28" width="22" height="28" rx="3" fill="#e8d5b4" stroke="#c9a86c" strokeWidth="1"/>
+            <rect x="44" y="28" width="18" height="12" rx="2" fill="#ddebd5" stroke="#92a97e" strokeWidth="1"/>
+            <rect x="44" y="44" width="18" height="12" rx="2" fill="#ddebd5" stroke="#92a97e" strokeWidth="1"/>
+            <path d="M22 16 L40 8 L58 16" stroke="#b89a5e" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+            <circle cx="40" cy="8" r="3" fill="#d6a45b"/>
+          </svg>
+          <p className="text-[10px] uppercase tracking-[0.32em] text-[#9c876e]">Viewer</p>
+          <p className="mt-2.5 text-base font-semibold text-[#473829]">上传文档后会在这里显示 PPT 页面。</p>
           <p className="mt-2 text-sm leading-6 text-[#83715f]">
             左侧会出现缩略页导航，你可以在画布里框选区域，再去问答里做局部解释。
           </p>
+          <div className="mt-5 flex justify-center gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#d6bf98] bg-[#f5e9d4] px-3 py-1 text-[11px] text-[#7a6347]">
+              <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5A6.5 6.5 0 1 0 14.5 8 6.507 6.507 0 0 0 8 1.5ZM0 8a8 8 0 1 1 8 8A8.009 8.009 0 0 1 0 8Zm8.75-3.25a.75.75 0 0 0-1.5 0V8c0 .199.079.39.22.53l2 2a.75.75 0 1 0 1.06-1.06L8.75 7.69Z"/></svg>
+              上传 PDF / 图片
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#c0d1b4] bg-[#eaf1e4] px-3 py-1 text-[11px] text-[#5f7a52]">
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              选择页面解析
+            </span>
+          </div>
         </div>
       </section>
     );
@@ -130,6 +155,8 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
                 <img
                   alt={`Slide ${slide.page_num}`}
                   className="block h-auto w-full"
+                  loading="lazy"
+                  decoding="async"
                   src={getAssetUrl(slide.thumbnail_url)}
                 />
                 <span className="block bg-[#f7efdf] px-2 py-1 text-xs text-[#7e6c5a]">#{slide.page_num}</span>
@@ -215,11 +242,17 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
             }}
             ref={canvasRef}
           >
+            {!mainImageLoaded && (
+              <div className="absolute inset-2 animate-pulse rounded-[18px] bg-[#f0e6d4]" aria-hidden="true" />
+            )}
             <img
               alt={`Slide ${currentSlide.page_num}`}
-              className="mx-auto block h-auto max-w-full rounded-[18px]"
+              className={`mx-auto block h-auto max-w-full rounded-[18px] transition-opacity duration-300 ${mainImageLoaded ? "opacity-100" : "opacity-0"}`}
               draggable={false}
+              fetchPriority="high"
+              decoding="async"
               src={getAssetUrl(currentSlide.image_url)}
+              onLoad={() => setMainImageLoaded(true)}
             />
             {roiStyle ? (
               <div

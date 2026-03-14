@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { MarkdownContent } from "@/components/markdown-content";
 import { SelectionPopup } from "@/components/selection-popup";
@@ -154,15 +154,16 @@ export function AIPanel({
   const [tab, setTab] = useState<TabKey>("explain");
   const explanationRef = useRef<HTMLDivElement>(null);
   const badge = getExplanationBadge(explanationState, explanationLoading);
-  const extractionMarkdown = buildExtractionMarkdown(extraction);
+  const extractionMarkdown = useMemo(() => buildExtractionMarkdown(extraction), [extraction]);
   const repeatSummary = explanationMeta?.repeat_summary;
   const hasStructuredExplanation = Boolean(
     explanationMeta?.sections?.translation_md && explanationMeta?.sections?.primary_md,
   );
 
-  const slideMessages = currentSlideId
-    ? chatMessages.filter((m) => m.slideId === currentSlideId)
-    : chatMessages;
+  const slideMessages = useMemo(
+    () => (currentSlideId ? chatMessages.filter((m) => m.slideId === currentSlideId) : chatMessages),
+    [currentSlideId, chatMessages],
+  );
 
   return (
     <section className="flex h-full min-h-0 flex-col rounded-[30px] border border-[#d9c7ab] bg-[linear-gradient(180deg,#fffaf2,#f6ebdb)] p-3 shadow-[0_28px_60px_rgba(122,98,66,0.12)]">
@@ -184,7 +185,7 @@ export function AIPanel({
 
       {/* ── 解析 ─────────────────────────────────────── */}
       {tab === "explain" && (
-        <>
+        <div key="explain" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col">
           <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8]">
             <header className="shrink-0 flex items-center justify-between gap-2 border-b border-[#eee2cf] px-3 py-2">
               <div className="flex items-center gap-2">
@@ -198,11 +199,17 @@ export function AIPanel({
               <div className="flex items-center gap-1.5">
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] ${badge.cls}`}>{badge.label}</span>
                 <button
-                  className="btn btn-primary !px-3 !py-1.5 !text-[11px]"
+                  className="btn btn-primary !px-3 !py-1.5 !text-[11px] gap-1.5"
                   disabled={disabled || loading}
                   onClick={onGenerateExplanation}
                   type="button"
                 >
+                  {explanationLoading && (
+                    <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                  )}
                   {explanationLoading ? "生成中…" : "生成解析"}
                 </button>
               </div>
@@ -256,12 +263,12 @@ export function AIPanel({
             onElaborate={onElaborateSelection}
             disabled={disabled || loading}
           />
-        </>
+        </div>
       )}
 
       {/* ── 结构 ─────────────────────────────────────── */}
       {tab === "extract" && (
-        <div className="min-h-0 flex-1 overflow-auto rounded-[22px] border border-[#ddcfbc] bg-[#fffdf8] p-3">
+        <div key="extract" className="animate-fade-slide-in min-h-0 flex-1 overflow-auto rounded-[22px] border border-[#ddcfbc] bg-[#fffdf8] p-3">
           <div className="mb-2 flex items-center gap-2">
             <p className="text-[11px] font-medium text-[#4b3d2f]">页面结构</p>
             <span className="rounded-full border border-[#ddcfbc] bg-[#f4ecdf] px-2 py-0.5 text-[9px] text-[#7e6a57]">Non-LLM</span>
@@ -290,7 +297,7 @@ export function AIPanel({
 
       {/* ── 追问 ─────────────────────────────────────── */}
       {tab === "chat" && (
-        <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+        <div key="chat" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col gap-1.5">
           {/* Mode toggle */}
           <div className="shrink-0 flex items-center justify-between rounded-[16px] border border-[#e0d0bb] bg-[#fffdf8] px-2.5 py-1.5">
             <span className="text-[10px] text-[#9a846a]">提问范围</span>

@@ -31,15 +31,7 @@ def _save_thumbnail(source: Path, destination: Path, max_width: int = 320) -> tu
         width, height = image.size
         thumbnail = image.copy()
         thumbnail.thumbnail((max_width, max_width * 8))
-        thumbnail.save(destination, format="PNG", compress_level=1)
-    return width, height
-
-
-def _save_thumbnail_from_pixmap(pixmap: "fitz.Pixmap", destination: Path, max_width: int = 320) -> tuple[int, int]:
-    image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
-    width, height = image.size
-    image.thumbnail((max_width, max_width * 8))
-    image.save(destination, format="PNG", compress_level=1)
+        thumbnail.save(destination, format="PNG")
     return width, height
 
 
@@ -279,14 +271,11 @@ def _render_pdf(pdf_path: Path, output_dir: Path, render_scale: float = 2.0) -> 
     with fitz.open(pdf_path) as document:
         for page_index, page in enumerate(document, start=1):
             pixmap = page.get_pixmap(matrix=fitz.Matrix(render_scale, render_scale), alpha=False)
-            # Build PIL image from in-memory pixmap samples (no intermediate file)
-            pil_image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
             slide_file = slides_dir / f"slide_{page_index:03d}.png"
-            # compress_level=1: fastest PNG write (~3x faster than default level 6)
-            pil_image.save(slide_file, format="PNG", compress_level=1)
+            pixmap.save(slide_file)
 
             thumb_file = thumbs_dir / f"thumb_{page_index:03d}.png"
-            width, height = _save_thumbnail_from_pixmap(pixmap, thumb_file)
+            width, height = _save_thumbnail(slide_file, thumb_file)
             extracted_text, extract_payload = _extract_pdf_payload(
                 page=page,
                 slide_file=slide_file,

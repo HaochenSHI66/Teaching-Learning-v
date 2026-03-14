@@ -30,6 +30,17 @@
   100% { background-position: 100% 50%; }
 }
 
+@keyframes parseWorm {
+  0%   { left: -40%; }
+  50%  { left: 60%; }
+  100% { left: -40%; }
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 :root {
   color-scheme: light;
   --bg-paper: #efe4d1;
@@ -74,6 +85,33 @@ body::before {
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-sage);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.parse-worm {
+  animation: parseWorm 1.4s ease-in-out infinite;
+}
+
+.animate-fade-slide-in {
+  animation: fadeSlideIn 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.card-hover {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 36px rgba(109, 85, 58, 0.14);
 }
 
 h1,

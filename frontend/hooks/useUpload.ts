@@ -6,6 +6,7 @@ import {
   createSession,
   createFolder as createFolderRequest,
   deleteDocument as deleteDocumentRequest,
+  deleteFolder as deleteFolderRequest,
   fetchDocumentExplanations,
   fetchDocumentStatus,
   fetchFolderLibrary,
@@ -43,6 +44,7 @@ type UploadActions = {
   handleUpload: (file: File) => Promise<void>;
   loadDocument: (documentId: string) => Promise<void>;
   deleteDocument: (documentId: string) => Promise<void>;
+  deleteFolder: (folderId: string) => Promise<void>;
   createFolder: (name: string, color?: string) => Promise<void>;
   moveDocument: (documentId: string, targetFolderId: string | null, targetIndex: number) => Promise<void>;
   regenerateDocumentExplanations: (documentId: string) => Promise<void>;
@@ -144,8 +146,10 @@ export function useUpload(): UploadState & UploadActions {
   }
 
   async function hydrateDocument(targetDocumentId: string, options?: { resetSession?: boolean }) {
-    const fetchedSlides = await fetchSlides(targetDocumentId);
-    const explanations = await fetchDocumentExplanations(targetDocumentId);
+    const [fetchedSlides, explanations] = await Promise.all([
+      fetchSlides(targetDocumentId),
+      fetchDocumentExplanations(targetDocumentId),
+    ]);
 
     setDocumentId(targetDocumentId);
     setSlides(fetchedSlides);
@@ -161,12 +165,12 @@ export function useUpload(): UploadState & UploadActions {
   }
 
   async function loadDocument(targetDocumentId: string) {
-    setLoading(true);
     setStatusText("正在加载文档...");
     try {
       const status = await fetchDocumentStatus(targetDocumentId);
       if (status.status === "processing") {
-        setStatusText("文档仍在处理中，正在等待缓存讲解生成...");
+        // Don't lock the UI while waiting — background poll handles this
+        setStatusText("文档仍在处理中，请稍候…");
         const finalStatus = await pollDocumentReady(targetDocumentId, (progress) => {
           if (progress.status === "processing") {
             setStatusText(`处理中（已完成 ${progress.page_count} 页）...`);
@@ -183,6 +187,7 @@ export function useUpload(): UploadState & UploadActions {
         return;
       }
 
+      setLoading(true);
       await hydrateDocument(targetDocumentId, { resetSession: true });
       await refreshDocuments();
     } catch (error) {
@@ -264,6 +269,21 @@ export function useUpload(): UploadState & UploadActions {
     }
   }
 
+  async function deleteFolder(folderId: string) {
+    setLoading(true);
+    try {
+      await deleteFolderRequest(folderId);
+      await refreshDocuments();
+      setStatusText("文件夹已删除。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误";
+      setStatusText(`删除文件夹失败：${message}`);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function createFolder(name: string, color: string = "oat") {
     setLoading(true);
     setStatusText("正在创建文件夹...");
@@ -307,6 +327,7 @@ export function useUpload(): UploadState & UploadActions {
   }
 
   async function regenerateDocumentExplanations(targetDocumentId: string) {
+    const CONCURRENCY = 3;
     abortRef.current = false;
     setLoading(true);
     setGenerationDocId(targetDocumentId);
@@ -316,24 +337,39 @@ export function useUpload(): UploadState & UploadActions {
       const total = targetSlides.length;
       setGenerationProgress({ current: 0, total });
 
-      let completed = 0;
-      for (const slide of targetSlides) {
-        if (abortRef.current) {
-          setStatusText(`已中止（${completed}/${total} 页）`);
-          break;
+      const queue = [...targetSlides];
+      const completedRef = { value: 0 };
+
+      async function runWorker() {
+        while (queue.length > 0 && !abortRef.current) {
+          const slide = queue.shift();
+          if (!slide) break;
+          try {
+            const result = await generateSlideExplanation(targetDocumentId, slide.id);
+            completedRef.value++;
+            setGenerationProgress({ current: completedRef.value, total });
+            setStatusText(`生成解析中… ${completedRef.value}/${total} 页`);
+            setCachedExplanations((prev) => ({ ...prev, [slide.id]: result }));
+            setSlides((prev) =>
+              prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
+            );
+          } catch {
+            // Single page failure won't abort the whole batch
+            completedRef.value++;
+            setGenerationProgress({ current: completedRef.value, total });
+            setSlides((prev) =>
+              prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "error" as const } : s)),
+            );
+          }
         }
-        setStatusText(`生成解析中… ${completed + 1}/${total} 页`);
-        const result = await generateSlideExplanation(targetDocumentId, slide.id);
-        completed++;
-        setGenerationProgress({ current: completed, total });
-        setCachedExplanations((prev) => ({ ...prev, [slide.id]: result }));
-        setSlides((prev) =>
-          prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
-        );
       }
 
-      if (!abortRef.current) {
-        setStatusText(`解析已生成（${completed}/${total} 页）`);
+      await Promise.all(Array.from({ length: CONCURRENCY }, runWorker));
+
+      if (abortRef.current) {
+        setStatusText(`已中止（${completedRef.value}/${total} 页）`);
+      } else {
+        setStatusText(`解析已生成（${completedRef.value}/${total} 页）`);
       }
       await refreshDocuments();
     } catch (error) {
@@ -384,6 +420,7 @@ export function useUpload(): UploadState & UploadActions {
     handleUpload,
     loadDocument,
     deleteDocument,
+    deleteFolder,
     createFolder,
     moveDocument,
     regenerateDocumentExplanations,
