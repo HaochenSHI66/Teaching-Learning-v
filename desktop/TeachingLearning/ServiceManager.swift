@@ -18,8 +18,10 @@ class ServiceManager {
 
     /// Ensures both LaunchAgents are bootstrapped and running.
     /// Bootstraps first (no-op if already loaded), then kickstarts.
+    /// Passes `autostartEnabled` so the persisted enable/disable state is
+    /// restored after bootstrap (Ventura+ requires enable before bootstrap).
     /// Completion is called on main thread when done.
-    func ensureServicesRunning(completion: @escaping () -> Void) {
+    func ensureServicesRunning(autostartEnabled: Bool = true, completion: @escaping () -> Void) {
         let uid = getuid()
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let agentsDir = "\(home)/Library/LaunchAgents"
@@ -33,19 +35,22 @@ class ServiceManager {
             // kickstart ensures the process is actually running
             self.runLaunchctl(["kickstart", "gui/\(uid)/\(self.backendLabel)"])
             self.runLaunchctl(["kickstart", "gui/\(uid)/\(self.frontendLabel)"])
+            // Restore disabled state so the user's autostart preference is not overwritten
+            if !autostartEnabled {
+                self.runLaunchctl(["disable", "gui/\(uid)/\(self.backendLabel)"])
+                self.runLaunchctl(["disable", "gui/\(uid)/\(self.frontendLabel)"])
+            }
             DispatchQueue.main.async(execute: completion)
         }
     }
 
-    /// Stops both services: kills the process and disables KeepAlive restart.
-    /// Does NOT bootout — keeps plist loaded so bootstrap is not needed on next start.
+    /// Stops both services by booting them out of launchd.
+    /// bootout unloads the agent without touching the persisted enable/disable
+    /// state, so the user's autostart preference survives across app launches.
     func stopServices() {
         let uid = getuid()
-        // Disable prevents KeepAlive from restarting after kill
-        runLaunchctl(["disable", "gui/\(uid)/\(backendLabel)"])
-        runLaunchctl(["disable", "gui/\(uid)/\(frontendLabel)"])
-        runLaunchctl(["kill", "SIGTERM", "gui/\(uid)/\(backendLabel)"])
-        runLaunchctl(["kill", "SIGTERM", "gui/\(uid)/\(frontendLabel)"])
+        runLaunchctl(["bootout", "gui/\(uid)/\(backendLabel)"])
+        runLaunchctl(["bootout", "gui/\(uid)/\(frontendLabel)"])
     }
 
     /// Forcefully restarts both services via launchctl kickstart -k.

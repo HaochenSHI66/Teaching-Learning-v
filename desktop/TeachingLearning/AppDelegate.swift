@@ -33,7 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         // Ensure services are bootstrapped and running, then wait for backend
-        ServiceManager.shared.ensureServicesRunning {
+        ServiceManager.shared.ensureServicesRunning(autostartEnabled: autostartEnabled) {
             self.window.updateLoadingStatus("服务已启动，等待后端就绪...")
             ServiceManager.shared.waitForBackend { [weak self] success in
                 guard let self = self else { return }
@@ -173,7 +173,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             window.updateLoadingStatus("正在重试...")
-            ServiceManager.shared.ensureServicesRunning {
+            ServiceManager.shared.ensureServicesRunning(autostartEnabled: autostartEnabled) {
                 ServiceManager.shared.waitForBackend { [weak self] success in
                     guard let self = self else { return }
                     if success {

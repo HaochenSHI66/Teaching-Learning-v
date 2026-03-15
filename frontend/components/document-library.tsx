@@ -779,7 +779,10 @@ export function DocumentLibrary({
         folders={library.folders}
         mode="upload"
         onConfirm={handleFolderPickerDone}
-        onClose={() => handleFolderPickerDone(null)}
+        onClose={() => {
+          setShowFolderPicker(false);
+          setPendingUploadFile(null);
+        }}
       />
     </div>
   );

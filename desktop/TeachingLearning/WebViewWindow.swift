@@ -8,6 +8,8 @@ class WebViewWindow: NSWindow {
     private var loadingView: NSView!
     private var statusLabel: NSTextField!
     private var spinner: NSProgressIndicator!
+    private var loadRetryCount = 0
+    private let maxLoadRetries = 30
 
     override init(
         contentRect: NSRect,
@@ -133,6 +135,11 @@ class WebViewWindow: NSWindow {
 
     /// Loads the frontend. Call only after backend health check passes.
     func loadApp() {
+        loadRetryCount = 0
+        attemptLoad()
+    }
+
+    private func attemptLoad() {
         let request = URLRequest(
             url: URL(string: "http://127.0.0.1:3000")!,
             cachePolicy: .reloadIgnoringLocalCacheData
@@ -195,7 +202,15 @@ extension WebViewWindow: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation _: WKNavigation!, withError error: Error) {
         let nsError = error as NSError
         if nsError.code == NSURLErrorCancelled { return }
-        print("[WebView] provisional load failed: \(error.localizedDescription)")
+        guard loadRetryCount < maxLoadRetries else {
+            print("[WebView] frontend load failed after \(maxLoadRetries) retries, giving up")
+            return
+        }
+        loadRetryCount += 1
+        print("[WebView] provisional load failed (\(loadRetryCount)/\(maxLoadRetries)): \(error.localizedDescription)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.attemptLoad()
+        }
     }
 }
 
