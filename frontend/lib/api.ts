@@ -300,9 +300,12 @@ export function getAssetUrl(path: string): string {
   return `${apiBase}${path}`;
 }
 
-export async function uploadDocument(file: File): Promise<UploadPayload> {
+export async function uploadDocument(file: File, folderId?: string | null): Promise<UploadPayload> {
   const form = new FormData();
   form.append("file", file);
+  if (folderId) {
+    form.append("folder_id", folderId);
+  }
 
   return request<UploadPayload>("/api/v1/documents/upload", {
     method: "POST",

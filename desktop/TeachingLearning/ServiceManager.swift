@@ -16,6 +16,38 @@ class ServiceManager {
 
     // MARK: - Service Control
 
+    /// Ensures both LaunchAgents are bootstrapped and running.
+    /// Bootstraps first (no-op if already loaded), then kickstarts.
+    /// Completion is called on main thread when done.
+    func ensureServicesRunning(completion: @escaping () -> Void) {
+        let uid = getuid()
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let agentsDir = "\(home)/Library/LaunchAgents"
+        DispatchQueue.global(qos: .userInitiated).async {
+            // enable first: disabled services fail bootstrap with EIO on macOS Ventura+
+            self.runLaunchctl(["enable", "gui/\(uid)/\(self.backendLabel)"])
+            self.runLaunchctl(["enable", "gui/\(uid)/\(self.frontendLabel)"])
+            // bootstrap is idempotent: silently fails if already loaded
+            self.runLaunchctl(["bootstrap", "gui/\(uid)", "\(agentsDir)/com.teachinglearning.backend.plist"])
+            self.runLaunchctl(["bootstrap", "gui/\(uid)", "\(agentsDir)/com.teachinglearning.frontend.plist"])
+            // kickstart ensures the process is actually running
+            self.runLaunchctl(["kickstart", "gui/\(uid)/\(self.backendLabel)"])
+            self.runLaunchctl(["kickstart", "gui/\(uid)/\(self.frontendLabel)"])
+            DispatchQueue.main.async(execute: completion)
+        }
+    }
+
+    /// Stops both services: kills the process and disables KeepAlive restart.
+    /// Does NOT bootout — keeps plist loaded so bootstrap is not needed on next start.
+    func stopServices() {
+        let uid = getuid()
+        // Disable prevents KeepAlive from restarting after kill
+        runLaunchctl(["disable", "gui/\(uid)/\(backendLabel)"])
+        runLaunchctl(["disable", "gui/\(uid)/\(frontendLabel)"])
+        runLaunchctl(["kill", "SIGTERM", "gui/\(uid)/\(backendLabel)"])
+        runLaunchctl(["kill", "SIGTERM", "gui/\(uid)/\(frontendLabel)"])
+    }
+
     /// Forcefully restarts both services via launchctl kickstart -k.
     /// Completion is called on main thread after a 2s warm-up delay.
     func restartServices(completion: @escaping () -> Void) {
@@ -87,8 +119,11 @@ class ServiceManager {
 
     /// Polls backend /health until 200 or maxRetries exhausted.
     /// Completion is called on main thread.
-    func waitForBackend(maxRetries: Int = 30, completion: @escaping (_ success: Bool) -> Void) {
-        pollBackend(attempt: 0, maxRetries: maxRetries, completion: completion)
+    func waitForBackend(maxRetries: Int = 60, completion: @escaping (_ success: Bool) -> Void) {
+        // Give the process a moment to bind the port before first poll
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.pollBackend(attempt: 0, maxRetries: maxRetries, completion: completion)
+        }
     }
 
     private func pollBackend(attempt: Int, maxRetries: Int, completion: @escaping (Bool) -> Void) {
@@ -96,13 +131,13 @@ class ServiceManager {
             DispatchQueue.main.async { completion(false) }
             return
         }
-        let session = makeEphemeralSession(timeout: 1.0)
+        let session = makeEphemeralSession(timeout: 2.0)
         session.dataTask(with: URL(string: "http://127.0.0.1:8000/health")!) { [weak self] _, resp, _ in
             if (resp as? HTTPURLResponse)?.statusCode == 200 {
                 DispatchQueue.main.async { completion(true) }
             } else {
-                // No extra wait — each attempt already blocks up to 1s via request timeout.
-                // 30 retries × 1s = ~30s worst-case total.
+                // Each attempt blocks up to 2s via request timeout.
+                // 60 retries × 2s = ~120s worst-case total.
                 DispatchQueue.global().async {
                     self?.pollBackend(attempt: attempt + 1, maxRetries: maxRetries, completion: completion)
                 }

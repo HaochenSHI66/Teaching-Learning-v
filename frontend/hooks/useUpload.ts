@@ -41,7 +41,7 @@ type UploadState = {
 };
 
 type UploadActions = {
-  handleUpload: (file: File) => Promise<void>;
+  handleUpload: (file: File, folderId?: string | null) => Promise<void>;
   loadDocument: (documentId: string) => Promise<void>;
   deleteDocument: (documentId: string) => Promise<void>;
   deleteFolder: (folderId: string) => Promise<void>;
@@ -198,11 +198,11 @@ export function useUpload(): UploadState & UploadActions {
     }
   }
 
-  async function handleUpload(file: File) {
+  async function handleUpload(file: File, folderId?: string | null) {
     setBackgroundProcessing(true);
     setStatusText("正在上传文件...");
     try {
-      const uploaded = await uploadDocument(file);
+      const uploaded = await uploadDocument(file, folderId);
       // Refresh immediately so the new doc appears in the library with "processing" status.
       await refreshDocuments();
       setStatusText("文件已上传，后台处理中，可继续使用其他文档…");

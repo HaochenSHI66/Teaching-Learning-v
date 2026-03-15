@@ -1,8 +1,9 @@
 "use client";
 
-import { memo, useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ParseProgressBar } from "@/components/parse-progress-bar";
+import { FolderPickerModal } from "@/components/folder-picker-modal";
 import {
   DndContext,
   DragOverlay,
@@ -24,9 +25,22 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import type { DocumentLibrary, FolderDocumentItem } from "@/lib/api";
+import type { DocumentLibrary, FolderDocumentItem, FolderGroup } from "@/lib/api";
 
 type GenerationProgress = { current: number; total: number } | null;
+type SortMode = "manual" | "name" | "date";
+
+const SORT_MODES: SortMode[] = ["manual", "name", "date"];
+const naturalCollator = new Intl.Collator("zh", { numeric: true, sensitivity: "base" });
+
+function sortedDocuments(docs: FolderDocumentItem[], mode: SortMode): FolderDocumentItem[] {
+  if (mode === "manual") return docs;
+  return [...docs].sort((a, b) =>
+    mode === "name"
+      ? naturalCollator.compare(a.filename, b.filename)
+      : b.created_at.localeCompare(a.created_at),
+  );
+}
 
 type DocumentLibraryProps = {
   library: DocumentLibrary;
@@ -38,7 +52,7 @@ type DocumentLibraryProps = {
   generationProgress: GenerationProgress;
   notePanelOpen: boolean;
   onToggleNotes: () => void;
-  onUpload: (file: File) => Promise<void>;
+  onUpload: (file: File, folderId?: string | null) => Promise<void>;
   onSelectDocument: (documentId: string) => Promise<void>;
   onDeleteDocument: (documentId: string, filename: string) => Promise<void>;
   onDeleteFolder: (folderId: string, name: string) => Promise<void>;
@@ -96,130 +110,223 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
   loading,
   generationDocId,
   generationProgress,
-  notePanelOpen,
-  onToggleNotes,
   onSelectDocument,
   onDeleteDocument,
   onRegenerateDocument,
   onAbortGeneration,
+  onMoveDocument,
+  folders,
   dragState,
+  sortEnabled,
 }: {
   document: FolderDocumentItem;
   activeDocumentId: string | null;
   loading: boolean;
   generationDocId: string | null;
   generationProgress: GenerationProgress;
-  notePanelOpen: boolean;
-  onToggleNotes: () => void;
   onSelectDocument: (documentId: string) => Promise<void>;
   onDeleteDocument: (documentId: string, filename: string) => Promise<void>;
   onRegenerateDocument: (documentId: string) => Promise<void>;
   onAbortGeneration: () => void;
+  onMoveDocument: (documentId: string, targetFolderId: string | null, targetIndex: number) => Promise<void>;
+  folders: FolderGroup[];
   dragState?: "idle" | "source";
+  sortEnabled?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: documentDragId(document.id),
+    disabled: sortEnabled === false,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    ...(transform ? { willChange: "transform" } : {}),
   };
   const resolvedDragState = dragState ?? "idle";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showMovePicker, setShowMovePicker] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    globalThis.document.addEventListener("mousedown", handleClickOutside);
+    return () => globalThis.document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
+  const isGeneratingThis = generationDocId === document.id;
+
+  const statusDot = (
+    <span
+      className={`h-2 w-2 shrink-0 rounded-full ${
+        document.status === "ready"
+          ? "bg-[#7aaa5a]"
+          : document.status === "processing"
+            ? "bg-[#d4a543]"
+            : "bg-[#c4594b]"
+      }`}
+      title={document.status}
+    />
+  );
 
   return (
-    <article
-      ref={setNodeRef}
-      style={style}
-      data-testid={`document-item-${document.filename}`}
-      data-drag-state={resolvedDragState}
-      className={`rounded-[22px] border p-3 transition ${
-        activeDocumentId === document.id
-          ? "border-[#cab384] bg-[linear-gradient(135deg,#fff8ec_0%,#f2e7d2_62%,#ece4d5_100%)] shadow-[0_18px_36px_rgba(122,98,66,0.12)]"
-          : "border-[#e0d1bc] bg-[#fffaf2] hover:border-[#cdb796] hover:bg-white"
-      } ${
-        isDragging || resolvedDragState === "source"
-          ? "document-card-source shadow-[0_18px_36px_rgba(122,98,66,0.2)]"
-          : "document-card-idle"
-      }`}
-      {...attributes}
-      {...listeners}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <button
-          className="min-w-0 flex-1 text-left"
-          onClick={() => void onSelectDocument(document.id)}
-          type="button"
-        >
-          <p className="truncate text-sm font-medium text-[#463829]">{document.filename}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#86715b]">
-            <span className="rounded-full bg-[#f1e6d4] px-2 py-1">{document.page_count} 页</span>
-            <span
-              className={`rounded-full px-2 py-1 ${
-                document.status === "ready"
-                  ? "bg-[#e8efe0] text-[#607253]"
-                  : document.status === "processing"
-                    ? "bg-[#f7ecd7] text-[#8c6c46]"
-                    : "bg-[#f5e3dc] text-[#9a5e4e]"
-              }`}
+    <>
+      <div
+        ref={setNodeRef}
+        style={style}
+        data-testid={`document-item-${document.filename}`}
+        data-drag-state={resolvedDragState}
+        className={`group relative flex flex-col rounded-[14px] border transition ${
+          activeDocumentId === document.id
+            ? "border-[#cab384] bg-[linear-gradient(135deg,#fff8ec_0%,#f2e7d2_62%,#ece4d5_100%)] shadow-[0_4px_12px_rgba(122,98,66,0.10)]"
+            : "border-[#e0d1bc] bg-[#fffaf2] hover:border-[#cdb796] hover:bg-white"
+        } ${
+          isDragging || resolvedDragState === "source"
+            ? "document-card-source opacity-50"
+            : "document-card-idle"
+        }`}
+        {...attributes}
+      >
+        {/* Main row */}
+        <div className="flex h-8 min-w-0 items-center gap-1 px-1">
+          {/* Drag handle — hidden when sort is not manual */}
+          {sortEnabled !== false ? (
+            <button
+              ref={setActivatorNodeRef}
+              {...listeners}
+              type="button"
+              tabIndex={-1}
+              className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-transparent transition hover:text-[#b09a7e] group-hover:text-[#c4a97a] active:cursor-grabbing"
+              aria-label="拖拽排序"
             >
-              {document.status}
-            </span>
+              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+                <circle cx="2.5" cy="2.5" r="1.5" />
+                <circle cx="7.5" cy="2.5" r="1.5" />
+                <circle cx="2.5" cy="7" r="1.5" />
+                <circle cx="7.5" cy="7" r="1.5" />
+                <circle cx="2.5" cy="11.5" r="1.5" />
+                <circle cx="7.5" cy="11.5" r="1.5" />
+              </svg>
+            </button>
+          ) : (
+            <span className="w-5 shrink-0" />
+          )}
+
+          {/* File icon */}
+          <span className="shrink-0 text-sm leading-none">📄</span>
+
+          {/* Filename */}
+          <button
+            className="min-w-0 flex-1 truncate text-left text-[13px] text-[#463829]"
+            title={document.filename}
+            onClick={() => void onSelectDocument(document.id)}
+            type="button"
+          >
+            {document.filename}
+          </button>
+
+          {/* Page count */}
+          <span className="shrink-0 text-[11px] text-[#9a846a]">{document.page_count}p</span>
+
+          {/* Status dot */}
+          {statusDot}
+
+          {/* ⋯ menu */}
+          <div ref={menuRef} className="relative shrink-0">
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded text-[#b09a7e] transition hover:bg-[#f2e7d2] hover:text-[#5f4a33]"
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+              aria-label="更多操作"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <circle cx="8" cy="3" r="1.5" />
+                <circle cx="8" cy="8" r="1.5" />
+                <circle cx="8" cy="13" r="1.5" />
+              </svg>
+            </button>
+
+            {menuOpen && (
+              <div className="absolute right-0 top-7 z-30 min-w-[136px] rounded-[14px] border border-[#e0d1bc] bg-[#fffaf2] py-1 shadow-[0_8px_24px_rgba(94,72,46,0.18)]">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#463829] hover:bg-[#f2e7d2]"
+                  onClick={() => { setMenuOpen(false); void onSelectDocument(document.id); }}
+                >
+                  打开 / 查看
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#463829] hover:bg-[#f2e7d2] disabled:opacity-40"
+                  disabled={loading || document.status !== "ready"}
+                  onClick={() => { setMenuOpen(false); void onRegenerateDocument(document.id); }}
+                >
+                  生成解析
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#463829] hover:bg-[#f2e7d2]"
+                  onClick={() => { setMenuOpen(false); setShowMovePicker(true); }}
+                >
+                  移动到文件夹…
+                </button>
+                <div className="my-1 border-t border-[#ecdec8]" />
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#9a5e4e] hover:bg-[#f5e3dc]"
+                  disabled={loading}
+                  onClick={() => { setMenuOpen(false); void onDeleteDocument(document.id, document.filename); }}
+                >
+                  删除
+                </button>
+              </div>
+            )}
           </div>
-        </button>
-        <button
-          className="btn btn-outline !rounded-full !px-2.5 !py-1 text-[11px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
-          disabled={loading}
-          onClick={() => void onDeleteDocument(document.id, document.filename)}
-          type="button"
-        >
-          删除
-        </button>
-      </div>
-      <div className="mt-3 flex flex-col gap-2">
-        {document.status === "processing" ? (
-          <div className="rounded-[16px] border border-[#ddd0b8] bg-[#fffbf3] p-3">
-            <ParseProgressBar current={0} total={0} filename={document.filename} />
-          </div>
-        ) : generationDocId === document.id ? (
-          <div className="rounded-[16px] border border-[#ddd0b8] bg-[#fffbf3] p-3 shadow-[0_4px_16px_rgba(122,98,66,0.06)]">
+        </div>
+
+        {/* Inline generation progress bar */}
+        {(document.status === "processing" || isGeneratingThis) && (
+          <div className="border-t border-[#ecdec8] px-3 pb-2 pt-1.5">
             <ParseProgressBar
-              current={generationProgress?.current ?? 0}
-              total={generationProgress?.total ?? 0}
+              current={isGeneratingThis ? (generationProgress?.current ?? 0) : 0}
+              total={isGeneratingThis ? (generationProgress?.total ?? 0) : 0}
               filename={document.filename}
             />
-            <div className="mt-2.5 flex justify-end">
-              <button
-                className="btn btn-outline !rounded-full !px-3 !py-1 !text-[10px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
-                onClick={onAbortGeneration}
-                type="button"
-              >
-                终止解析
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <button
-              className="btn btn-soft flex-1 !rounded-full !py-2 text-[11px]"
-              disabled={loading || document.status !== "ready"}
-              onClick={() => void onRegenerateDocument(document.id)}
-              type="button"
-            >
-              生成解析
-            </button>
-            {activeDocumentId === document.id && (
-              <button
-                className={`btn !rounded-full !py-2 !px-3 text-[11px] ${notePanelOpen ? "btn-dark" : "btn-soft"}`}
-                onClick={onToggleNotes}
-                type="button"
-              >
-                笔记
-              </button>
+            {isGeneratingThis && (
+              <div className="mt-1.5 flex justify-end">
+                <button
+                  className="text-[11px] text-[#9a5e4e] underline hover:no-underline"
+                  onClick={onAbortGeneration}
+                  type="button"
+                >
+                  终止解析
+                </button>
+              </div>
             )}
           </div>
         )}
       </div>
-    </article>
+
+      {/* Move-to-folder picker */}
+      <FolderPickerModal
+        isOpen={showMovePicker}
+        filename={document.filename}
+        folders={folders}
+        initialFolderId={document.folder_id}
+        mode="move"
+        onConfirm={(folderId) => {
+          setShowMovePicker(false);
+          // Determine target index: append to target folder's end
+          void onMoveDocument(document.id, folderId, Number.MAX_SAFE_INTEGER);
+        }}
+        onClose={() => setShowMovePicker(false)}
+      />
+    </>
   );
 });
 
@@ -364,9 +471,14 @@ export function DocumentLibrary({
 }: DocumentLibraryProps) {
   const [folderDraftOpen, setFolderDraftOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
+  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [activeDragDocumentId, setActiveDragDocumentId] = useState<string | null>(null);
   const [activeDropGroupId, setActiveDropGroupId] = useState<string | null>(null);
   const [flashGroupId, setFlashGroupId] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>("manual");
+  const libraryRef = useRef(library);
+  useEffect(() => { libraryRef.current = library; }, [library]);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
@@ -378,15 +490,15 @@ export function DocumentLibrary({
       ...library.folders.map((folder) => ({
         id: folder.id,
         name: folder.name,
-        documents: folder.documents,
+        documents: sortedDocuments(folder.documents, sortMode),
       })),
       {
         id: null,
         name: library.uncategorized.name,
-        documents: library.uncategorized.documents,
+        documents: sortedDocuments(library.uncategorized.documents, sortMode),
       },
     ],
-    [library],
+    [library, sortMode],
   );
 
   async function handleCreateFolder() {
@@ -397,6 +509,19 @@ export function DocumentLibrary({
     setFolderDraftOpen(false);
   }
 
+  function handleFileSelected(file: File) {
+    if (showFolderPicker) return; // prevent double-open on rapid clicks
+    setPendingUploadFile(file);
+    setShowFolderPicker(true);
+  }
+
+  function handleFolderPickerDone(folderId: string | null) {
+    setShowFolderPicker(false);
+    const file = pendingUploadFile;
+    setPendingUploadFile(null);
+    if (file) void onUpload(file, folderId);
+  }
+
   function setFlashTarget(targetFolderId: string | null) {
     const flashId = targetFolderId ?? "__uncategorized__";
     setFlashGroupId(flashId);
@@ -405,13 +530,13 @@ export function DocumentLibrary({
     }, 650);
   }
 
-  function handleDragStart(event: DragStartEvent) {
+  const handleDragStart = useCallback((event: DragStartEvent) => {
     const activeId = String(event.active.id);
     if (!activeId.startsWith("doc:")) return;
     setActiveDragDocumentId(activeId.replace("doc:", ""));
-  }
+  }, []);
 
-  function handleDragOver(event: DragOverEvent) {
+  const handleDragOver = useCallback((event: DragOverEvent) => {
     const overId = event.over ? String(event.over.id) : "";
     if (!overId) {
       setActiveDropGroupId(null);
@@ -419,7 +544,7 @@ export function DocumentLibrary({
     }
     if (overId.startsWith("doc:")) {
       const overDocumentId = overId.replace("doc:", "");
-      const targetGroup = findGroupForDocument(library, overDocumentId);
+      const targetGroup = findGroupForDocument(libraryRef.current, overDocumentId);
       setActiveDropGroupId(targetGroup?.id ?? "__uncategorized__");
       return;
     }
@@ -431,7 +556,7 @@ export function DocumentLibrary({
       return;
     }
     setActiveDropGroupId(null);
-  }
+  }, []);
 
   function resolveDrop(event: DragEndEvent): { documentId: string; targetFolderId: string | null; targetIndex: number } | null {
     const activeId = String(event.active.id);
@@ -483,10 +608,10 @@ export function DocumentLibrary({
     }
   }
 
-  function handleDragCancel(_event: DragCancelEvent) {
+  const handleDragCancel = useCallback((_event: DragCancelEvent) => {
     setActiveDragDocumentId(null);
     setActiveDropGroupId(null);
-  }
+  }, []);
 
   const activeDragDocument = activeDragDocumentId ? getDocumentById(library, activeDragDocumentId) : null;
 
@@ -500,7 +625,7 @@ export function DocumentLibrary({
           disabled={backgroundProcessing}
           onChange={(event) => {
             const file = event.target.files?.[0];
-            if (file) void onUpload(file);
+            if (file) handleFileSelected(file);
             event.currentTarget.value = "";
           }}
           type="file"
@@ -539,11 +664,24 @@ export function DocumentLibrary({
         )}
       </div>
 
-      <div className="mb-2 flex items-center justify-between px-1">
-        <p className="text-xs font-medium uppercase tracking-[0.22em] text-[#9a846a]">文档库</p>
-        <span className="text-[11px] text-[#9a846a]">
-          {library.folders.length} 个文件夹 · {groups.reduce((sum, group) => sum + group.documents.length, 0)} 份
-        </span>
+      <div className="mb-2 flex items-center justify-between gap-2 px-1">
+        <p className="shrink-0 text-xs font-medium uppercase tracking-[0.22em] text-[#9a846a]">文档库</p>
+        <div className="flex items-center gap-1">
+          {SORT_MODES.map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setSortMode(mode)}
+              className={`rounded-full px-2 py-0.5 text-[10px] transition ${
+                sortMode === mode
+                  ? "bg-[#e8d9c0] font-medium text-[#5f4a33]"
+                  : "text-[#9a846a] hover:bg-[#f0e6d6] hover:text-[#5f4a33]"
+              }`}
+            >
+              {mode === "manual" ? "手动" : mode === "name" ? "名称" : "时间"}
+            </button>
+          ))}
+        </div>
       </div>
 
       <DndContext
@@ -601,13 +739,14 @@ export function DocumentLibrary({
                           loading={loading}
                           generationDocId={generationDocId}
                           generationProgress={generationProgress}
-                          notePanelOpen={notePanelOpen}
-                          onToggleNotes={onToggleNotes}
                           onSelectDocument={onSelectDocument}
                           onDeleteDocument={onDeleteDocument}
                           onRegenerateDocument={onRegenerateDocument}
                           onAbortGeneration={onAbortGeneration}
+                          onMoveDocument={onMoveDocument}
+                          folders={library.folders}
                           dragState={document.id === activeDragDocumentId ? "source" : "idle"}
+                          sortEnabled={sortMode === "manual"}
                         />
                       ))
                     )}
@@ -633,6 +772,15 @@ export function DocumentLibrary({
           {activeDragDocument ? <DragPreviewCard document={activeDragDocument} /> : null}
         </DragOverlay>
       </DndContext>
+
+      <FolderPickerModal
+        isOpen={showFolderPicker}
+        filename={pendingUploadFile?.name ?? ""}
+        folders={library.folders}
+        mode="upload"
+        onConfirm={handleFolderPickerDone}
+        onClose={() => handleFolderPickerDone(null)}
+      />
     </div>
   );
 }

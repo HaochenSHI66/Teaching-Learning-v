@@ -110,6 +110,8 @@ install_agent() {
     "$TEMPLATE" > "$DEST"
 
   plutil -lint "$DEST" || { echo "✗ Generated plist is invalid: $DEST"; exit 1; }
+  # enable first: disabled services fail bootstrap with EIO on macOS Ventura+
+  launchctl enable "gui/$(id -u)/$LABEL" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$DEST"
   echo "✓ $LABEL loaded"
 }
@@ -133,6 +135,7 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$DESKTOP_DIR/TeachingLearning/Info.plist" "$APP_BUNDLE/Contents/"
+cp "$DESKTOP_DIR/TeachingLearning/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
 
 SWIFT_SOURCES=(
   "$DESKTOP_DIR/TeachingLearning/main.swift"

@@ -68,9 +68,40 @@ if [ ! -f "$APP/.env" ]; then
 fi
 mkdir -p "$APP/storage"
 
+# 停止 LaunchAgent（防止 KeepAlive 进程抢占端口）
+stop_launch_agents() {
+  local uid
+  uid=$(id -u)
+  for label in com.teachinglearning.backend com.teachinglearning.frontend; do
+    /bin/launchctl bootout "gui/$uid/$label" 2>/dev/null || true
+  done
+  sleep 1
+}
+
+# 智能释放端口：杀掉仍占用端口的进程（兜底）
+free_port() {
+  local port=$1
+  local pids
+  pids=$(lsof -ti TCP:"$port" 2>/dev/null)
+  if [ -n "$pids" ]; then
+    echo "[startup] 端口 $port 仍被占用，强制释放..." >&2
+    echo "$pids" | xargs kill -9 2>/dev/null
+    sleep 0.5
+  fi
+}
+
 # 清理函数
-cleanup() { kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null; exit; }
+cleanup() {
+  kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null
+  exit
+}
 trap cleanup INT TERM
+
+# 1. 先停掉 LaunchAgent（有 KeepAlive 会抢端口）
+stop_launch_agents
+# 2. 再兜底清端口
+free_port 8000
+free_port 3000
 
 # 启动后端
 source "$APP/backend/.venv/bin/activate"
@@ -78,8 +109,8 @@ cd "$APP/backend"
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 &
 BACKEND_PID=$!
 
-# 等待后端就绪（最多 20 秒）
-for i in $(seq 1 20); do
+# 等待后端就绪（最多 30 秒）
+for i in $(seq 1 30); do
   curl -sf http://127.0.0.1:8000/health &>/dev/null && break
   sleep 1
 done

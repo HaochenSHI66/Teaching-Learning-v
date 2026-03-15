@@ -6,7 +6,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, status
 from sqlmodel import Session, select
 
 from app.api.deps import get_db_session
@@ -14,6 +14,7 @@ from app.db import create_db_engine
 from app.models import (
     Document,
     DocumentNotebook,
+    Folder,
     LearningSession,
     Message,
     Note,
@@ -363,6 +364,7 @@ async def upload_document(
     request: Request,
     file: UploadFile,
     background_tasks: BackgroundTasks,
+    folder_id: str | None = Form(default=None),
     session: Session = Depends(get_db_session),
 ) -> UploadResponse:
     media_type = file.content_type or "application/octet-stream"
@@ -372,13 +374,21 @@ async def upload_document(
             detail=f"Unsupported file type: {media_type}",
         )
 
+    # Normalize empty string to None
+    resolved_folder_id: str | None = folder_id or None
+    if resolved_folder_id:
+        folder = session.get(Folder, resolved_folder_id)
+        if not folder:
+            raise HTTPException(status_code=422, detail="folder_id does not exist")
+
     content = await _read_upload(file)
 
     document = Document(
         filename=file.filename or "uploaded_file",
         media_type=media_type,
         storage_path="",
-        sort_order=len(session.exec(select(Document).where(Document.folder_id.is_(None))).all()),
+        folder_id=resolved_folder_id,
+        sort_order=len(session.exec(select(Document).where(Document.folder_id == resolved_folder_id)).all()),
         status="processing",
     )
 

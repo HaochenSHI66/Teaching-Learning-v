@@ -7,8 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var autostartEnabled = true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Menubar-only: suppress Dock icon in code as well
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
 
         // Read actual autostart state from launchd
         autostartEnabled = isLaunchAgentEnabled()
@@ -28,16 +27,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateStatusDot()
         }
 
-        // Wait for backend → load UI → start periodic health checks
-        ServiceManager.shared.waitForBackend { [weak self] success in
-            guard let self = self else { return }
-            if success {
-                self.window.loadApp()
-                self.window.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-                ServiceManager.shared.startHealthChecks()
-            } else {
-                self.showStartupError()
+        // Show window immediately with loading screen
+        window.showLoading(message: "正在启动服务...")
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Ensure services are bootstrapped and running, then wait for backend
+        ServiceManager.shared.ensureServicesRunning {
+            self.window.updateLoadingStatus("服务已启动，等待后端就绪...")
+            ServiceManager.shared.waitForBackend { [weak self] success in
+                guard let self = self else { return }
+                if success {
+                    self.window.updateLoadingStatus("加载中...")
+                    self.window.loadApp()
+                    ServiceManager.shared.startHealthChecks()
+                } else {
+                    self.showStartupError()
+                }
             }
         }
     }
@@ -71,7 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "退出 App（服务继续运行）", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -91,6 +97,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 button.image = appIcon
                 button.imageScaling = .scaleProportionallyUpOrDown
                 button.title = ""
+                button.attributedTitle = NSAttributedString(string: "")
             }
         }
     }
@@ -133,6 +140,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quitApp() {
+        ServiceManager.shared.stopHealthChecks()
+        ServiceManager.shared.stopServices()
         NSApp.terminate(nil)
     }
 
@@ -157,9 +166,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func showStartupError() {
         let alert = NSAlert()
         alert.alertStyle = .critical
-        alert.messageText = "服务启动失败"
-        alert.informativeText = "后端服务在 30 秒内未就绪。\n\n请通过菜单栏图标 → 查看日志 排查原因，然后点击\u{201C}重启服务\u{201D}重试。"
-        alert.addButton(withTitle: "好")
-        alert.runModal()
+        alert.messageText = "服务启动超时"
+        alert.informativeText = "后端服务未能在预期时间内就绪，请重试。"
+        alert.addButton(withTitle: "重试")
+        alert.addButton(withTitle: "退出")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            window.updateLoadingStatus("正在重试...")
+            ServiceManager.shared.ensureServicesRunning {
+                ServiceManager.shared.waitForBackend { [weak self] success in
+                    guard let self = self else { return }
+                    if success {
+                        self.window.updateLoadingStatus("加载中...")
+                        self.window.loadApp()
+                        ServiceManager.shared.startHealthChecks()
+                    } else {
+                        self.showStartupError()
+                    }
+                }
+            }
+        } else {
+            NSApp.terminate(nil)
+        }
     }
 }

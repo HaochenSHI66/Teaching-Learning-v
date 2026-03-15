@@ -23,12 +23,19 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [draftRoi, setDraftRoi] = useState<RoiBox | null>(null);
-  const [mainImageLoaded, setMainImageLoaded] = useState(false);
+  // Track which URL has finished loading. mainImageLoaded is derived inline so
+  // it becomes false immediately when the URL changes (no effect delay → no flash).
+  const [loadedUrl, setLoadedUrl] = useState<string | undefined>(undefined);
+  const mainImageLoaded = loadedUrl === currentSlide?.image_url;
+  const imgRef = useRef<HTMLImageElement>(null);
 
-  // Reset skeleton on slide change
+  // For cached images onLoad never fires — check img.complete after URL change.
   useEffect(() => {
-    setMainImageLoaded(false);
-  }, [currentSlide?.id]);
+    const url = currentSlide?.image_url;
+    if (url && imgRef.current?.complete) {
+      setLoadedUrl(url);
+    }
+  }, [currentSlide?.image_url]);
 
   const activeRoi = draftRoi ?? roi;
 
@@ -246,13 +253,14 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
               <div className="absolute inset-2 animate-pulse rounded-[18px] bg-[#f0e6d4]" aria-hidden="true" />
             )}
             <img
+              ref={imgRef}
               alt={`Slide ${currentSlide.page_num}`}
-              className={`mx-auto block h-auto max-w-full rounded-[18px] transition-opacity duration-300 ${mainImageLoaded ? "opacity-100" : "opacity-0"}`}
+              className={`mx-auto block h-auto max-w-full rounded-[18px] ${mainImageLoaded ? "" : "opacity-0"}`}
               draggable={false}
               fetchPriority="high"
               decoding="async"
               src={getAssetUrl(currentSlide.image_url)}
-              onLoad={() => setMainImageLoaded(true)}
+              onLoad={() => setLoadedUrl(currentSlide.image_url)}
             />
             {roiStyle ? (
               <div
