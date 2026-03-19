@@ -173,7 +173,7 @@ export function AIPanel({
           {TABS.map((item) => (
             <button
               key={item.key}
-              className={`btn btn-segment !px-3 !py-1.5 !text-[11px] ${tab === item.key ? "btn-segment-active" : "btn-segment-idle"}`}
+              className={`btn btn-segment !px-3 !py-1.5 !text-[13px] ${tab === item.key ? "btn-segment-active" : "btn-segment-idle"}`}
               onClick={() => setTab(item.key)}
               type="button"
             >
@@ -189,17 +189,17 @@ export function AIPanel({
           <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8]">
             <header className="shrink-0 flex items-center justify-between gap-2 border-b border-[#eee2cf] px-3 py-2">
               <div className="flex items-center gap-2">
-                <p className="text-[11px] font-medium text-[#4b3d2f]">当前页解析</p>
+                <p className="text-[13px] font-medium text-[#4b3d2f]">当前页解析</p>
                 {repeatSummary?.has_repeat_section ? (
-                  <span className="rounded-full border border-[#d8bf94] bg-[#f8efdc] px-2 py-0.5 text-[10px] text-[#8a6a46]">
+                  <span className="rounded-full border border-[#d8bf94] bg-[#f8efdc] px-2 py-0.5 text-[12px] text-[#8a6a46]">
                     重复 {Math.round((repeatSummary.repeated_ratio ?? 0) * 100)}% · 来自第 {repeatSummary.repeat_pages.join(", ")} 页
                   </span>
                 ) : null}
               </div>
               <div className="flex items-center gap-1.5">
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] ${badge.cls}`}>{badge.label}</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[12px] ${badge.cls}`}>{badge.label}</span>
                 <button
-                  className="btn btn-primary !px-3 !py-1.5 !text-[11px] gap-1.5"
+                  className="btn btn-primary !px-3 !py-1.5 !text-[13px] gap-1.5"
                   disabled={disabled || loading}
                   onClick={onGenerateExplanation}
                   type="button"
@@ -217,7 +217,7 @@ export function AIPanel({
 
             {explanationLoading && (
               <div className="shrink-0 border-b border-[#eee2cf] px-3 py-2">
-                <div className="mb-1 flex items-center justify-between text-[10px] text-[#9a7e63]">
+                <div className="mb-1 flex items-center justify-between text-[12px] text-[#9a7e63]">
                   <span>解析生成中…</span>
                   <span className="animate-pulse">●</span>
                 </div>
@@ -234,9 +234,9 @@ export function AIPanel({
                   <MarkdownContent content={explanationMeta?.sections.primary_md ?? ""} />
                   {explanationMeta?.sections.repeat_md ? (
                     <details className="overflow-hidden rounded-[18px] border border-[#dcccb6] bg-[#fbf6ec]">
-                      <summary className="cursor-pointer list-none px-3 py-2 text-[11px] font-medium text-[#6e5942]">
+                      <summary className="cursor-pointer list-none px-3 py-2 text-[13px] font-medium text-[#6e5942]">
                         重复部分讲解
-                        <span className="ml-2 text-[10px] font-normal text-[#9a846a]">
+                        <span className="ml-2 text-[12px] font-normal text-[#9a846a]">
                           来自第 {repeatSummary?.repeat_pages?.join(", ") || "前序"} 页
                         </span>
                       </summary>
@@ -270,8 +270,8 @@ export function AIPanel({
       {tab === "extract" && (
         <div key="extract" className="animate-fade-slide-in min-h-0 flex-1 overflow-auto rounded-[22px] border border-[#ddcfbc] bg-[#fffdf8] p-3">
           <div className="mb-2 flex items-center gap-2">
-            <p className="text-[11px] font-medium text-[#4b3d2f]">页面结构</p>
-            <span className="rounded-full border border-[#ddcfbc] bg-[#f4ecdf] px-2 py-0.5 text-[9px] text-[#7e6a57]">Non-LLM</span>
+            <p className="text-[13px] font-medium text-[#4b3d2f]">页面结构</p>
+            <span className="rounded-full border border-[#ddcfbc] bg-[#f4ecdf] px-2 py-0.5 text-[11px] text-[#7e6a57]">Non-LLM</span>
           </div>
           <MarkdownContent content={extractionMarkdown} />
           {extraction?.figures?.length ? (
@@ -285,7 +285,7 @@ export function AIPanel({
                       src={getAssetUrl(figure.preview_image_url)}
                     />
                   ) : null}
-                  <p className="text-[11px] font-medium text-[#4f4031]">
+                  <p className="text-[13px] font-medium text-[#4f4031]">
                     {figure.label && !figure.label.startsWith("Figure Region") ? figure.label : `图 ${figure.order + 1}`}
                   </p>
                 </article>
@@ -300,17 +300,17 @@ export function AIPanel({
         <div key="chat" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col gap-1.5">
           {/* Mode toggle */}
           <div className="shrink-0 flex items-center justify-between rounded-[16px] border border-[#e0d0bb] bg-[#fffdf8] px-2.5 py-1.5">
-            <span className="text-[10px] text-[#9a846a]">提问范围</span>
+            <span className="text-[12px] text-[#9a846a]">提问范围</span>
             <div className="inline-flex rounded-full border border-[#e0d0bb] bg-[#f5ece0] p-0.5">
               <button
-                className={`btn btn-segment !px-2.5 !py-1 !text-[10px] ${mode === "slide" ? "btn-segment-active" : "btn-segment-idle"}`}
+                className={`btn btn-segment !px-2.5 !py-1 !text-[12px] ${mode === "slide" ? "btn-segment-active" : "btn-segment-idle"}`}
                 onClick={() => onModeChange("slide")}
                 type="button"
               >
                 当前页
               </button>
               <button
-                className={`btn btn-segment !px-2.5 !py-1 !text-[10px] ${mode === "global" ? "btn-segment-active" : "btn-segment-idle"}`}
+                className={`btn btn-segment !px-2.5 !py-1 !text-[12px] ${mode === "global" ? "btn-segment-active" : "btn-segment-idle"}`}
                 onClick={() => onModeChange("global")}
                 type="button"
               >
@@ -321,10 +321,10 @@ export function AIPanel({
 
           {/* Collapsible history */}
           <details className="shrink-0 overflow-hidden rounded-[16px] border border-[#e0d0bb] bg-[#fffdf8]" open={slideMessages.length > 0}>
-            <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2 text-[10px] text-[#9a846a] hover:bg-[#f8f2e8]">
+            <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2 text-[12px] text-[#9a846a] hover:bg-[#f8f2e8]">
               <span>本页问答（{Math.floor(slideMessages.length / 2)} 条）</span>
               <button
-                className="btn btn-outline !rounded-lg !px-2 !py-0.5 !text-[10px]"
+                className="btn btn-outline !rounded-lg !px-2 !py-0.5 !text-[12px]"
                 disabled={slideMessages.length === 0}
                 onClick={(e) => { e.preventDefault(); onClearSlideMessages(); }}
                 type="button"
@@ -334,12 +334,12 @@ export function AIPanel({
             </summary>
             <div className="max-h-44 space-y-1.5 overflow-auto border-t border-[#eee2cf] px-3 py-2">
               {slideMessages.length === 0 ? (
-                <p className="text-[11px] text-[#b09a87]">暂无问答记录。</p>
+                <p className="text-[13px] text-[#b09a87]">暂无问答记录。</p>
               ) : (
                 slideMessages.map((m) => (
                   <div
                     key={m.id}
-                    className={`rounded-[12px] px-2.5 py-1.5 text-[11px] ${
+                    className={`rounded-[12px] px-2.5 py-1.5 text-[13px] ${
                       m.role === "user"
                         ? "bg-[#5d4a39] text-[#fffaf2]"
                         : "border border-[#e8dcc8] bg-white text-[#5a4938]"
@@ -358,14 +358,14 @@ export function AIPanel({
           {/* ROI */}
           <div className="shrink-0 grid grid-cols-2 gap-1.5">
             <button
-              className="btn btn-warning !py-1.5 !text-[11px]"
+              className="btn btn-warning !py-1.5 !text-[13px]"
               disabled={disabled || loading || !roiReady}
               onClick={onExplainRoi}
               type="button"
             >
               {loading ? "处理中…" : "解析框选区域"}
             </button>
-            <p className="rounded-[14px] border border-dashed border-[#d8bf94] bg-[#fbf1df] px-2 py-1.5 text-[10px] text-[#8b6b45]">
+            <p className="rounded-[14px] border border-dashed border-[#d8bf94] bg-[#fbf1df] px-2 py-1.5 text-[12px] text-[#8b6b45]">
               {roiReady ? "区域已选，点击解析。" : "框选左侧区域后解析。"}
             </p>
           </div>
@@ -373,7 +373,7 @@ export function AIPanel({
           {/* Input */}
           <div className="shrink-0 space-y-1.5">
             <textarea
-              className="h-16 w-full rounded-[16px] border border-[#d5c2a4] bg-white p-2.5 text-xs text-[#554535] outline-none focus:border-[#8a9d76]"
+              className="h-16 w-full rounded-[16px] border border-[#d5c2a4] bg-white p-2.5 text-[13px] text-[#554535] outline-none focus:border-[#8a9d76]"
               disabled={disabled || loading}
               onChange={(e) => onChatInputChange(e.target.value)}
               onKeyDown={(e) => {
@@ -383,7 +383,7 @@ export function AIPanel({
               value={chatInput}
             />
             <button
-              className="btn btn-dark w-full !py-1.5 !text-[11px]"
+              className="btn btn-dark w-full !py-1.5 !text-[13px]"
               disabled={disabled || loading || !chatInput.trim()}
               onClick={onSendChat}
               type="button"

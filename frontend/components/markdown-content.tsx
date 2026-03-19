@@ -46,7 +46,7 @@ function flattenText(node: ReactNode): string {
 
 export function MarkdownContent({ content, className = "" }: MarkdownContentProps) {
   return (
-    <div className={`markdown-body prose prose-sm max-w-none ${className}`}>
+    <div className={`markdown-body prose prose-base max-w-none ${className}`}>
       <ReactMarkdown
         components={{
           blockquote: ({ children }) => {
