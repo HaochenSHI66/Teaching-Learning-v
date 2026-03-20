@@ -118,6 +118,63 @@ class QuizAttempt(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class SlideNote(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    document_id: str = Field(index=True)
+    slide_id: str = Field(index=True)
+    page_num: int = Field(default=0)
+    content_md: str = Field(default="")
+    source: str = Field(default="manual")  # manual / ai / mixed
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class DocumentSummary(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    document_id: str = Field(index=True, unique=True)
+    content_md: str = Field(default="")
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class SlideBookmark(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    document_id: str = Field(index=True)
+    slide_id: str = Field(index=True)
+    page_num: int = Field(default=0)
+    tag: str = Field(default="important")  # important / difficult / review / exam
+    note: str = Field(default="")
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class Flashcard(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    document_id: str = Field(index=True)
+    slide_id: str = Field(index=True)
+    front_md: str = Field(default="")
+    back_md: str = Field(default="")
+    source: str = Field(default="auto")  # auto / manual
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class Concept(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    document_id: str = Field(index=True)
+    name: str = Field(default="")
+    description: str = Field(default="")
+    slide_ids: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class ConceptRelation(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    document_id: str = Field(index=True)
+    source_id: str = Field(index=True)
+    target_id: str = Field(index=True)
+    relation_type: str = Field(default="related")  # prerequisite / related / part_of / contrast
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
 class ReviewItem(SQLModel, table=True):
     id: str = Field(default_factory=_new_id, primary_key=True)
     session_id: str = Field(index=True)

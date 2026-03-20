@@ -336,3 +336,152 @@ class SessionAnalyticsResponse(BaseModel):
     quiz_attempts: int
     avg_quiz_score_percent: int
     hot_slides: list[HotSlideStat]
+
+
+# ── Slide Notes ────────────────────────────────────────────────
+
+class SlideNoteRead(BaseModel):
+    id: str
+    document_id: str
+    slide_id: str
+    page_num: int
+    content_md: str
+    source: str
+    updated_at: datetime | None = None
+
+
+class SlideNoteSaveRequest(BaseModel):
+    content_md: str = Field(...)
+    source: str = Field(default="manual")
+
+
+class SlideNoteListResponse(BaseModel):
+    document_id: str
+    notes: list[SlideNoteRead]
+
+
+class SlideNoteGenerateResponse(BaseModel):
+    slide_id: str
+    content_md: str
+    source: str = "ai"
+
+
+class SlideNoteBatchGenerateResponse(BaseModel):
+    document_id: str
+    generated_count: int
+
+
+class SlideNoteExportResponse(BaseModel):
+    title: str
+    markdown: str
+
+
+# ── Bookmarks ──────────────────────────────────────────────────
+
+class BookmarkCreateRequest(BaseModel):
+    slide_id: str
+    tag: str = Field(default="important", pattern="^(important|difficult|review|exam)$")
+    note: str = Field(default="")
+
+
+class BookmarkRead(BaseModel):
+    id: str
+    document_id: str
+    slide_id: str
+    page_num: int
+    tag: str
+    note: str
+    created_at: datetime
+
+
+class BookmarkListResponse(BaseModel):
+    document_id: str
+    bookmarks: list[BookmarkRead]
+
+
+class BookmarkDeleteResponse(BaseModel):
+    id: str
+    deleted: bool
+
+
+# ── Flashcards ─────────────────────────────────────────────────
+
+class FlashcardRead(BaseModel):
+    id: str
+    document_id: str
+    slide_id: str
+    front_md: str
+    back_md: str
+    source: str
+    created_at: datetime
+
+
+class FlashcardCreateRequest(BaseModel):
+    slide_id: str
+    front_md: str
+    back_md: str
+
+
+class FlashcardListResponse(BaseModel):
+    document_id: str
+    flashcards: list[FlashcardRead]
+
+
+class FlashcardGenerateResponse(BaseModel):
+    slide_id: str
+    count: int
+
+
+class FlashcardBatchGenerateResponse(BaseModel):
+    document_id: str
+    total_count: int
+
+
+class FlashcardDeleteResponse(BaseModel):
+    id: str
+    deleted: bool
+
+
+class FlashcardSlideStats(BaseModel):
+    slide_id: str
+    page_num: int
+    total: int
+    mastered: int
+    due: int
+
+
+class FlashcardStatsResponse(BaseModel):
+    document_id: str
+    slides: list[FlashcardSlideStats]
+    total: int
+    mastered: int
+    due: int
+    mastery_percent: int
+
+
+# ── Knowledge Graph ────────────────────────────────────────────
+
+class ConceptRead(BaseModel):
+    id: str
+    name: str
+    description: str
+    slide_ids: list[str]
+
+
+class ConceptRelationRead(BaseModel):
+    id: str
+    source_id: str
+    target_id: str
+    relation_type: str
+
+
+class KnowledgeGraphResponse(BaseModel):
+    document_id: str
+    nodes: list[ConceptRead]
+    edges: list[ConceptRelationRead]
+
+
+class KnowledgeGraphGenerateResponse(BaseModel):
+    document_id: str
+    concept_count: int
+    relation_count: int

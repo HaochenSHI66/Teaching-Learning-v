@@ -9,14 +9,18 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from app.api.analytics import router as analytics_router
+from app.api.bookmarks import router as bookmarks_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
+from app.api.flashcards import router as flashcards_router
 from app.api.folders import router as folders_router
+from app.api.knowledge_graph import router as knowledge_graph_router
 from app.api.notebooks import router as notebooks_router
 from app.api.notes import router as notes_router
 from app.api.quizzes import router as quizzes_router
 from app.api.review import router as review_router
 from app.api.sessions import router as sessions_router
+from app.api.slide_notes import router as slide_notes_router
 from app.db import create_db_engine, ensure_storage, init_db
 
 
@@ -70,6 +74,10 @@ def create_app(
     app.include_router(quizzes_router)
     app.include_router(review_router)
     app.include_router(analytics_router)
+    app.include_router(slide_notes_router)
+    app.include_router(bookmarks_router)
+    app.include_router(flashcards_router)
+    app.include_router(knowledge_graph_router)
 
     init_db(engine)
 

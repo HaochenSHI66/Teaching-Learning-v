@@ -1,0 +1,369 @@
+{
+  "project": "Teaching-Learning",
+  "branchName": "ralph/learning-enhancement",
+  "description": "Learning Enhancement Suite - Structured notes, smart bookmarks, flashcard review with SM-2, and knowledge graph visualization",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add slide_note and document_summary tables",
+      "description": "As a developer, I need per-slide note storage to replace the single-blob notebook model.",
+      "acceptanceCriteria": [
+        "Add slide_note table: id, document_id (FK), slide_id (FK), page_num, content_md, source (manual/ai/mixed), created_at, updated_at",
+        "Add document_summary table: id, document_id (FK, UNIQUE), content_md, created_at, updated_at",
+        "Tables created in init_db() using existing SQLModel pattern",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Migrate existing documentnotebook data to slide_note",
+      "description": "As a developer, I need to split existing notebook content by '## Page X' headings into per-slide notes.",
+      "acceptanceCriteria": [
+        "On startup, detect documentnotebook rows not yet migrated",
+        "Split content_md by '## Page' or '## Slide' headings into individual slide_note rows",
+        "Unmatched content goes to document_summary",
+        "Migration is idempotent (safe to run multiple times)",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add slide-notes CRUD API endpoints",
+      "description": "As a developer, I need REST endpoints to read and write per-slide notes.",
+      "acceptanceCriteria": [
+        "GET /api/v1/slide-notes/{document_id} returns all slide notes for a document",
+        "GET /api/v1/slide-notes/slide/{slide_id} returns single slide note",
+        "PUT /api/v1/slide-notes/slide/{slide_id} creates or updates a slide note",
+        "Response includes slide_id, page_num, content_md, source, updated_at",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add slide_bookmark table and API",
+      "description": "As a developer, I need bookmark storage with tag-based filtering.",
+      "acceptanceCriteria": [
+        "Add slide_bookmark table: id, document_id (FK), slide_id (FK), page_num, tag (important/difficult/review/exam), note (optional text), created_at",
+        "Unique constraint on (slide_id, tag) to prevent duplicate tags per slide",
+        "POST /api/v1/bookmarks creates bookmark {slide_id, tag, note?}",
+        "DELETE /api/v1/bookmarks/{bookmark_id} removes bookmark",
+        "GET /api/v1/bookmarks/{document_id} returns all bookmarks, supports ?tag= filter",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Add flashcard table",
+      "description": "As a developer, I need flashcard storage linked to slides.",
+      "acceptanceCriteria": [
+        "Add flashcard table: id, document_id (FK), slide_id (FK), front_md (question), back_md (answer), source (auto/manual), created_at",
+        "Table created in init_db()",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Add flashcard CRUD API endpoints",
+      "description": "As a developer, I need endpoints to manage flashcards.",
+      "acceptanceCriteria": [
+        "GET /api/v1/flashcards/{document_id} returns all flashcards for a document",
+        "POST /api/v1/flashcards creates a manual flashcard {slide_id, front_md, back_md}",
+        "DELETE /api/v1/flashcards/{flashcard_id} removes a flashcard",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Add concept and concept_relation tables",
+      "description": "As a developer, I need tables to store extracted concepts and their relationships for the knowledge graph.",
+      "acceptanceCriteria": [
+        "Add concept table: id, document_id (FK), name, description, slide_ids (JSON array), created_at",
+        "Add concept_relation table: id, document_id (FK), source_id (FK->concept), target_id (FK->concept), relation_type (prerequisite/related/part_of/contrast), created_at",
+        "Tables created in init_db()",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "AI generate slide note from explanation",
+      "description": "As a user, I want to generate a structured note from an existing slide explanation.",
+      "acceptanceCriteria": [
+        "POST /api/v1/slide-notes/slide/{slide_id}/generate calls model_gateway",
+        "Prompt transforms slideexplanation.markdown into concise note format: key points + terms + summary",
+        "Result saved to slide_note with source='ai'",
+        "Returns 404 if no explanation exists for the slide",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Batch generate notes for all slides in a document",
+      "description": "As a user, I want to generate notes for all slides that don't have notes yet.",
+      "acceptanceCriteria": [
+        "POST /api/v1/slide-notes/{document_id}/generate-all generates notes for slides missing slide_note",
+        "Skips slides without explanations",
+        "Returns count of generated notes",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "AI generate flashcards from slide explanation",
+      "description": "As a user, I want AI to create Q&A flashcards from a slide's explanation.",
+      "acceptanceCriteria": [
+        "POST /api/v1/flashcards/slide/{slide_id}/generate calls model_gateway",
+        "Generates 3-5 flashcards per slide: definition, comparison, and fill-in-the-blank types",
+        "Each flashcard saved with source='auto'",
+        "Creates corresponding reviewitem entries with source_ref='flashcard:{id}'",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Batch generate flashcards for entire document",
+      "description": "As a user, I want to generate flashcards for all slides at once.",
+      "acceptanceCriteria": [
+        "POST /api/v1/flashcards/{document_id}/generate-all generates flashcards for all slides with explanations",
+        "Skips slides that already have auto-generated flashcards",
+        "Returns total flashcard count",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "AI extract concepts for knowledge graph",
+      "description": "As a user, I want AI to extract key concepts and relationships from my document.",
+      "acceptanceCriteria": [
+        "POST /api/v1/knowledge-graph/{document_id}/generate reads all slideexplanation rows",
+        "LLM prompt returns structured JSON: {concepts: [{name, description, slide_nums}], relations: [{source, target, type}]}",
+        "Results saved to concept and concept_relation tables",
+        "Replaces previous concepts for the document (delete + insert)",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Knowledge graph read API",
+      "description": "As a developer, I need an endpoint to return graph data for frontend rendering.",
+      "acceptanceCriteria": [
+        "GET /api/v1/knowledge-graph/{document_id} returns {nodes: Concept[], edges: ConceptRelation[]}",
+        "Nodes include id, name, description, slide_ids",
+        "Edges include source_id, target_id, relation_type",
+        "Returns empty graph if not generated yet",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Flashcard stats API",
+      "description": "As a developer, I need an endpoint for per-document flashcard mastery statistics.",
+      "acceptanceCriteria": [
+        "GET /api/v1/flashcards/{document_id}/stats returns per-slide stats",
+        "Each slide entry: {slide_id, page_num, total, mastered (easiness>2.5 and interval>7), due_count}",
+        "Includes document-level summary: {total, mastered, due, mastery_percent}",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Export notes as Obsidian-compatible Markdown",
+      "description": "As an Obsidian user, I want to export structured notes with wiki-links and tags.",
+      "acceptanceCriteria": [
+        "POST /api/v1/slide-notes/{document_id}/export returns Markdown string",
+        "Format: '# DocName\\n## Page 1: Title\\ncontent\\n---\\n## Page 2: ...'",
+        "Bookmark tags embedded as Obsidian tags: #important #difficult #review #exam",
+        "Key terms wrapped in [[term]] wiki-link format",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Notebook panel UI - page navigation sidebar",
+      "description": "As a user, I want the notebook panel to show a page list so I know which pages have notes.",
+      "acceptanceCriteria": [
+        "Replace single textarea with split layout: left page-nav (narrow) + right editor",
+        "Page nav shows page numbers with dot indicator (filled=has note, empty=no note)",
+        "Each page row shows first 30 chars of note as preview",
+        "Clicking a page loads that slide's note into the editor",
+        "Switching slides auto-selects the corresponding page in nav",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Notebook panel - AI generate and full-doc view buttons",
+      "description": "As a user, I want buttons to generate notes from AI and view all notes as one document.",
+      "acceptanceCriteria": [
+        "Add 'From AI' button in editor toolbar that calls generate endpoint for current slide",
+        "Add 'Generate All' button that calls batch generate endpoint",
+        "Add 'Full Doc' tab that concatenates all slide notes into read-only preview",
+        "Loading states shown during AI generation",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Bookmark buttons on slide viewer",
+      "description": "As a user, I want to tag slides as important/difficult/review/exam from the slide viewer.",
+      "acceptanceCriteria": [
+        "4 icon buttons in slide viewer top-right: star (important), brain (difficult), refresh (review), pencil (exam)",
+        "Clicking toggles the bookmark on/off via POST/DELETE API",
+        "Active bookmarks are highlighted with color: red/orange/blue/purple",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Bookmark filter bar on thumbnail list",
+      "description": "As a user, I want to filter the slide list to show only bookmarked slides.",
+      "acceptanceCriteria": [
+        "Add filter bar above slide thumbnails: All | Important | Difficult | Review | Exam",
+        "Selecting a filter hides non-matching slides",
+        "Thumbnails of bookmarked slides show colored dots matching their tags",
+        "Filter resets to 'All' when switching documents",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Flashcard review entry point and today's count",
+      "description": "As a user, I want to see how many flashcards are due and enter review mode.",
+      "acceptanceCriteria": [
+        "Add review icon button in header bar showing badge with due count",
+        "Badge shows number of reviewitems where due_at <= now and status='pending' and source_ref starts with 'flashcard:'",
+        "Clicking opens review modal/panel",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Flashcard review interface",
+      "description": "As a user, I want to flip cards and rate my recall to schedule next review.",
+      "acceptanceCriteria": [
+        "Review panel shows card front (question) with 'Show Answer' button",
+        "Clicking reveals back (answer) + 4 rating buttons: Forgot(0) / Hazy(2) / Good(3) / Easy(5)",
+        "Rating calls existing reviewitem complete API with SM-2 quality score",
+        "After last card, show summary: total reviewed, remember rate, next earliest due date",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Mastery progress indicators on thumbnails",
+      "description": "As a user, I want to see flashcard mastery progress on each slide thumbnail.",
+      "acceptanceCriteria": [
+        "Each thumbnail with flashcards shows a thin progress bar at bottom",
+        "Colors: green=mastered, yellow=learning, gray=not started",
+        "Document list page shows overall mastery percentage badge",
+        "Progress updates after review completion",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Knowledge graph visualization panel",
+      "description": "As a user, I want to see an interactive concept map of my document.",
+      "acceptanceCriteria": [
+        "Add 'Graph' tab in the AI panel area",
+        "Install and use react-force-graph-2d for rendering",
+        "Nodes sized by number of linked slides (more slides = larger)",
+        "Edges colored by relation type (prerequisite=red, related=blue, part_of=green, contrast=orange)",
+        "Supports zoom and drag interaction",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Knowledge graph node interaction",
+      "description": "As a user, I want to hover/click nodes to see details and jump to slides.",
+      "acceptanceCriteria": [
+        "Hover shows tooltip: concept name, description, 'Pages: 3, 7, 12'",
+        "Click on node with single slide jumps to that slide",
+        "Click on node with multiple slides shows page list popup, clicking a page jumps there",
+        "Add search input above graph to highlight matching concepts",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

@@ -602,3 +602,183 @@ export async function exportNotebook(
     method: "POST",
   });
 }
+
+// ── Slide Notes ───────────────────────────────────────────────
+
+export type SlideNote = {
+  id: string;
+  document_id: string;
+  slide_id: string;
+  page_num: number;
+  content_md: string;
+  source: "manual" | "ai" | "mixed";
+  updated_at: string | null;
+};
+
+export async function fetchSlideNotes(documentId: string): Promise<SlideNote[]> {
+  const res = await request<{ document_id: string; notes: SlideNote[] }>(
+    `/api/v1/slide-notes/${documentId}`,
+  );
+  return res.notes;
+}
+
+export async function fetchSlideNote(slideId: string): Promise<SlideNote> {
+  return request<SlideNote>(`/api/v1/slide-notes/slide/${slideId}`);
+}
+
+export async function saveSlideNote(
+  slideId: string,
+  contentMd: string,
+  source: string = "manual",
+): Promise<SlideNote> {
+  return request<SlideNote>(`/api/v1/slide-notes/slide/${slideId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content_md: contentMd, source }),
+  });
+}
+
+export async function generateSlideNote(slideId: string): Promise<{ slide_id: string; content_md: string }> {
+  return request<{ slide_id: string; content_md: string }>(
+    `/api/v1/slide-notes/slide/${slideId}/generate`,
+    { method: "POST" },
+  );
+}
+
+export async function generateAllSlideNotes(documentId: string): Promise<{ generated_count: number }> {
+  return request<{ document_id: string; generated_count: number }>(
+    `/api/v1/slide-notes/${documentId}/generate-all`,
+    { method: "POST" },
+  );
+}
+
+export async function exportSlideNotes(documentId: string): Promise<{ title: string; markdown: string }> {
+  return request<{ title: string; markdown: string }>(
+    `/api/v1/slide-notes/${documentId}/export`,
+    { method: "POST" },
+  );
+}
+
+// ── Bookmarks ─────────────────────────────────────────────────
+
+export type BookmarkTag = "important" | "difficult" | "review" | "exam";
+
+export type Bookmark = {
+  id: string;
+  document_id: string;
+  slide_id: string;
+  page_num: number;
+  tag: BookmarkTag;
+  note: string;
+  created_at: string;
+};
+
+export async function fetchBookmarks(documentId: string, tag?: BookmarkTag): Promise<Bookmark[]> {
+  const query = tag ? `?tag=${tag}` : "";
+  const res = await request<{ document_id: string; bookmarks: Bookmark[] }>(
+    `/api/v1/bookmarks/${documentId}${query}`,
+  );
+  return res.bookmarks;
+}
+
+export async function createBookmark(slideId: string, tag: BookmarkTag, note?: string): Promise<Bookmark> {
+  return request<Bookmark>("/api/v1/bookmarks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slide_id: slideId, tag, note: note ?? "" }),
+  });
+}
+
+export async function deleteBookmark(bookmarkId: string): Promise<{ id: string; deleted: boolean }> {
+  return request<{ id: string; deleted: boolean }>(`/api/v1/bookmarks/${bookmarkId}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Flashcards ────────────────────────────────────────────────
+
+export type FlashcardItem = {
+  id: string;
+  document_id: string;
+  slide_id: string;
+  front_md: string;
+  back_md: string;
+  source: "auto" | "manual";
+  created_at: string;
+};
+
+export type FlashcardStats = {
+  document_id: string;
+  slides: { slide_id: string; page_num: number; total: number; mastered: number; due: number }[];
+  total: number;
+  mastered: number;
+  due: number;
+  mastery_percent: number;
+};
+
+export async function fetchFlashcards(documentId: string): Promise<FlashcardItem[]> {
+  const res = await request<{ document_id: string; flashcards: FlashcardItem[] }>(
+    `/api/v1/flashcards/${documentId}`,
+  );
+  return res.flashcards;
+}
+
+export async function generateFlashcards(slideId: string): Promise<{ count: number }> {
+  return request<{ slide_id: string; count: number }>(
+    `/api/v1/flashcards/slide/${slideId}/generate`,
+    { method: "POST" },
+  );
+}
+
+export async function generateAllFlashcards(documentId: string): Promise<{ total_count: number }> {
+  return request<{ document_id: string; total_count: number }>(
+    `/api/v1/flashcards/${documentId}/generate-all`,
+    { method: "POST" },
+  );
+}
+
+export async function deleteFlashcard(flashcardId: string): Promise<{ id: string; deleted: boolean }> {
+  return request<{ id: string; deleted: boolean }>(`/api/v1/flashcards/${flashcardId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function fetchFlashcardStats(documentId: string): Promise<FlashcardStats> {
+  return request<FlashcardStats>(`/api/v1/flashcards/${documentId}/stats`);
+}
+
+// ── Knowledge Graph ───────────────────────────────────────────
+
+export type ConceptNode = {
+  id: string;
+  name: string;
+  description: string;
+  slide_ids: string[];
+};
+
+export type ConceptEdge = {
+  id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: "prerequisite" | "related" | "part_of" | "contrast";
+};
+
+export type KnowledgeGraph = {
+  document_id: string;
+  nodes: ConceptNode[];
+  edges: ConceptEdge[];
+};
+
+export async function fetchKnowledgeGraph(documentId: string): Promise<KnowledgeGraph> {
+  return request<KnowledgeGraph>(`/api/v1/knowledge-graph/${documentId}`);
+}
+
+export async function generateKnowledgeGraph(
+  documentId: string,
+): Promise<{ concept_count: number; relation_count: number }> {
+  return request<{ document_id: string; concept_count: number; relation_count: number }>(
+    `/api/v1/knowledge-graph/${documentId}/generate`,
+    { method: "POST" },
+    { timeoutMs: 60_000 },
+  );
+}
