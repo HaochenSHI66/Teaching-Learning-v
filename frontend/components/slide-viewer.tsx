@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 
 import { BookmarkFilter } from "@/components/bookmark-filter";
 import { SlideBookmarks } from "@/components/slide-bookmarks";
-import { getAssetUrl, type Bookmark, type BookmarkTag, type RoiBox, type Slide } from "@/lib/api";
+import { getAssetUrl, type Bookmark, type BookmarkTag, type FlashcardStats, type RoiBox, type Slide } from "@/lib/api";
 
 type SlideViewerProps = {
   slides: Slide[];
@@ -17,6 +17,7 @@ type SlideViewerProps = {
   onBookmarkFilterChange: (tag: BookmarkTag | null) => void;
   onBookmarksChange: () => void;
   documentId: string;
+  flashcardStats: FlashcardStats | null;
 };
 
 type Point = { x: number; y: number };
@@ -25,7 +26,7 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, bookmarks, bookmarkFilter, onBookmarkFilterChange, onBookmarksChange, documentId }: SlideViewerProps) {
+export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, bookmarks, bookmarkFilter, onBookmarkFilterChange, onBookmarksChange, documentId, flashcardStats }: SlideViewerProps) {
   const currentSlide = slides[currentIndex];
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [dragStart, setDragStart] = useState<Point | null>(null);
@@ -171,6 +172,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
               review: "bg-blue-400",
               exam: "bg-purple-400",
             };
+            const slideStat = flashcardStats?.slides.find((s) => s.slide_id === slide.id);
             return (
               <li key={slide.id}>
                 <button
@@ -192,6 +194,19 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
                     decoding="async"
                     src={getAssetUrl(slide.thumbnail_url)}
                   />
+                  {slideStat && slideStat.total > 0 && (
+                    <div className="flex h-1 w-full">
+                      {slideStat.mastered > 0 && (
+                        <div className="h-full bg-emerald-400" style={{ width: `${(slideStat.mastered / slideStat.total) * 100}%` }} />
+                      )}
+                      {slideStat.total - slideStat.mastered - slideStat.due > 0 && (
+                        <div className="h-full bg-amber-300" style={{ width: `${((slideStat.total - slideStat.mastered - slideStat.due) / slideStat.total) * 100}%` }} />
+                      )}
+                      {slideStat.due > 0 && (
+                        <div className="h-full bg-gray-300" style={{ width: `${(slideStat.due / slideStat.total) * 100}%` }} />
+                      )}
+                    </div>
+                  )}
                   <span className="flex items-center gap-1 bg-[#f7efdf] px-2 py-1 text-xs text-[#7e6c5a]">
                     #{slide.page_num}
                     {slideBMs.map((bm) => (

@@ -15,12 +15,14 @@ import {
   autogenNotebook,
   exportNotebook,
   fetchBookmarks,
+  fetchFlashcardStats,
   fetchNotebook,
   exportDocumentExplanations,
   generateSlideExplanation,
   saveNotebook,
   type Bookmark,
   type BookmarkTag,
+  type FlashcardStats,
   type RoiBox,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errorMessage";
@@ -62,6 +64,7 @@ export default function Page() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [bookmarkFilter, setBookmarkFilter] = useState<BookmarkTag | null>(null);
   const [flashcardReviewOpen, setFlashcardReviewOpen] = useState(false);
+  const [flashcardStats, setFlashcardStats] = useState<FlashcardStats | null>(null);
   const notesMarkdownRef = useRef("");
   const notebookLastSavedRef = useRef("");
   const notebookDocumentRef = useRef<string | null>(null);
@@ -82,11 +85,13 @@ export default function Page() {
     setBookmarkFilter(null);
     chat.setChatInput("");
     chat.clearStatus();
-    // Load bookmarks for new document
+    // Load bookmarks and flashcard stats for new document
     if (upload.documentId) {
       fetchBookmarks(upload.documentId).then(setBookmarks).catch(() => setBookmarks([]));
+      fetchFlashcardStats(upload.documentId).then(setFlashcardStats).catch(() => setFlashcardStats(null));
     } else {
       setBookmarks([]);
+      setFlashcardStats(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [upload.documentId]);
@@ -488,6 +493,7 @@ export default function Page() {
                 bookmarks={bookmarks}
                 currentIndex={currentSlideIndex}
                 documentId={upload.documentId ?? ""}
+                flashcardStats={flashcardStats}
                 onBookmarkFilterChange={setBookmarkFilter}
                 onBookmarksChange={refreshBookmarks}
                 onRoiChange={setRoi}
@@ -564,6 +570,9 @@ export default function Page() {
       />
 
       <NotebookWindow
+        slides={upload.slides}
+        currentSlideIndex={currentSlideIndex}
+        documentId={upload.documentId ?? ""}
         disabled={!upload.documentId}
         documentName={currentDocumentName}
         loading={loading || notebookSaving}

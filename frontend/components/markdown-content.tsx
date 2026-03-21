@@ -10,6 +10,7 @@ import remarkMath from "remark-math";
 type MarkdownContentProps = {
   content: string;
   className?: string;
+  onConceptClick?: (conceptName: string) => void;
 };
 
 function stripCodeFence(markdown: string): string {
@@ -17,6 +18,11 @@ function stripCodeFence(markdown: string): string {
   // Only return stripped version if it actually removed an outer fence
   if (stripped.length < markdown.length) return stripped.trim();
   return markdown;
+}
+
+/** Convert [[concept]] wiki-links to <concept-link> custom elements for rendering. */
+function convertWikiLinks(markdown: string): string {
+  return markdown.replace(/\[\[([^\]]+)\]\]/g, '<concept-link data-concept="$1">$1</concept-link>');
 }
 
 function normalizeCallouts(markdown: string): string {
@@ -44,7 +50,7 @@ function flattenText(node: ReactNode): string {
   return "";
 }
 
-export function MarkdownContent({ content, className = "" }: MarkdownContentProps) {
+export function MarkdownContent({ content, className = "", onConceptClick }: MarkdownContentProps) {
   return (
     <div className={`markdown-body prose prose-base max-w-none ${className}`}>
       <ReactMarkdown
@@ -58,11 +64,29 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
 
             return <blockquote className={`callout ${tone}`}>{children}</blockquote>;
           },
+          // Render [[concept]] wiki-links as clickable pills
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...({
+            "concept-link": ({ node, ...props }: Record<string, unknown>) => {
+              const concept = (props["data-concept"] ?? props.children) as string;
+              return (
+                <span
+                  className="inline-flex cursor-pointer items-center rounded-md border border-[#c9d5b9] bg-[#eef4e6] px-1.5 py-0.5 text-[0.85em] font-medium text-[#5a7248] transition-colors hover:bg-[#ddebd0]"
+                  onClick={() => onConceptClick?.(String(concept))}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === "Enter") onConceptClick?.(String(concept)); }}
+                >
+                  {props.children as React.ReactNode}
+                </span>
+              );
+            },
+          } as any),
         }}
         rehypePlugins={[rehypeRaw, rehypeKatex]}
         remarkPlugins={[remarkGfm, remarkMath]}
       >
-        {normalizeCallouts(stripCodeFence(content))}
+        {convertWikiLinks(normalizeCallouts(stripCodeFence(content)))}
       </ReactMarkdown>
     </div>
   );

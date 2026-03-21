@@ -1,15 +1,13 @@
 "use client";
 
 import { NoteEditor } from "@/components/note-editor";
+import type { Slide } from "@/lib/api";
 
 type NotebookWindowProps = {
   open: boolean;
-  markdown: string;
-  onChange: (value: string) => void;
-  onFormat: () => void;
-  onAIOrganize: () => void;
-  onAIPolish: (content: string) => Promise<string>;
-  onExport: () => void;
+  slides: Slide[];
+  currentSlideIndex: number;
+  documentId: string;
   onCollapse: () => void;
   loading: boolean;
   disabled: boolean;
@@ -17,16 +15,20 @@ type NotebookWindowProps = {
   viewMode: "edit" | "preview";
   onViewModeChange: (mode: "edit" | "preview") => void;
   saveStateLabel?: string;
+  /** Legacy props — passed through for backward compat */
+  markdown?: string;
+  onChange?: (value: string) => void;
+  onFormat?: () => void;
+  onAIOrganize?: () => void;
+  onAIPolish?: (content: string) => Promise<string>;
+  onExport?: () => void;
 };
 
 export function NotebookWindow({
   open,
-  markdown,
-  onChange,
-  onFormat,
-  onAIOrganize,
-  onAIPolish,
-  onExport,
+  slides,
+  currentSlideIndex,
+  documentId,
   onCollapse,
   loading,
   disabled,
@@ -34,6 +36,12 @@ export function NotebookWindow({
   viewMode,
   onViewModeChange,
   saveStateLabel,
+  markdown,
+  onChange,
+  onFormat,
+  onAIOrganize,
+  onAIPolish,
+  onExport,
 }: NotebookWindowProps) {
   if (!documentName || !open) {
     return null;
@@ -46,19 +54,22 @@ export function NotebookWindow({
     >
       <div className="pointer-events-auto h-full w-full">
         <NoteEditor
+          slides={slides}
+          currentSlideIndex={currentSlideIndex}
+          documentId={documentId}
           disabled={disabled}
           documentName={documentName}
           loading={loading}
-          markdown={markdown}
-          onAIOrganize={onAIOrganize}
           onAIPolish={onAIPolish}
-          onChange={onChange}
           onCollapse={onCollapse}
-          onExport={onExport}
-          onFormat={onFormat}
           onViewModeChange={onViewModeChange}
           saveStateLabel={saveStateLabel}
           viewMode={viewMode}
+          markdown={markdown}
+          onChange={onChange}
+          onFormat={onFormat}
+          onAIOrganize={onAIOrganize}
+          onExport={onExport}
         />
       </div>
     </div>
