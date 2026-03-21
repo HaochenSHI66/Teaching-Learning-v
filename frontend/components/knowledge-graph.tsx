@@ -14,6 +14,9 @@ import {
 // Dynamic import to avoid SSR issues with canvas
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FGRef = any;
+
 type KnowledgeGraphProps = {
   documentId: string;
   onJumpToSlide?: (slideId: string) => void;
@@ -56,6 +59,7 @@ export function KnowledgeGraphPanel({ documentId, onJumpToSlide, disabled }: Kno
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const fgRef = useRef<FGRef>(null);
   const [dimensions, setDimensions] = useState({ width: 400, height: 300 });
 
   // Observe container size
@@ -120,6 +124,16 @@ export function KnowledgeGraphPanel({ documentId, onJumpToSlide, disabled }: Kno
     return { nodes, links };
   }, [graph]);
 
+  // Configure force simulation for better spacing — nodes spread out, not clumped
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3Force("charge")?.strength(-300).distanceMax(500);
+    fg.d3Force("link")?.distance(100);
+    fg.d3Force("center")?.strength(0.03);
+    fg.d3ReheatSimulation();
+  }, [graphData]);
+
   // Search highlight
   const searchLower = search.toLowerCase();
   const highlightedIds = useMemo(() => {
@@ -134,8 +148,8 @@ export function KnowledgeGraphPanel({ documentId, onJumpToSlide, disabled }: Kno
       const x = (node as unknown as { x: number }).x;
       const y = (node as unknown as { y: number }).y;
       const label = node.name;
-      const fontSize = Math.max(10 / globalScale, 3);
-      const radius = Math.sqrt(node.val) * 4 + 3;
+      const fontSize = Math.max(11 / globalScale, 4);
+      const radius = Math.sqrt(node.val) * 5 + 5;
 
       const isHighlighted = highlightedIds.size > 0 && highlightedIds.has(node.id);
       const isHovered = hoveredNode?.id === node.id;
@@ -262,7 +276,11 @@ export function KnowledgeGraphPanel({ documentId, onJumpToSlide, disabled }: Kno
       <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden rounded-[16px] border border-[#e0d0bb] bg-[#fffdf8]">
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         <ForceGraph2D
+          ref={fgRef}
           backgroundColor="#fffdf8"
+          cooldownTicks={100}
+          d3AlphaDecay={0.02}
+          d3VelocityDecay={0.3}
           graphData={graphData as any}
           height={dimensions.height}
           linkColor={linkColor as any}
@@ -281,6 +299,7 @@ export function KnowledgeGraphPanel({ documentId, onJumpToSlide, disabled }: Kno
           }) as any}
           onNodeClick={handleNodeClick as any}
           onNodeHover={handleNodeHover as any}
+          warmupTicks={50}
           width={dimensions.width}
         />
       </div>
