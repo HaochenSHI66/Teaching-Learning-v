@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AIPanel } from "@/components/ai-panel";
 import { DocumentLibrary } from "@/components/document-library";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { FlashcardReview } from "@/components/flashcard-review";
 import { NotebookWindow } from "@/components/notebook-window";
 import { SlideViewer } from "@/components/slide-viewer";
 import { useChat } from "@/hooks/useChat";
@@ -13,10 +14,13 @@ import {
   askSlideQuestion,
   autogenNotebook,
   exportNotebook,
+  fetchBookmarks,
   fetchNotebook,
   exportDocumentExplanations,
   generateSlideExplanation,
   saveNotebook,
+  type Bookmark,
+  type BookmarkTag,
   type RoiBox,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errorMessage";
@@ -55,6 +59,9 @@ export default function Page() {
   const [slideGenerationLoading, setSlideGenerationLoading] = useState(false);
   const [notePanelOpen, setNotePanelOpen] = useState(false);
   const [interactiveReady, setInteractiveReady] = useState(false);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [bookmarkFilter, setBookmarkFilter] = useState<BookmarkTag | null>(null);
+  const [flashcardReviewOpen, setFlashcardReviewOpen] = useState(false);
   const notesMarkdownRef = useRef("");
   const notebookLastSavedRef = useRef("");
   const notebookDocumentRef = useRef<string | null>(null);
@@ -72,8 +79,15 @@ export default function Page() {
     setCurrentSlideIndex(0);
     setRoi(null);
     setGlobalStatus("");
+    setBookmarkFilter(null);
     chat.setChatInput("");
     chat.clearStatus();
+    // Load bookmarks for new document
+    if (upload.documentId) {
+      fetchBookmarks(upload.documentId).then(setBookmarks).catch(() => setBookmarks([]));
+    } else {
+      setBookmarks([]);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [upload.documentId]);
 
@@ -299,6 +313,20 @@ export default function Page() {
     }
   }
 
+  const refreshBookmarks = useCallback(() => {
+    if (upload.documentId) {
+      fetchBookmarks(upload.documentId).then(setBookmarks).catch(() => {});
+    }
+  }, [upload.documentId]);
+
+  const handleJumpToSlide = useCallback(
+    (slideId: string) => {
+      const idx = upload.slides.findIndex((s) => s.id === slideId);
+      if (idx >= 0) setCurrentSlideIndex(idx);
+    },
+    [upload.slides],
+  );
+
   const handleDeleteDocument = useCallback(async (targetDocumentId: string, filename: string) => {
     const confirmed = window.confirm(`确认删除《${filename}》？该操作将清除缓存与会话记录。`);
     if (!confirmed) return;
@@ -349,6 +377,23 @@ export default function Page() {
           </div>
 
           <div className="flex items-center gap-1.5">
+            <button
+              aria-label="闪卡复习"
+              className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-medium transition-colors ${
+                upload.documentId && upload.sessionId
+                  ? "border-[#d7c5aa] bg-[#fffaf1] text-[#5e4a34] hover:bg-[#f5ebda]"
+                  : "cursor-not-allowed border-[#e5dac7] bg-[#f7f1e7] text-[#af9d86]"
+              }`}
+              disabled={!upload.documentId || !upload.sessionId}
+              onClick={() => setFlashcardReviewOpen(true)}
+              type="button"
+            >
+              <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="M12 4v16" />
+              </svg>
+              <span>复习</span>
+            </button>
             <button
               aria-label={notePanelOpen ? "收起笔记本" : "打开笔记本"}
               className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-medium transition-colors ${
@@ -439,7 +484,12 @@ export default function Page() {
         <section className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.92fr]">
             <ErrorBoundary resetKey={upload.documentId}>
               <SlideViewer
+                bookmarkFilter={bookmarkFilter}
+                bookmarks={bookmarks}
                 currentIndex={currentSlideIndex}
+                documentId={upload.documentId ?? ""}
+                onBookmarkFilterChange={setBookmarkFilter}
+                onBookmarksChange={refreshBookmarks}
                 onRoiChange={setRoi}
                 onSelect={setCurrentSlideIndex}
                 roi={roi}
@@ -452,6 +502,7 @@ export default function Page() {
                 chatMessages={chat.chatMessages}
                 currentSlideId={currentSlide?.id}
                 disabled={!currentSlide}
+                documentId={upload.documentId ?? undefined}
                 explanationState={currentSlide?.explanation_state ?? "not_generated"}
                 explanationLoading={slideGenerationLoading}
                 extraction={currentSlide?.extract ?? null}
@@ -492,6 +543,7 @@ export default function Page() {
                   updateNotesMarkdown(next.markdown);
                   setGlobalStatus("已加入笔记本");
                 }}
+                onJumpToSlide={handleJumpToSlide}
                 onModeChange={chat.setMode}
                 onSendChat={() => {
                   const message = chat.chatInput;
@@ -503,6 +555,13 @@ export default function Page() {
             </ErrorBoundary>
         </section>
       </div>
+
+      <FlashcardReview
+        documentId={upload.documentId ?? ""}
+        sessionId={upload.sessionId ?? ""}
+        open={flashcardReviewOpen}
+        onClose={() => setFlashcardReviewOpen(false)}
+      />
 
       <NotebookWindow
         disabled={!upload.documentId}

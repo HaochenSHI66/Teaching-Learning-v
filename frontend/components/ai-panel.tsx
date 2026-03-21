@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 
+import { KnowledgeGraphPanel } from "@/components/knowledge-graph";
 import { MarkdownContent } from "@/components/markdown-content";
 import { SelectionPopup } from "@/components/selection-popup";
 import type { ChatMessage } from "@/hooks/useChat";
@@ -18,6 +19,7 @@ type AIPanelProps = {
   chatInput: string;
   chatMessages: ChatMessage[];
   currentSlideId?: string;
+  documentId?: string;
   mode: "slide" | "global";
   roiReady: boolean;
   onModeChange: (mode: "slide" | "global") => void;
@@ -28,12 +30,14 @@ type AIPanelProps = {
   onClearSlideMessages: () => void;
   onInsertToNotes: (text: string) => void;
   onElaborateSelection: (text: string) => void;
+  onJumpToSlide?: (slideId: string) => void;
 };
 
 const TABS = [
   { key: "explain", label: "解析" },
   { key: "extract", label: "结构" },
   { key: "chat", label: "追问" },
+  { key: "graph", label: "图谱" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -140,6 +144,7 @@ export function AIPanel({
   chatInput,
   chatMessages,
   currentSlideId,
+  documentId,
   mode,
   roiReady,
   onModeChange,
@@ -150,6 +155,7 @@ export function AIPanel({
   onClearSlideMessages,
   onInsertToNotes,
   onElaborateSelection,
+  onJumpToSlide,
 }: AIPanelProps) {
   const [tab, setTab] = useState<TabKey>("explain");
   const explanationRef = useRef<HTMLDivElement>(null);
@@ -391,6 +397,23 @@ export function AIPanel({
               {loading ? "发送中…" : "发送"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── 图谱 ─────────────────────────────────────── */}
+      {tab === "graph" && (
+        <div key="graph" className="animate-fade-slide-in min-h-0 flex-1 overflow-hidden rounded-[22px] border border-[#ddcfbc] bg-[#fffdf8] p-3">
+          {documentId ? (
+            <KnowledgeGraphPanel
+              documentId={documentId}
+              onJumpToSlide={onJumpToSlide}
+              disabled={disabled || loading}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-[13px] text-[#9a846a]">
+              请先选择文档
+            </div>
+          )}
         </div>
       )}
 

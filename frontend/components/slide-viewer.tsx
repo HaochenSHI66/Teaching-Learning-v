@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 
-import { getAssetUrl, type RoiBox, type Slide } from "@/lib/api";
+import { BookmarkFilter } from "@/components/bookmark-filter";
+import { SlideBookmarks } from "@/components/slide-bookmarks";
+import { getAssetUrl, type Bookmark, type BookmarkTag, type RoiBox, type Slide } from "@/lib/api";
 
 type SlideViewerProps = {
   slides: Slide[];
@@ -10,6 +12,11 @@ type SlideViewerProps = {
   roi: RoiBox | null;
   onSelect: (index: number) => void;
   onRoiChange: (roi: RoiBox | null) => void;
+  bookmarks: Bookmark[];
+  bookmarkFilter: BookmarkTag | null;
+  onBookmarkFilterChange: (tag: BookmarkTag | null) => void;
+  onBookmarksChange: () => void;
+  documentId: string;
 };
 
 type Point = { x: number; y: number };
@@ -18,7 +25,7 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }: SlideViewerProps) {
+export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, bookmarks, bookmarkFilter, onBookmarkFilterChange, onBookmarksChange, documentId }: SlideViewerProps) {
   const currentSlide = slides[currentIndex];
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [dragStart, setDragStart] = useState<Point | null>(null);
@@ -143,33 +150,58 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
 
   return (
     <section className="grid h-full min-h-0 grid-cols-[112px_1fr] gap-4 rounded-[30px] border border-[#d9c7ab] bg-[#fbf6ed]/96 p-4 shadow-[0_24px_54px_rgba(122,98,66,0.12)]">
-      <aside className="min-h-0 overflow-auto rounded-[24px] border border-[#e1d1bc] bg-[#f5ebda] p-2">
-        <ul className="space-y-2">
-          {slides.map((slide, index) => (
-            <li key={slide.id}>
-              <button
-                className={`w-full overflow-hidden rounded-xl border text-left transition ${
-                  index === currentIndex
-                    ? "border-[#c2ae81] bg-[linear-gradient(135deg,#fffaf1_0%,#f1e5d1_100%)] ring-2 ring-[#d9bf91]/40"
-                    : "border-[#e1d1bc] bg-[#fffaf2] hover:border-[#c9b08b] hover:bg-white"
-                }`}
-                onClick={() => {
-                  onSelect(index);
-                  onRoiChange(null);
-                }}
-                type="button"
-              >
-                <img
-                  alt={`Slide ${slide.page_num}`}
-                  className="block h-auto w-full"
-                  loading="lazy"
-                  decoding="async"
-                  src={getAssetUrl(slide.thumbnail_url)}
-                />
-                <span className="block bg-[#f7efdf] px-2 py-1 text-xs text-[#7e6c5a]">#{slide.page_num}</span>
-              </button>
-            </li>
-          ))}
+      <aside className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-[#e1d1bc] bg-[#f5ebda] p-2">
+        <BookmarkFilter
+          activeFilter={bookmarkFilter}
+          onFilterChange={onBookmarkFilterChange}
+          bookmarkCounts={{
+            important: bookmarks.filter((b) => b.tag === "important").length,
+            difficult: bookmarks.filter((b) => b.tag === "difficult").length,
+            review: bookmarks.filter((b) => b.tag === "review").length,
+            exam: bookmarks.filter((b) => b.tag === "exam").length,
+          }}
+        />
+        <ul className="min-h-0 flex-1 space-y-2 overflow-auto">
+          {slides.map((slide, index) => {
+            const slideBMs = bookmarks.filter((b) => b.slide_id === slide.id);
+            if (bookmarkFilter && !slideBMs.some((b) => b.tag === bookmarkFilter)) return null;
+            const dotColors: Record<BookmarkTag, string> = {
+              important: "bg-red-400",
+              difficult: "bg-orange-400",
+              review: "bg-blue-400",
+              exam: "bg-purple-400",
+            };
+            return (
+              <li key={slide.id}>
+                <button
+                  className={`w-full overflow-hidden rounded-xl border text-left transition ${
+                    index === currentIndex
+                      ? "border-[#c2ae81] bg-[linear-gradient(135deg,#fffaf1_0%,#f1e5d1_100%)] ring-2 ring-[#d9bf91]/40"
+                      : "border-[#e1d1bc] bg-[#fffaf2] hover:border-[#c9b08b] hover:bg-white"
+                  }`}
+                  onClick={() => {
+                    onSelect(index);
+                    onRoiChange(null);
+                  }}
+                  type="button"
+                >
+                  <img
+                    alt={`Slide ${slide.page_num}`}
+                    className="block h-auto w-full"
+                    loading="lazy"
+                    decoding="async"
+                    src={getAssetUrl(slide.thumbnail_url)}
+                  />
+                  <span className="flex items-center gap-1 bg-[#f7efdf] px-2 py-1 text-xs text-[#7e6c5a]">
+                    #{slide.page_num}
+                    {slideBMs.map((bm) => (
+                      <span key={bm.id} className={`inline-block h-1.5 w-1.5 rounded-full ${dotColors[bm.tag]}`} />
+                    ))}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </aside>
 
@@ -180,6 +212,14 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange }
             <p className="mt-1 text-sm font-medium text-[#463829]">当前页：{currentSlide.page_num}</p>
           </div>
           <div className="flex items-center gap-2">
+            {currentSlide && (
+              <SlideBookmarks
+                slideId={currentSlide.id}
+                documentId={documentId}
+                bookmarks={bookmarks}
+                onBookmarksChange={onBookmarksChange}
+              />
+            )}
             {roi ? <span className="rounded-full border border-[#c8b185] bg-[#f2e8d3] px-3 py-1 text-xs text-[#6d7f5a]">ROI 已选择</span> : null}
             <button
               className="btn btn-outline !rounded-lg !px-3 !py-1.5 text-xs"
