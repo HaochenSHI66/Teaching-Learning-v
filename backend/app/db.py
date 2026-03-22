@@ -68,6 +68,9 @@ _SQLITE_COLUMN_BACKFILLS: dict[str, dict[str, str]] = {
         "interval_days": "REAL NOT NULL DEFAULT 1.0",
         "easiness": "REAL NOT NULL DEFAULT 2.5",
     },
+    "flashcard": {
+        "concept_id": "TEXT",
+    },
     "slideexplanation": {
         "version": "INTEGER NOT NULL DEFAULT 1",
         "meta": "JSON NOT NULL DEFAULT '{}'",

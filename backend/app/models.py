@@ -154,6 +154,7 @@ class Flashcard(SQLModel, table=True):
     front_md: str = Field(default="")
     back_md: str = Field(default="")
     source: str = Field(default="auto")  # auto / manual
+    concept_id: str | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow)
 
 

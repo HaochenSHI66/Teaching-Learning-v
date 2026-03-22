@@ -780,6 +780,72 @@ export async function generateKnowledgeGraph(
   return request<{ document_id: string; concept_count: number; relation_count: number }>(
     `/api/v1/knowledge-graph/${documentId}/generate`,
     { method: "POST" },
-    { timeoutMs: 60_000 },
+    { timeoutMs: 180_000 },
+  );
+}
+
+// ── Knowledge Graph: Concepts by Slide ────────────────────────
+
+export type SlideConcept = {
+  id: string;
+  name: string;
+  description: string;
+  slide_ids: string[];
+  flashcard_count: number;
+};
+
+export type ConceptsBySlidePayload = {
+  document_id: string;
+  slide_id: string;
+  concepts: SlideConcept[];
+};
+
+type ConceptsBySlideRaw = {
+  document_id: string;
+  slide_id: string;
+  items: Array<{
+    concept: { id: string; name: string; description: string; slide_ids: string[] };
+    prerequisites: Array<{ id: string; name: string; description: string; slide_ids: string[] }>;
+    flashcard_count: number;
+  }>;
+};
+
+export async function fetchConceptsBySlide(
+  documentId: string,
+  slideId: string,
+): Promise<ConceptsBySlidePayload> {
+  const raw = await request<ConceptsBySlideRaw>(
+    `/api/v1/knowledge-graph/${documentId}/concepts-by-slide/${slideId}`,
+  );
+  return {
+    document_id: raw.document_id,
+    slide_id: raw.slide_id,
+    concepts: raw.items.map((item) => ({
+      ...item.concept,
+      flashcard_count: item.flashcard_count,
+    })),
+  };
+}
+
+// ── Knowledge Graph: Prerequisite Chain ───────────────────────
+
+export type PrerequisiteChainItem = {
+  id: string;
+  name: string;
+  description: string;
+  slide_ids: string[];
+};
+
+export type PrerequisiteChainPayload = {
+  concept_id: string;
+  chain: PrerequisiteChainItem[];
+};
+
+export async function fetchConceptPrerequisites(
+  documentId: string,
+  conceptId: string,
+): Promise<PrerequisiteChainPayload> {
+  return request<PrerequisiteChainPayload>(
+    `/api/v1/knowledge-graph/${documentId}/concepts/${conceptId}/prerequisites`,
   );
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 
+import { ConceptHighlightedContent } from "@/components/concept-highlighted-content";
 import { KnowledgeGraphPanel } from "@/components/knowledge-graph";
 import { MarkdownContent } from "@/components/markdown-content";
 import { SelectionPopup } from "@/components/selection-popup";
@@ -242,8 +243,18 @@ export function AIPanel({
                       {explanationMeta.title}
                     </h2>
                   )}
-                  <MarkdownContent content={explanationMeta?.sections.translation_md ?? ""} />
-                  <MarkdownContent content={explanationMeta?.sections.primary_md ?? ""} />
+                  <ConceptHighlightedContent
+                    content={explanationMeta?.sections.translation_md ?? ""}
+                    documentId={documentId}
+                    slideId={currentSlideId}
+                    onJumpToSlide={onJumpToSlide}
+                  />
+                  <ConceptHighlightedContent
+                    content={explanationMeta?.sections.primary_md ?? ""}
+                    documentId={documentId}
+                    slideId={currentSlideId}
+                    onJumpToSlide={onJumpToSlide}
+                  />
                   {explanationMeta?.sections.repeat_md ? (
                     <details className="overflow-hidden rounded-[18px] border border-[#dcccb6] bg-[#fbf6ec]">
                       <summary className="cursor-pointer list-none px-3 py-2 text-[13px] font-medium text-[#6e5942]">
@@ -259,7 +270,12 @@ export function AIPanel({
                   ) : null}
                 </div>
               ) : explanation ? (
-                <MarkdownContent content={explanation} />
+                <ConceptHighlightedContent
+                  content={explanation}
+                  documentId={documentId}
+                  slideId={currentSlideId}
+                  onJumpToSlide={onJumpToSlide}
+                />
               ) : (
                 <MarkdownContent
                   content={

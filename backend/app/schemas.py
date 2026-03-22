@@ -485,3 +485,21 @@ class KnowledgeGraphGenerateResponse(BaseModel):
     document_id: str
     concept_count: int
     relation_count: int
+
+
+class ConceptsBySlideItem(BaseModel):
+    concept: ConceptRead
+    prerequisites: list[ConceptRead]
+    flashcard_count: int = 0
+
+
+class ConceptsBySlideResponse(BaseModel):
+    document_id: str
+    slide_id: str
+    items: list[ConceptsBySlideItem]
+
+
+class PrerequisiteChainResponse(BaseModel):
+    document_id: str
+    concept_id: str
+    chain: list[ConceptRead]

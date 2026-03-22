@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 from copy import deepcopy
@@ -12,6 +13,7 @@ from sqlmodel import Session, select
 from app.api.deps import get_db_session
 from app.db import create_db_engine
 from app.models import (
+    Concept,
     Document,
     DocumentNotebook,
     Folder,
@@ -55,8 +57,10 @@ from app.services.slide_processor import (
     extract_payload_is_current,
     process_document,
 )
+from app.api.knowledge_graph import generate_knowledge_graph_for_document
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))  # 50 MB default
 
@@ -71,6 +75,45 @@ async def _read_upload(file: UploadFile) -> bytes:
             detail=f"File too large. Maximum allowed size is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
         )
     return content
+
+
+def _maybe_auto_generate_knowledge_graph(session: Session, document_id: str) -> None:
+    """Auto-generate knowledge graph if all slides have explanations and no graph exists yet."""
+    # Skip if graph already exists (avoid redundant regeneration on each slide edit)
+    existing_concepts = session.exec(
+        select(Concept).where(Concept.document_id == document_id)
+    ).first()
+    if existing_concepts:
+        return
+
+    slides = session.exec(
+        select(Slide).where(Slide.document_id == document_id)
+    ).all()
+    if not slides:
+        return
+
+    explanations = session.exec(
+        select(SlideExplanation).where(SlideExplanation.document_id == document_id)
+    ).all()
+    explained_slide_ids = {exp.slide_id for exp in explanations}
+
+    all_have_explanations = all(s.id in explained_slide_ids for s in slides)
+    if not all_have_explanations:
+        return
+
+    try:
+        concept_count, relation_count = generate_knowledge_graph_for_document(
+            session, document_id
+        )
+        logger.info(
+            "Auto-generated knowledge graph for %s: %d concepts, %d relations",
+            document_id, concept_count, relation_count,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Auto-generation of knowledge graph failed for %s: %s",
+            document_id, exc,
+        )
 
 
 def _process_document_background(
@@ -160,6 +203,9 @@ def _process_document_background(
                 )
             )
             session.commit()
+
+        # Auto-generate knowledge graph after all explanations are done
+        _maybe_auto_generate_knowledge_graph(session, document.id)
 
 
 def _payload_to_extract_read(*, document_id: str, slide: Slide, payload: dict | None) -> SlideExtractRead:
@@ -592,6 +638,9 @@ def regenerate_slide_explanation(
     )
     session.commit()
     session.refresh(explanation)
+
+    # Auto-generate knowledge graph if all slides now have explanations
+    _maybe_auto_generate_knowledge_graph(session, document_id)
 
     return SlideExplanationGenerateResponse(
         slide_id=slide.id,
