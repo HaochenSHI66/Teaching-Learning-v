@@ -21,11 +21,21 @@ logger = logging.getLogger(__name__)
 # Max previous pages to include as context
 _CONTEXT_WINDOW = 3
 
+# Singleton engine for context fetching (avoid creating one per page)
+_context_engine = None
+
+
+def _get_context_engine():
+    global _context_engine
+    if _context_engine is None:
+        _context_engine = create_db_engine(get_database_url())
+    return _context_engine
+
 
 def _fetch_previous_context(document_id: str, page_num: int) -> str:
     """Fetch summary of recent previous slides from database for context."""
     try:
-        engine = create_db_engine(get_database_url())
+        engine = _get_context_engine()
         with Session(engine) as session:
             stmt = sa_text(
                 """

@@ -187,7 +187,7 @@ class ModelGateway:
         except Exception as exc:
             logger.debug("Cost tracking failed (non-fatal): %s", exc)
 
-    def _post_chat_completion(self, payload: dict[str, Any]) -> str:
+    def _post_chat_completion(self, payload: dict[str, Any], _retries: int = 2) -> str:
         if not self.is_configured():
             raise RuntimeError("Model gateway is not configured")
 
@@ -196,34 +196,47 @@ class ModelGateway:
             self._log_usage(payload, result)
             return result
 
-        response = httpx.post(
-            f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        data = response.json()
-        choices = data.get("choices") or []
-        if not choices:
-            raise RuntimeError("Model gateway returned no choices")
-        message = choices[0].get("message") or {}
-        content = message.get("content")
-        if isinstance(content, str) and content.strip():
-            result = _strip_markdown_fence(content.strip())
-            self._log_usage(payload, result)
-            return result
-        if isinstance(content, list):
-            parts = [item.get("text", "") for item in content if isinstance(item, dict)]
-            merged = "\n".join(part for part in parts if part.strip()).strip()
-            if merged:
-                result = _strip_markdown_fence(merged)
-                self._log_usage(payload, result)
-                return result
-        raise RuntimeError("Model gateway returned empty content")
+        last_error: Exception | None = None
+        for attempt in range(_retries + 1):
+            try:
+                response = httpx.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
+                choices = data.get("choices") or []
+                if not choices:
+                    raise RuntimeError("Model gateway returned no choices")
+                message = choices[0].get("message") or {}
+                content = message.get("content")
+                if isinstance(content, str) and content.strip():
+                    result = _strip_markdown_fence(content.strip())
+                    self._log_usage(payload, result)
+                    return result
+                if isinstance(content, list):
+                    parts = [item.get("text", "") for item in content if isinstance(item, dict)]
+                    merged = "\n".join(part for part in parts if part.strip()).strip()
+                    if merged:
+                        result = _strip_markdown_fence(merged)
+                        self._log_usage(payload, result)
+                        return result
+                raise RuntimeError("Model gateway returned empty content")
+            except (httpx.TimeoutException, httpx.ConnectError) as exc:
+                last_error = exc
+                if attempt < _retries:
+                    import time
+                    wait = 2 ** attempt
+                    logger.warning("API call failed (attempt %d/%d), retrying in %ds: %s", attempt + 1, _retries + 1, wait, exc)
+                    time.sleep(wait)
+                    continue
+                raise
+        raise last_error or RuntimeError("All retries exhausted")
 
     def _post_anthropic(self, payload: dict[str, Any]) -> str:
         """Call the Anthropic Messages API (Claude)."""
@@ -247,7 +260,18 @@ class ModelGateway:
                 return _strip_markdown_fence(merged)
         raise RuntimeError("Anthropic API returned empty content")
 
-    def _image_to_data_url(self, image_path: Path) -> str:
-        mime_type = "image/png"
-        encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
-        return f"data:{mime_type};base64,{encoded}"
+    def _image_to_data_url(self, image_path: Path, max_width: int = 1500) -> str:
+        """Convert image to base64 data URL, resizing if wider than max_width."""
+        from PIL import Image
+        import io
+
+        img = Image.open(image_path)
+        if img.width > max_width:
+            ratio = max_width / img.width
+            new_size = (max_width, int(img.height * ratio))
+            img = img.resize(new_size, Image.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
