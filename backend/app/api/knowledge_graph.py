@@ -6,6 +6,7 @@ import os
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.middleware.rate_limit import rate_limit
 from sqlmodel import Session, select
 
 from app.api.deps import get_db_session
@@ -307,6 +308,7 @@ def get_knowledge_graph(
 def generate_knowledge_graph(
     document_id: str,
     session: Session = Depends(get_db_session),
+    _rate_limit=Depends(rate_limit(3, 60, "knowledge_graph_generate")),
 ) -> KnowledgeGraphGenerateResponse:
     _get_document_or_404(session, document_id)
 

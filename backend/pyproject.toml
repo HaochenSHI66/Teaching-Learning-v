@@ -11,10 +11,15 @@ dependencies = [
   "python-dotenv>=1.2.0",
   "httpx>=0.28.0",
   "pillow>=11.3.0",
-  "pymupdf>=1.26.0"
+  "pymupdf>=1.26.0",
+  "bcrypt>=4.0.0",
+  "pyjwt>=2.8.0"
 ]
 
 [project.optional-dependencies]
+postgres = [
+  "psycopg2-binary>=2.9.0"
+]
 dev = [
   "pytest>=9.0.0",
   "httpx>=0.28.0"

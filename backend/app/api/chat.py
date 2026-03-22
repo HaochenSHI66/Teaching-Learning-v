@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from app.middleware.rate_limit import rate_limit
 from PIL import Image
 from sqlmodel import Session
 from sqlmodel import select
@@ -56,6 +57,7 @@ def chat_on_slide(
     request: Request,
     payload: ChatRequest,
     session: Session = Depends(get_db_session),
+    _rate_limit=Depends(rate_limit(30, 60, "chat")),
 ) -> ChatResponse:
     learning_session = session.get(LearningSession, payload.session_id)
     if not learning_session:
@@ -172,6 +174,7 @@ def explain_roi(
     request: Request,
     payload: RoiChatRequest,
     session: Session = Depends(get_db_session),
+    _rate_limit=Depends(rate_limit(30, 60, "chat")),
 ) -> RoiChatResponse:
     learning_session, slide = _get_session_and_slide(
         session=session,

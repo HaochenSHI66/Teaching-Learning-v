@@ -8,9 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, status
+from app.middleware.rate_limit import rate_limit
 from sqlmodel import Session, select
 
 from app.api.deps import get_db_session
+from app.auth import get_optional_user
 from app.db import create_db_engine
 from app.models import (
     Concept,
@@ -26,6 +28,7 @@ from app.models import (
     Slide,
     SlideExplanation,
     SlideExtract,
+    User,
 )
 from app.schemas import (
     DocumentDeleteResponse,
@@ -412,6 +415,7 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     folder_id: str | None = Form(default=None),
     session: Session = Depends(get_db_session),
+    current_user: User | None = Depends(get_optional_user),
 ) -> UploadResponse:
     media_type = file.content_type or "application/octet-stream"
     if media_type not in SUPPORTED_TYPES:
@@ -436,6 +440,7 @@ async def upload_document(
         folder_id=resolved_folder_id,
         sort_order=len(session.exec(select(Document).where(Document.folder_id == resolved_folder_id)).all()),
         status="processing",
+        user_id=current_user.id if current_user else None,
     )
 
     storage_root: Path = request.app.state.storage_dir
@@ -610,6 +615,7 @@ def regenerate_slide_explanation(
     slide_id: str,
     request: Request,
     session: Session = Depends(get_db_session),
+    _rate_limit=Depends(rate_limit(20, 60, "explanation_generate")),
 ) -> SlideExplanationGenerateResponse:
     document = session.get(Document, document_id)
     if not document:
@@ -659,6 +665,7 @@ def regenerate_document_explanations(
     document_id: str,
     request: Request,
     session: Session = Depends(get_db_session),
+    _rate_limit=Depends(rate_limit(20, 60, "explanation_generate")),
 ) -> DocumentExplanationGenerateResponse:
     document = session.get(Document, document_id)
     if not document:

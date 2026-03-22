@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from app.api.analytics import router as analytics_router
+from app.api.auth import router as auth_router
 from app.api.bookmarks import router as bookmarks_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
@@ -21,7 +22,7 @@ from app.api.quizzes import router as quizzes_router
 from app.api.review import router as review_router
 from app.api.sessions import router as sessions_router
 from app.api.slide_notes import router as slide_notes_router
-from app.db import create_db_engine, ensure_storage, init_db
+from app.db import create_db_engine, ensure_storage, get_database_url, init_db
 
 
 def _load_environment_files() -> None:
@@ -47,7 +48,7 @@ def create_app(
     _load_environment_files()
     app = FastAPI(title="PPT Learning Assistant API")
 
-    db_url = database_url or "sqlite:///./storage/app.db"
+    db_url = database_url or get_database_url()
     resolved_storage = storage_dir or Path("./storage")
     ensure_storage(resolved_storage)
 
@@ -65,6 +66,7 @@ def create_app(
         allow_headers=["*"],
     )
 
+    app.include_router(auth_router)
     app.include_router(documents_router)
     app.include_router(folders_router)
     app.include_router(sessions_router)

@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.api.deps import get_db_session
-from app.models import Document, Folder
+from app.auth import get_optional_user
+from app.models import Document, Folder, User
 from app.schemas import (
     FolderCreateRequest,
     FolderDeleteResponse,
@@ -89,9 +90,15 @@ def list_folder_library(session: Session = Depends(get_db_session)) -> FolderLib
 def create_folder(
     payload: FolderCreateRequest,
     session: Session = Depends(get_db_session),
+    current_user: User | None = Depends(get_optional_user),
 ) -> FolderResponse:
     next_order = len(session.exec(select(Folder)).all())
-    folder = Folder(name=payload.name.strip(), color=payload.color.strip(), sort_order=next_order)
+    folder = Folder(
+        name=payload.name.strip(),
+        color=payload.color.strip(),
+        sort_order=next_order,
+        user_id=current_user.id if current_user else None,
+    )
     session.add(folder)
     session.commit()
     session.refresh(folder)

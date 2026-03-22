@@ -1,4 +1,16 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: teaching
+      POSTGRES_PASSWORD: teaching_pass
+      POSTGRES_DB: teaching_learning
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
   backend:
     build:
       context: ./backend
@@ -12,6 +24,12 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      # PostgreSQL (default)
+      - DATABASE_URL=postgresql://teaching:teaching_pass@postgres:5432/teaching_learning
+      # To use SQLite instead, comment the line above and uncomment below:
+      # - DATABASE_URL=sqlite:///./storage/app.db
+    depends_on:
+      - postgres
 
   frontend:
     build:
@@ -25,3 +43,6 @@ services:
       - NEXT_PUBLIC_API_BASE_URL=http://backend:8000
     depends_on:
       - backend
+
+volumes:
+  pgdata:

@@ -5,8 +5,12 @@ import os
 from pathlib import Path
 from typing import Any
 
+import logging
+
 import httpx
 import re
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_markdown_fence(text: str) -> str:
@@ -156,12 +160,41 @@ class ModelGateway:
             "temperature": float(os.getenv("MODEL_TEMPERATURE", "0.2")),
         }
 
+    def _extract_input_text(self, payload: dict[str, Any]) -> str:
+        """Extract text portions from the payload for token estimation."""
+        parts: list[str] = []
+        for msg in payload.get("messages", []):
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                parts.append(content)
+            elif isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        parts.append(item.get("text", ""))
+        return "\n".join(parts)
+
+    def _log_usage(self, payload: dict[str, Any], output_text: str) -> None:
+        """Log token usage and estimated cost after a successful call."""
+        try:
+            from app.services.cost_tracker import log_usage
+            input_text = self._extract_input_text(payload)
+            log_usage(
+                model=self.model,
+                input_text=input_text,
+                output_text=output_text,
+                endpoint="chat_completion",
+            )
+        except Exception as exc:
+            logger.debug("Cost tracking failed (non-fatal): %s", exc)
+
     def _post_chat_completion(self, payload: dict[str, Any]) -> str:
         if not self.is_configured():
             raise RuntimeError("Model gateway is not configured")
 
         if self._is_anthropic:
-            return self._post_anthropic(payload)
+            result = self._post_anthropic(payload)
+            self._log_usage(payload, result)
+            return result
 
         response = httpx.post(
             f"{self.base_url}/chat/completions",
@@ -180,12 +213,16 @@ class ModelGateway:
         message = choices[0].get("message") or {}
         content = message.get("content")
         if isinstance(content, str) and content.strip():
-            return _strip_markdown_fence(content.strip())
+            result = _strip_markdown_fence(content.strip())
+            self._log_usage(payload, result)
+            return result
         if isinstance(content, list):
             parts = [item.get("text", "") for item in content if isinstance(item, dict)]
             merged = "\n".join(part for part in parts if part.strip()).strip()
             if merged:
-                return _strip_markdown_fence(merged)
+                result = _strip_markdown_fence(merged)
+                self._log_usage(payload, result)
+                return result
         raise RuntimeError("Model gateway returned empty content")
 
     def _post_anthropic(self, payload: dict[str, Any]) -> str:

@@ -15,6 +15,14 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class User(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    password_hash: str
+    display_name: str
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
 class Document(SQLModel, table=True):
     id: str = Field(default_factory=_new_id, primary_key=True)
     filename: str
@@ -24,6 +32,7 @@ class Document(SQLModel, table=True):
     sort_order: int = Field(default=0, index=True)
     status: str = Field(default="ready")
     page_count: int = Field(default=0)
+    user_id: str | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -32,6 +41,7 @@ class Folder(SQLModel, table=True):
     name: str
     color: str = Field(default="oat")
     sort_order: int = Field(default=0, index=True)
+    user_id: str | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -68,6 +78,7 @@ class LearningSession(SQLModel, table=True):
     current_slide_id: str | None = Field(default=None, index=True)
     follow_current_page: bool = Field(default=True)
     learning_state_summary: str = Field(default="")
+    user_id: str | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -188,4 +199,15 @@ class ReviewItem(SQLModel, table=True):
     repetitions: int = Field(default=0)
     interval_days: float = Field(default=1.0)
     easiness: float = Field(default=2.5)
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class LLMUsage(SQLModel, table=True):
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    user_id: str | None = Field(default=None, index=True)
+    model: str = Field(default="")
+    input_tokens: int = Field(default=0)
+    output_tokens: int = Field(default=0)
+    estimated_cost_cny: float = Field(default=0.0)
+    endpoint: str = Field(default="")
     created_at: datetime = Field(default_factory=_utcnow)

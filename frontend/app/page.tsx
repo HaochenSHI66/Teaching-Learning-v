@@ -9,6 +9,8 @@ import { FlashcardReview } from "@/components/flashcard-review";
 import { NotebookWindow } from "@/components/notebook-window";
 import { SlideViewer } from "@/components/slide-viewer";
 import { useChat } from "@/hooks/useChat";
+import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
+import { useSlideGeneration } from "@/hooks/useSlideGeneration";
 import { useUpload } from "@/hooks/useUpload";
 import {
   askSlideQuestion,
@@ -18,7 +20,6 @@ import {
   fetchFlashcardStats,
   fetchNotebook,
   exportDocumentExplanations,
-  generateSlideExplanation,
   saveNotebook,
   type Bookmark,
   type BookmarkTag,
@@ -58,7 +59,6 @@ export default function Page() {
   const [notebookSaveState, setNotebookSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [notebookViewMode, setNotebookViewMode] = useState<"edit" | "preview">("edit");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [slideGenerationLoading, setSlideGenerationLoading] = useState(false);
   const [notePanelOpen, setNotePanelOpen] = useState(false);
   const [interactiveReady, setInteractiveReady] = useState(false);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -77,6 +77,28 @@ export default function Page() {
     () => upload.documents.find((d) => d.id === upload.documentId)?.filename,
     [upload.documents, upload.documentId],
   );
+
+  // Task 1 & 6: Keyboard navigation via extracted hook
+  useKeyboardNavigation(upload.slides, currentSlideIndex, setCurrentSlideIndex);
+
+  // Task 6: Slide generation via extracted hook
+  const {
+    slideGenerationLoading,
+    setSlideGenerationLoading,
+    handleGenerateCurrentSlideExplanation,
+    handleBatchGenerate,
+  } = useSlideGeneration({
+    documentId: upload.documentId,
+    slides: upload.slides,
+    setCachedExplanation: upload.setCachedExplanation,
+    setExplanation,
+    setExplanationMeta,
+    setGlobalStatus,
+    currentSlide,
+  });
+
+  // Task 3: Show processing animation when backgroundProcessing and no slides loaded
+  const showProcessingAnimation = upload.backgroundProcessing && upload.slides.length === 0;
 
   useEffect(() => {
     setCurrentSlideIndex(0);
@@ -301,23 +323,6 @@ export default function Page() {
     }
   }
 
-  async function handleGenerateCurrentSlideExplanation() {
-    if (!upload.documentId || !currentSlide) return;
-    setSlideGenerationLoading(true);
-    setGlobalStatus("重新生成解析中…");
-    try {
-      const result = await generateSlideExplanation(upload.documentId, currentSlide.id);
-      upload.setCachedExplanation(currentSlide.id, result);
-      setExplanation(result.markdown);
-      setExplanationMeta(result.meta ?? null);
-      setGlobalStatus("解析已更新");
-    } catch (error) {
-      setGlobalStatus(`解析生成失败：${getErrorMessage(error)}`);
-    } finally {
-      setSlideGenerationLoading(false);
-    }
-  }
-
   const refreshBookmarks = useCallback(() => {
     if (upload.documentId) {
       fetchBookmarks(upload.documentId).then(setBookmarks).catch(() => {});
@@ -487,6 +492,17 @@ export default function Page() {
         </aside>
 
         <section className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.92fr]">
+            {/* Task 3: Processing animation for first upload */}
+            {showProcessingAnimation ? (
+              <div className="flex h-full flex-col items-center justify-center rounded-[30px] border border-[#d9c7ab] bg-[linear-gradient(180deg,#fffaf2,#f6ebdb)] shadow-[0_28px_60px_rgba(122,98,66,0.12)]">
+                <svg className="mb-4 h-8 w-8 animate-spin text-[#9a7e63]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                <p className="text-[15px] font-medium text-[#4b3d2f]">正在处理您的文档...</p>
+                <p className="mt-1 text-[13px] text-[#9a846a]">完成后将自动显示</p>
+              </div>
+            ) : (
             <ErrorBoundary resetKey={upload.documentId}>
               <SlideViewer
                 bookmarkFilter={bookmarkFilter}
@@ -502,6 +518,7 @@ export default function Page() {
                 slides={upload.slides}
               />
             </ErrorBoundary>
+            )}
             <ErrorBoundary resetKey={upload.documentId}>
               <AIPanel
                 chatInput={chat.chatInput}
@@ -527,6 +544,7 @@ export default function Page() {
                   }
                 }}
                 onGenerateExplanation={() => void handleGenerateCurrentSlideExplanation()}
+                onBatchGenerate={() => void handleBatchGenerate()}
                 onInsertToNotes={(text) => {
                   if (!currentSlide || !currentDocumentName) return;
                   const next = insertSelectionIntoNotebook({

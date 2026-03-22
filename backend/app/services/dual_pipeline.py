@@ -6,6 +6,10 @@ import os
 from collections.abc import Iterable
 from pathlib import Path
 
+from sqlalchemy import text as sa_text
+from sqlmodel import Session
+
+from app.db import create_db_engine, get_database_url
 from app.services.model_gateway import ModelGateway
 from app.services.prompt_templates import (
     build_vision_extraction_prompt,
@@ -21,29 +25,39 @@ _CONTEXT_WINDOW = 3
 def _fetch_previous_context(document_id: str, page_num: int) -> str:
     """Fetch summary of recent previous slides from database for context."""
     try:
-        import sqlite3
-        db_path = os.getenv("DATABASE_URL", "storage/app.db")
-        conn = sqlite3.connect(db_path)
-        rows = conn.execute(
-            """
-            SELECT se.page_num, se.meta
-            FROM slideexplanation se
-            WHERE se.document_id = ?
-              AND se.page_num < ?
-              AND se.page_num >= ?
-            ORDER BY se.page_num DESC
-            LIMIT ?
-            """,
-            (document_id, page_num, max(1, page_num - _CONTEXT_WINDOW), _CONTEXT_WINDOW),
-        ).fetchall()
-        conn.close()
+        engine = create_db_engine(get_database_url())
+        with Session(engine) as session:
+            stmt = sa_text(
+                """
+                SELECT se.page_num, se.meta
+                FROM slideexplanation se
+                WHERE se.document_id = :doc_id
+                  AND se.page_num < :page_num
+                  AND se.page_num >= :min_page
+                ORDER BY se.page_num DESC
+                LIMIT :limit
+                """
+            )
+            rows = session.exec(
+                stmt.bindparams(
+                    doc_id=document_id,
+                    page_num=page_num,
+                    min_page=max(1, page_num - _CONTEXT_WINDOW),
+                    limit=_CONTEXT_WINDOW,
+                )
+            ).all()
 
         if not rows:
             return ""
 
         lines = []
-        for row_page, meta_json in sorted(rows, key=lambda r: r[0]):
-            meta = json.loads(meta_json) if meta_json else {}
+        for row_page, meta_raw in sorted(rows, key=lambda r: r[0]):
+            if isinstance(meta_raw, str):
+                meta = json.loads(meta_raw) if meta_raw else {}
+            elif isinstance(meta_raw, dict):
+                meta = meta_raw
+            else:
+                meta = {}
             title = meta.get("title", f"第 {row_page} 页")
             content_type = meta.get("content_type", "unknown")
             sections = meta.get("sections") or {}

@@ -130,6 +130,8 @@ export function useUpload(): UploadState & UploadActions {
   const [generationDocId, setGenerationDocId] = useState<string | null>(null);
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
   const abortRef = useRef(false);
+  /** Track document IDs that have already been auto-generated to avoid repeating. */
+  const autoGenDoneRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     void refreshDocuments();
@@ -162,6 +164,32 @@ export function useUpload(): UploadState & UploadActions {
     }
 
     setStatusText(`文档加载完成，共 ${fetchedSlides.length} 页。`);
+
+    // Task 5: Auto-generate explanations for first few slides if missing
+    if (!autoGenDoneRef.current.has(targetDocumentId)) {
+      autoGenDoneRef.current.add(targetDocumentId);
+      const explanationMap = new Set(explanations.map((e) => e.slide_id));
+      const slidesToGenerate = fetchedSlides
+        .slice(0, 3)
+        .filter((s) => !explanationMap.has(s.id));
+
+      if (slidesToGenerate.length > 0) {
+        // Fire sequentially in background — don't block UI
+        void (async () => {
+          for (const slide of slidesToGenerate) {
+            try {
+              const result = await generateSlideExplanation(targetDocumentId, slide.id);
+              setCachedExplanations((prev) => ({ ...prev, [slide.id]: result }));
+              setSlides((prev) =>
+                prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
+              );
+            } catch {
+              // Silently skip individual failures
+            }
+          }
+        })();
+      }
+    }
   }
 
   async function loadDocument(targetDocumentId: string) {

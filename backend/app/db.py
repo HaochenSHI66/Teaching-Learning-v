@@ -14,8 +14,17 @@ def _sqlite_busy_timeout_ms() -> int:
     return int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "30000"))
 
 
+def get_database_url() -> str:
+    """Return the configured DATABASE_URL, falling back to local SQLite."""
+    return os.getenv("DATABASE_URL", "sqlite:///./storage/app.db")
+
+
+def _is_sqlite(url: str) -> bool:
+    return url.startswith("sqlite")
+
+
 def _connect_args_for(url: str) -> dict[str, bool | float]:
-    if url.startswith("sqlite"):
+    if _is_sqlite(url):
         return {
             "check_same_thread": False,
             "timeout": _sqlite_busy_timeout_ms() / 1000,
@@ -23,9 +32,25 @@ def _connect_args_for(url: str) -> dict[str, bool | float]:
     return {}
 
 
+def _engine_kwargs_for(url: str) -> dict:
+    """Return extra create_engine kwargs based on the database backend."""
+    if _is_sqlite(url):
+        return {}
+    # PostgreSQL pool settings
+    return {
+        "pool_size": int(os.getenv("DB_POOL_SIZE", "5")),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "10")),
+        "pool_pre_ping": True,
+    }
+
+
 def create_db_engine(database_url: str):
-    engine = create_engine(database_url, connect_args=_connect_args_for(database_url))
-    if database_url.startswith("sqlite"):
+    engine = create_engine(
+        database_url,
+        connect_args=_connect_args_for(database_url),
+        **_engine_kwargs_for(database_url),
+    )
+    if _is_sqlite(database_url):
         busy_timeout_ms = _sqlite_busy_timeout_ms()
 
         @event.listens_for(engine, "connect")
@@ -49,11 +74,16 @@ _SQLITE_COLUMN_BACKFILLS: dict[str, dict[str, str]] = {
     "document": {
         "folder_id": "TEXT",
         "sort_order": "INTEGER NOT NULL DEFAULT 0",
+        "user_id": "TEXT",
+    },
+    "folder": {
+        "user_id": "TEXT",
     },
     "learningsession": {
         "current_slide_id": "TEXT",
         "follow_current_page": "BOOLEAN NOT NULL DEFAULT 1",
         "learning_state_summary": "TEXT NOT NULL DEFAULT ''",
+        "user_id": "TEXT",
     },
     "message": {
         "slide_id": "TEXT",
@@ -111,9 +141,39 @@ def _backfill_sqlite_columns(engine) -> None:
                 current_columns.add(column_name)
 
 
+def _create_sqlite_indexes(engine) -> None:
+    """Create indexes for new columns on SQLite (idempotent)."""
+    if engine.dialect.name != "sqlite":
+        return
+
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS ix_document_user_id ON document(user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_folder_user_id ON folder(user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_learningsession_user_id ON learningsession(user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_llmusage_user_id ON llmusage(user_id)",
+    ]
+    with engine.begin() as connection:
+        existing_tables = {
+            row[0]
+            for row in connection.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        for stmt in indexes:
+            # Extract table name from the statement to check if it exists
+            # Format: CREATE INDEX IF NOT EXISTS ix_name ON table(col)
+            table_name = stmt.split(" ON ")[1].split("(")[0].strip()
+            if table_name in existing_tables:
+                try:
+                    connection.exec_driver_sql(stmt)
+                except OperationalError:
+                    pass
+
+
 def init_db(engine) -> None:
     SQLModel.metadata.create_all(engine)
     _backfill_sqlite_columns(engine)
+    _create_sqlite_indexes(engine)
 
 
 def get_session(engine) -> Generator[Session, None, None]:

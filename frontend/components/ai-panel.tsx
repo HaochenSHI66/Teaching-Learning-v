@@ -27,6 +27,7 @@ type AIPanelProps = {
   onChatInputChange: (value: string) => void;
   onSendChat: () => void;
   onGenerateExplanation: () => void;
+  onBatchGenerate?: () => void;
   onExplainRoi: () => void;
   onClearSlideMessages: () => void;
   onInsertToNotes: (text: string) => void;
@@ -153,6 +154,7 @@ export function AIPanel({
   onChatInputChange,
   onSendChat,
   onGenerateExplanation,
+  onBatchGenerate,
   onExplainRoi,
   onClearSlideMessages,
   onInsertToNotes,
@@ -173,6 +175,15 @@ export function AIPanel({
     [currentSlideId, chatMessages],
   );
 
+  // Task 4: Compute which tabs have content for badge indicators
+  const tabHasContent: Record<TabKey, boolean> = {
+    explain: explanationState === "ready",
+    summary: Boolean(explanationMeta?.sections?.summary_md),
+    extract: Boolean(extraction),
+    chat: slideMessages.length > 0,
+    graph: false, // Graph state is internal to KnowledgeGraphPanel; no external signal available
+  };
+
   return (
     <section className="flex h-full min-h-0 flex-col rounded-[30px] border border-[#d9c7ab] bg-[linear-gradient(180deg,#fffaf2,#f6ebdb)] p-3 shadow-[0_28px_60px_rgba(122,98,66,0.12)]">
       {/* Tab bar */}
@@ -181,11 +192,17 @@ export function AIPanel({
           {TABS.map((item) => (
             <button
               key={item.key}
-              className={`btn btn-segment !px-3 !py-1.5 !text-[13px] ${tab === item.key ? "btn-segment-active" : "btn-segment-idle"}`}
+              className={`btn btn-segment !px-3 !py-1.5 !text-[13px] relative ${tab === item.key ? "btn-segment-active" : "btn-segment-idle"}`}
               onClick={() => setTab(item.key)}
               type="button"
             >
               {item.label}
+              {tabHasContent[item.key] && (
+                <span
+                  className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-[#8a9d76]"
+                  aria-hidden="true"
+                />
+              )}
             </button>
           ))}
         </div>
@@ -277,11 +294,23 @@ export function AIPanel({
                   onJumpToSlide={onJumpToSlide}
                 />
               ) : (
-                <MarkdownContent
-                  content={
-                    "**当前页解析尚未生成。** 点击「生成解析」开始。"
-                  }
-                />
+                <div className="space-y-3">
+                  <MarkdownContent
+                    content={
+                      "**当前页解析尚未生成。** 点击「生成解析」开始。"
+                    }
+                  />
+                  {onBatchGenerate && (
+                    <button
+                      className="btn btn-outline !px-3 !py-1.5 !text-[13px]"
+                      disabled={disabled || loading}
+                      onClick={onBatchGenerate}
+                      type="button"
+                    >
+                      为所有页面生成解析
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </section>
