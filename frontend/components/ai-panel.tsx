@@ -35,6 +35,7 @@ type AIPanelProps = {
 
 const TABS = [
   { key: "explain", label: "解析" },
+  { key: "summary", label: "总结" },
   { key: "extract", label: "结构" },
   { key: "chat", label: "追问" },
   { key: "graph", label: "图谱" },
@@ -236,6 +237,11 @@ export function AIPanel({
             <div ref={explanationRef} className="min-h-0 flex-1 overflow-auto p-3" data-note-source="explanation-content">
               {hasStructuredExplanation ? (
                 <div className="space-y-3">
+                  {explanationMeta?.title && (
+                    <h2 className="text-lg font-bold text-[#2d2015] border-b border-[#e8dcc8] pb-2 mb-1">
+                      {explanationMeta.title}
+                    </h2>
+                  )}
                   <MarkdownContent content={explanationMeta?.sections.translation_md ?? ""} />
                   <MarkdownContent content={explanationMeta?.sections.primary_md ?? ""} />
                   {explanationMeta?.sections.repeat_md ? (
@@ -269,6 +275,29 @@ export function AIPanel({
             onElaborate={onElaborateSelection}
             disabled={disabled || loading}
           />
+        </div>
+      )}
+
+      {/* ── 总结 ─────────────────────────────────────── */}
+      {tab === "summary" && (
+        <div key="summary" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col">
+          <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8]">
+            <header className="shrink-0 flex items-center gap-2 border-b border-[#eee2cf] px-3 py-2">
+              <p className="text-[13px] font-medium text-[#4b3d2f]">知识点总结</p>
+              <span className="rounded-full border border-[#d8bf94] bg-[#f8efdc] px-2 py-0.5 text-[12px] text-[#8a6a46]">
+                快速复习
+              </span>
+            </header>
+            <div className="min-h-0 flex-1 overflow-auto p-3">
+              {explanationMeta?.sections?.summary_md ? (
+                <MarkdownContent content={explanationMeta.sections.summary_md} />
+              ) : explanationMeta?.title ? (
+                <MarkdownContent content={`**「${explanationMeta.title}」尚未生成知识点总结。**\n\n点击「解析」标签页的「生成解析」按钮重新生成。`} />
+              ) : (
+                <MarkdownContent content="**当前页尚未生成知识点总结。** 点击「解析」标签页的「生成解析」按钮开始。" />
+              )}
+            </div>
+          </section>
         </div>
       )}
 

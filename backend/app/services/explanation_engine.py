@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 
 from app.models import Slide
+from app.services.dual_pipeline import DualModelPipeline
 from app.services.model_gateway import ModelGateway
 from app.services.prompt_templates import (
     build_roi_explanation_prompt,
@@ -438,6 +439,7 @@ def _canonicalize_slide_explanation(
     translation_md = sections.get("### 完整翻译与解释")
     example_md = sections.get("### 例题完整讲解")
     concept_md = sections.get("### 知识点总结")
+    summary_md = sections.get("### 知识点摘要")
     repeat_md = sections.get("### 重复部分讲解")
 
     is_example = _looks_like_example_page(
@@ -494,6 +496,7 @@ def _canonicalize_slide_explanation(
             "translation_md": translation_md.strip(),
             "primary_md": primary_md.strip(),
             "repeat_md": repeat_md.strip() if repeat_md else "",
+            "summary_md": summary_md.strip() if summary_md else "",
         },
     }
     return canonical_markdown, meta
@@ -604,24 +607,53 @@ def generate_slide_explanation(
 
     degraded = False
     if slide_image_path:
+        # Try dual pipeline first (vision + text models)
+        dual = DualModelPipeline()
+        if dual.is_configured():
+            try:
+                answer = dual.generate(
+                    slide_image_path=slide_image_path,
+                    extraction_text=prompt_extraction_text,
+                    page_num=slide.page_num,
+                    question=question,
+                    related_pages=related_pages,
+                    repeat_analysis=(extract_payload or {}).get("repeat_analysis"),
+                    document_id=slide.document_id,
+                )
+                canonical_markdown, meta = _canonicalize_slide_explanation(
+                    slide=slide,
+                    markdown=answer,
+                    extracted_text=extracted_text,
+                    extract_payload=extract_payload,
+                    related_pages=related_pages,
+                    question=question,
+                )
+                meta["pipeline"] = "dual"
+                return canonical_markdown, follow_ups, degraded, meta
+            except Exception:
+                pass  # Fall through to single-model
+
+        # Fallback: single vision model
         live_gateway = gateway or ModelGateway()
-        try:
-            answer = live_gateway.generate_slide_markdown(
-                prompt=prompt_contract,
-                slide_image_path=slide_image_path,
-                extraction_text=prompt_extraction_text,
-            )
-            canonical_markdown, meta = _canonicalize_slide_explanation(
-                slide=slide,
-                markdown=answer,
-                extracted_text=extracted_text,
-                extract_payload=extract_payload,
-                related_pages=related_pages,
-                question=question,
-            )
-            return canonical_markdown, follow_ups, degraded, meta
-        except Exception:
-            degraded = True
+        if live_gateway.is_configured():
+            try:
+                answer = live_gateway.generate_slide_markdown(
+                    prompt=prompt_contract,
+                    slide_image_path=slide_image_path,
+                    extraction_text=prompt_extraction_text,
+                )
+                canonical_markdown, meta = _canonicalize_slide_explanation(
+                    slide=slide,
+                    markdown=answer,
+                    extracted_text=extracted_text,
+                    extract_payload=extract_payload,
+                    related_pages=related_pages,
+                    question=question,
+                )
+                meta["pipeline"] = "single"
+                return canonical_markdown, follow_ups, degraded, meta
+            except Exception:
+                degraded = True
 
     answer, meta = _template_slide_explanation(
         slide=slide,
@@ -630,6 +662,7 @@ def generate_slide_explanation(
         extract_payload=extract_payload,
         related_pages=related_pages,
     )
+    meta["pipeline"] = "template"
     return answer, follow_ups, degraded, meta
 
 

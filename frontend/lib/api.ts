@@ -164,6 +164,7 @@ export type SlideExplanation = {
       translation_md: string;
       primary_md: string;
       repeat_md?: string;
+      summary_md?: string;
     };
   } | null;
 };
