@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ConceptHighlightedContent } from "@/components/concept-highlighted-content";
 import { KnowledgeGraphPanel } from "@/components/knowledge-graph";
@@ -30,7 +30,6 @@ type AIPanelProps = {
   onBatchGenerate?: () => void;
   onExplainRoi: () => void;
   onClearSlideMessages: () => void;
-  onInsertToNotes: (text: string) => void;
   onElaborateSelection: (text: string) => void;
   onJumpToSlide?: (slideId: string) => void;
 };
@@ -38,9 +37,8 @@ type AIPanelProps = {
 const TABS = [
   { key: "explain", label: "解析" },
   { key: "summary", label: "总结" },
-  { key: "extract", label: "结构" },
   { key: "chat", label: "追问" },
-  { key: "graph", label: "图谱" },
+  { key: "graph", label: "概念" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -127,12 +125,12 @@ function getExplanationBadge(
   explanationState: AIPanelProps["explanationState"],
   explanationLoading: boolean,
 ) {
-  if (explanationLoading) return { label: "生成中", cls: "bg-[#f7ecd6] text-[#8c6c46] border-[#d8bf94]" };
+  if (explanationLoading) return { label: "生成中", cls: "bg-[var(--ac-amber-bg)] text-[var(--ac-amber-text)] border-[var(--ac-amber-border)]" };
   switch (explanationState) {
-    case "ready":      return { label: "已缓存", cls: "bg-[#e8efe0] text-[#607253] border-[#c8d5b9]" };
-    case "error":      return { label: "失败",   cls: "bg-[#f5e3dc] text-[#9a5e4e] border-[#e0b5a7]" };
-    case "generating": return { label: "生成中", cls: "bg-[#f7ecd6] text-[#8c6c46] border-[#d8bf94]" };
-    default:           return { label: "待生成", cls: "bg-[#efe7dc] text-[#826f5c] border-[#ddcfbc]" };
+    case "ready":      return { label: "已缓存", cls: "bg-[var(--ac-green-bg)] text-[var(--ac-green-text)] border-[var(--ac-green-border)]" };
+    case "error":      return { label: "失败",   cls: "bg-[var(--ac-red-bg)] text-[var(--ac-red-text)] border-[var(--ac-red-border)]" };
+    case "generating": return { label: "生成中", cls: "bg-[var(--ac-amber-bg)] text-[var(--ac-amber-text)] border-[var(--ac-amber-border)]" };
+    default:           return { label: "待生成", cls: "bg-[var(--ac-muted-bg)] text-[var(--ac-muted-text)] border-[var(--ac-muted-border)]" };
   }
 }
 
@@ -157,17 +155,17 @@ export function AIPanel({
   onBatchGenerate,
   onExplainRoi,
   onClearSlideMessages,
-  onInsertToNotes,
   onElaborateSelection,
   onJumpToSlide,
 }: AIPanelProps) {
   const [tab, setTab] = useState<TabKey>("explain");
   const explanationRef = useRef<HTMLDivElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const badge = getExplanationBadge(explanationState, explanationLoading);
   const extractionMarkdown = useMemo(() => buildExtractionMarkdown(extraction), [extraction]);
   const repeatSummary = explanationMeta?.repeat_summary;
   const hasStructuredExplanation = Boolean(
-    explanationMeta?.sections?.translation_md && explanationMeta?.sections?.primary_md,
+    explanationMeta?.sections?.translation_md,
   );
 
   const slideMessages = useMemo(
@@ -175,20 +173,24 @@ export function AIPanel({
     [currentSlideId, chatMessages],
   );
 
+  // Auto-scroll chat to bottom when new messages arrive
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [slideMessages]);
+
   // Task 4: Compute which tabs have content for badge indicators
   const tabHasContent: Record<TabKey, boolean> = {
     explain: explanationState === "ready",
     summary: Boolean(explanationMeta?.sections?.summary_md),
-    extract: Boolean(extraction),
     chat: slideMessages.length > 0,
-    graph: false, // Graph state is internal to KnowledgeGraphPanel; no external signal available
+    graph: false,
   };
 
   return (
-    <section className="flex h-full min-h-0 flex-col rounded-[30px] border border-[#d9c7ab] bg-[linear-gradient(180deg,#fffaf2,#f6ebdb)] p-3 shadow-[0_28px_60px_rgba(122,98,66,0.12)]">
+    <section className="flex h-full min-h-0 flex-col rounded-[30px] border border-[var(--bd-1)] bg-[var(--gd-card)] p-3 shadow-[var(--sh-panel)]">
       {/* Tab bar */}
       <header className="mb-2 shrink-0">
-        <div className="inline-flex flex-wrap gap-0.5 rounded-full border border-[#e0d0bb] bg-[#fffdf8] p-0.5 shadow-sm">
+        <div className="inline-flex flex-wrap gap-0.5 rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] p-0.5 shadow-sm">
           {TABS.map((item) => (
             <button
               key={item.key}
@@ -211,12 +213,12 @@ export function AIPanel({
       {/* ── 解析 ─────────────────────────────────────── */}
       {tab === "explain" && (
         <div key="explain" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col">
-          <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8]">
-            <header className="shrink-0 flex items-center justify-between gap-2 border-b border-[#eee2cf] px-3 py-2">
+          <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[var(--bd-2)] bg-[var(--sf-1)]">
+            <header className="shrink-0 flex items-center justify-between gap-2 border-b border-[var(--bd-3)] px-3 py-2">
               <div className="flex items-center gap-2">
-                <p className="text-[13px] font-medium text-[#4b3d2f]">当前页解析</p>
+                <p className="text-[13px] font-medium text-[var(--tx-2)]">当前页解析</p>
                 {repeatSummary?.has_repeat_section ? (
-                  <span className="rounded-full border border-[#d8bf94] bg-[#f8efdc] px-2 py-0.5 text-[12px] text-[#8a6a46]">
+                  <span className="rounded-full border border-[var(--bd-4)] bg-[var(--sf-2)] px-2 py-0.5 text-[12px] text-[var(--tx-5)]">
                     重复 {Math.round((repeatSummary.repeated_ratio ?? 0) * 100)}% · 来自第 {repeatSummary.repeat_pages.join(", ")} 页
                   </span>
                 ) : null}
@@ -241,13 +243,13 @@ export function AIPanel({
             </header>
 
             {explanationLoading && (
-              <div className="shrink-0 border-b border-[#eee2cf] px-3 py-2">
-                <div className="mb-1 flex items-center justify-between text-[12px] text-[#9a7e63]">
+              <div className="shrink-0 border-b border-[var(--bd-3)] px-3 py-2">
+                <div className="mb-1 flex items-center justify-between text-[12px] text-[var(--tx-5)]">
                   <span>解析生成中…</span>
                   <span className="animate-pulse">●</span>
                 </div>
-                <div className="h-1 w-full overflow-hidden rounded-full bg-[#ede3d3]">
-                  <div className="h-full w-1/2 animate-[slide_1.6s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-[#c9a97a] via-[#e8c98a] to-[#c9a97a]" />
+                <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--sf-4)]">
+                  <div className="h-full w-1/2 animate-[slide_1.6s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-[var(--bd-4)] via-[#e8c98a] to-[var(--bd-4)]" />
                 </div>
               </div>
             )}
@@ -255,32 +257,25 @@ export function AIPanel({
             <div ref={explanationRef} className="min-h-0 flex-1 overflow-auto p-3" data-note-source="explanation-content">
               {hasStructuredExplanation ? (
                 <div className="space-y-3">
-                  {explanationMeta?.title && (
-                    <h2 className="text-lg font-bold text-[#2d2015] border-b border-[#e8dcc8] pb-2 mb-1">
-                      {explanationMeta.title}
-                    </h2>
-                  )}
+                  {/* Unified explanation: translation_md is the main content */}
                   <ConceptHighlightedContent
-                    content={explanationMeta?.sections.translation_md ?? ""}
-                    documentId={documentId}
-                    slideId={currentSlideId}
-                    onJumpToSlide={onJumpToSlide}
-                  />
-                  <ConceptHighlightedContent
-                    content={explanationMeta?.sections.primary_md ?? ""}
+                    content={[
+                      explanationMeta?.sections.translation_md ?? "",
+                      explanationMeta?.sections.primary_md ?? "",
+                    ].filter(Boolean).join("\n\n")}
                     documentId={documentId}
                     slideId={currentSlideId}
                     onJumpToSlide={onJumpToSlide}
                   />
                   {explanationMeta?.sections.repeat_md ? (
-                    <details className="overflow-hidden rounded-[18px] border border-[#dcccb6] bg-[#fbf6ec]">
-                      <summary className="cursor-pointer list-none px-3 py-2 text-[13px] font-medium text-[#6e5942]">
+                    <details className="overflow-hidden rounded-[18px] border border-[var(--bd-1)] bg-[var(--sf-2)]">
+                      <summary className="cursor-pointer list-none px-3 py-2 text-[13px] font-medium text-[var(--tx-4)]">
                         重复部分讲解
-                        <span className="ml-2 text-[12px] font-normal text-[#9a846a]">
+                        <span className="ml-2 text-[12px] font-normal text-[var(--tx-5)]">
                           来自第 {repeatSummary?.repeat_pages?.join(", ") || "前序"} 页
                         </span>
                       </summary>
-                      <div className="border-t border-[#ede3d3] px-3 py-3">
+                      <div className="border-t border-[var(--sf-4)] px-3 py-3">
                         <MarkdownContent content={explanationMeta.sections.repeat_md} />
                       </div>
                     </details>
@@ -316,7 +311,6 @@ export function AIPanel({
           </section>
           <SelectionPopup
             containerRef={explanationRef}
-            onInsert={onInsertToNotes}
             onElaborate={onElaborateSelection}
             disabled={disabled || loading}
           />
@@ -326,10 +320,10 @@ export function AIPanel({
       {/* ── 总结 ─────────────────────────────────────── */}
       {tab === "summary" && (
         <div key="summary" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col">
-          <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[#e0d0bb] bg-[#fffdf8]">
-            <header className="shrink-0 flex items-center gap-2 border-b border-[#eee2cf] px-3 py-2">
-              <p className="text-[13px] font-medium text-[#4b3d2f]">知识点总结</p>
-              <span className="rounded-full border border-[#d8bf94] bg-[#f8efdc] px-2 py-0.5 text-[12px] text-[#8a6a46]">
+          <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[var(--bd-2)] bg-[var(--sf-1)]">
+            <header className="shrink-0 flex items-center gap-2 border-b border-[var(--bd-3)] px-3 py-2">
+              <p className="text-[13px] font-medium text-[var(--tx-2)]">知识点总结</p>
+              <span className="rounded-full border border-[var(--bd-4)] bg-[var(--sf-2)] px-2 py-0.5 text-[12px] text-[var(--tx-5)]">
                 快速复习
               </span>
             </header>
@@ -346,137 +340,138 @@ export function AIPanel({
         </div>
       )}
 
-      {/* ── 结构 ─────────────────────────────────────── */}
-      {tab === "extract" && (
-        <div key="extract" className="animate-fade-slide-in min-h-0 flex-1 overflow-auto rounded-[22px] border border-[#ddcfbc] bg-[#fffdf8] p-3">
-          <div className="mb-2 flex items-center gap-2">
-            <p className="text-[13px] font-medium text-[#4b3d2f]">页面结构</p>
-            <span className="rounded-full border border-[#ddcfbc] bg-[#f4ecdf] px-2 py-0.5 text-[11px] text-[#7e6a57]">Non-LLM</span>
-          </div>
-          <MarkdownContent content={extractionMarkdown} />
-          {extraction?.figures?.length ? (
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
-              {extraction.figures.map((figure) => (
-                <article className="rounded-[16px] border border-[#e3d6c3] bg-white p-2.5 shadow-sm" key={figure.id}>
-                  {figure.preview_image_url ? (
-                    <img
-                      alt={figure.label ?? figure.id}
-                      className="mb-1.5 h-24 w-full rounded-[12px] object-cover"
-                      src={getAssetUrl(figure.preview_image_url)}
-                    />
-                  ) : null}
-                  <p className="text-[13px] font-medium text-[#4f4031]">
-                    {figure.label && !figure.label.startsWith("Figure Region") ? figure.label : `图 ${figure.order + 1}`}
-                  </p>
-                </article>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      )}
+      {/* 结构标签已隐藏 */}
 
       {/* ── 追问 ─────────────────────────────────────── */}
       {tab === "chat" && (
-        <div key="chat" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col gap-1.5">
-          {/* Mode toggle */}
-          <div className="shrink-0 flex items-center justify-between rounded-[16px] border border-[#e0d0bb] bg-[#fffdf8] px-2.5 py-1.5">
-            <span className="text-[12px] text-[#9a846a]">提问范围</span>
-            <div className="inline-flex rounded-full border border-[#e0d0bb] bg-[#f5ece0] p-0.5">
-              <button
-                className={`btn btn-segment !px-2.5 !py-1 !text-[12px] ${mode === "slide" ? "btn-segment-active" : "btn-segment-idle"}`}
-                onClick={() => onModeChange("slide")}
-                type="button"
-              >
-                当前页
-              </button>
-              <button
-                className={`btn btn-segment !px-2.5 !py-1 !text-[12px] ${mode === "global" ? "btn-segment-active" : "btn-segment-idle"}`}
-                onClick={() => onModeChange("global")}
-                type="button"
-              >
-                全局
-              </button>
-            </div>
+        <div key="chat" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col">
+          {/* Messages area */}
+          <div className="min-h-0 flex-1 overflow-auto px-2 py-3">
+            {slideMessages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                <span className="text-2xl opacity-40">💬</span>
+                <p className="text-[13px] text-[var(--tx-5)]">暂无问答记录</p>
+                <p className="text-[12px] text-[var(--tx-6)]">输入问题开始对话，或框选区域进行解析。</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {slideMessages.map((m) =>
+                  m.role === "user" ? (
+                    <div key={m.id} className="flex justify-end gap-2">
+                      <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-[var(--sf-5)] px-4 py-2.5 text-[13px] text-[var(--tx-2)] shadow-sm">
+                        <MarkdownContent content={m.content} />
+                        {m.slideId && (
+                          <p className="mt-1 text-[11px] opacity-50">第 {m.slideId} 页</p>
+                        )}
+                      </div>
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--sf-4)] text-[13px] text-[var(--tx-4)]">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                          <circle cx="12" cy="7" r="4"/>
+                        </svg>
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={m.id} className="flex justify-start gap-2">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--sf-3)] text-[var(--tx-4)]">
+                        <span className="text-[13px]">✦</span>
+                      </div>
+                      <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[var(--bd-2)] bg-[var(--sf-1)] px-4 py-2.5 text-[13px] text-[var(--tx-3)] shadow-sm">
+                        <MarkdownContent content={m.content} />
+                        {m.slideId && (
+                          <p className="mt-1 text-[11px] text-[var(--tx-6)]">第 {m.slideId} 页</p>
+                        )}
+                      </div>
+                    </div>
+                  ),
+                )}
+                <div ref={chatEndRef} />
+              </div>
+            )}
           </div>
 
-          {/* Collapsible history */}
-          <details className="shrink-0 overflow-hidden rounded-[16px] border border-[#e0d0bb] bg-[#fffdf8]" open={slideMessages.length > 0}>
-            <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2 text-[12px] text-[#9a846a] hover:bg-[#f8f2e8]">
-              <span>本页问答（{Math.floor(slideMessages.length / 2)} 条）</span>
+          {/* Input bar */}
+          <div className="shrink-0 flex flex-col gap-2 border-t border-[var(--bd-3)] px-1 pt-2.5 pb-1">
+            {/* Mode pills + ROI + Clear row */}
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-full border border-[var(--bd-2)] bg-[var(--sf-3)] p-0.5">
+                <button
+                  className={`btn btn-segment !px-2.5 !py-0.5 !text-[11px] ${mode === "slide" ? "btn-segment-active" : "btn-segment-idle"}`}
+                  onClick={() => onModeChange("slide")}
+                  type="button"
+                >
+                  当前页
+                </button>
+                <button
+                  className={`btn btn-segment !px-2.5 !py-0.5 !text-[11px] ${mode === "global" ? "btn-segment-active" : "btn-segment-idle"}`}
+                  onClick={() => onModeChange("global")}
+                  type="button"
+                >
+                  全局
+                </button>
+              </div>
               <button
-                className="btn btn-outline !rounded-lg !px-2 !py-0.5 !text-[12px]"
-                disabled={slideMessages.length === 0}
-                onClick={(e) => { e.preventDefault(); onClearSlideMessages(); }}
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--bd-2)] bg-[var(--sf-2)] px-2 py-0.5 text-[11px] text-[var(--tx-4)] transition-colors hover:bg-[var(--sf-3)] disabled:opacity-40"
+                disabled={disabled || loading || !roiReady}
+                onClick={onExplainRoi}
+                title={roiReady ? "解析框选区域" : "请先框选左侧区域"}
                 type="button"
               >
-                清空
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <path d="M9 3v18M3 9h18"/>
+                </svg>
+                {loading ? "处理中…" : "框选"}
               </button>
-            </summary>
-            <div className="max-h-44 space-y-1.5 overflow-auto border-t border-[#eee2cf] px-3 py-2">
-              {slideMessages.length === 0 ? (
-                <p className="text-[13px] text-[#b09a87]">暂无问答记录。</p>
-              ) : (
-                slideMessages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`rounded-[12px] px-2.5 py-1.5 text-[13px] ${
-                      m.role === "user"
-                        ? "bg-[#5d4a39] text-[#fffaf2]"
-                        : "border border-[#e8dcc8] bg-white text-[#5a4938]"
-                    }`}
-                  >
-                    <MarkdownContent
-                      className={m.role === "user" ? "prose-invert" : ""}
-                      content={m.content}
-                    />
-                  </div>
-                ))
+              {slideMessages.length > 0 && (
+                <button
+                  className="ml-auto rounded-full border border-[var(--bd-2)] bg-[var(--sf-2)] px-2 py-0.5 text-[11px] text-[var(--tx-5)] transition-colors hover:bg-[var(--sf-3)]"
+                  onClick={onClearSlideMessages}
+                  type="button"
+                >
+                  清空
+                </button>
               )}
             </div>
-          </details>
-
-          {/* ROI */}
-          <div className="shrink-0 grid grid-cols-2 gap-1.5">
-            <button
-              className="btn btn-warning !py-1.5 !text-[13px]"
-              disabled={disabled || loading || !roiReady}
-              onClick={onExplainRoi}
-              type="button"
-            >
-              {loading ? "处理中…" : "解析框选区域"}
-            </button>
-            <p className="rounded-[14px] border border-dashed border-[#d8bf94] bg-[#fbf1df] px-2 py-1.5 text-[12px] text-[#8b6b45]">
-              {roiReady ? "区域已选，点击解析。" : "框选左侧区域后解析。"}
-            </p>
-          </div>
-
-          {/* Input */}
-          <div className="shrink-0 space-y-1.5">
-            <textarea
-              className="h-16 w-full rounded-[16px] border border-[#d5c2a4] bg-white p-2.5 text-[13px] text-[#554535] outline-none focus:border-[#8a9d76]"
-              disabled={disabled || loading}
-              onChange={(e) => onChatInputChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSendChat();
-              }}
-              placeholder="输入问题，Ctrl/⌘+Enter 发送"
-              value={chatInput}
-            />
-            <button
-              className="btn btn-dark w-full !py-1.5 !text-[13px]"
-              disabled={disabled || loading || !chatInput.trim()}
-              onClick={onSendChat}
-              type="button"
-            >
-              {loading ? "发送中…" : "发送"}
-            </button>
+            {/* Input row */}
+            <div className="flex items-end gap-1.5 rounded-2xl border border-[var(--bd-1)] bg-[var(--sf-input)] p-1.5 focus-within:border-[var(--bd-4)] transition-colors">
+              <textarea
+                className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-[var(--tx-3)] outline-none placeholder:text-[var(--tx-6)]"
+                disabled={disabled || loading}
+                onChange={(e) => onChatInputChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSendChat();
+                }}
+                placeholder="输入问题，⌘+Enter 发送"
+                rows={2}
+                value={chatInput}
+              />
+              <button
+                className="shrink-0 rounded-xl bg-[var(--sf-5)] px-3 py-1.5 text-[12px] font-medium text-[var(--tx-2)] transition-opacity disabled:opacity-40"
+                disabled={disabled || loading || !chatInput.trim()}
+                onClick={onSendChat}
+                type="button"
+              >
+                {loading ? (
+                  <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* ── 图谱 ─────────────────────────────────────── */}
       {tab === "graph" && (
-        <div key="graph" className="animate-fade-slide-in min-h-0 flex-1 overflow-hidden rounded-[22px] border border-[#ddcfbc] bg-[#fffdf8] p-3">
+        <div key="graph" className="animate-fade-slide-in min-h-0 flex-1 overflow-hidden rounded-[22px] border border-[var(--bd-2)] bg-[var(--sf-1)] p-3">
           {documentId ? (
             <KnowledgeGraphPanel
               documentId={documentId}
@@ -484,7 +479,7 @@ export function AIPanel({
               disabled={disabled || loading}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-[13px] text-[#9a846a]">
+            <div className="flex h-full items-center justify-center text-[13px] text-[var(--tx-5)]">
               请先选择文档
             </div>
           )}

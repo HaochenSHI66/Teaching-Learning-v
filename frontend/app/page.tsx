@@ -5,45 +5,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AIPanel } from "@/components/ai-panel";
 import { DocumentLibrary } from "@/components/document-library";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { ExportNotesModal } from "@/components/export-notes-modal";
 import { FlashcardReview } from "@/components/flashcard-review";
-import { NotebookWindow } from "@/components/notebook-window";
 import { SlideViewer } from "@/components/slide-viewer";
+import { ThemeProvider } from "@/components/theme-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useChat } from "@/hooks/useChat";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { useSlideGeneration } from "@/hooks/useSlideGeneration";
 import { useUpload } from "@/hooks/useUpload";
 import {
   askSlideQuestion,
-  autogenNotebook,
-  exportNotebook,
   fetchBookmarks,
   fetchFlashcardStats,
-  fetchNotebook,
-  exportDocumentExplanations,
-  saveNotebook,
   type Bookmark,
   type BookmarkTag,
   type FlashcardStats,
   type RoiBox,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errorMessage";
-import {
-  formatNotebookMarkdown,
-  inferPageTitle,
-  insertSelectionIntoNotebook,
-} from "@/lib/notebookFormat";
-
-function downloadMarkdown(filename: string, markdown: string) {
-  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
 
 export default function Page() {
   const upload = useUpload();
@@ -52,22 +32,14 @@ export default function Page() {
 
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [roi, setRoi] = useState<RoiBox | null>(null);
-  const [notesMarkdown, setNotesMarkdown] = useState("");
   const [globalStatus, setGlobalStatus] = useState("");
-  const [notebookBusy, setNotebookBusy] = useState(false);
-  const [notebookSaving, setNotebookSaving] = useState(false);
-  const [notebookSaveState, setNotebookSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [notebookViewMode, setNotebookViewMode] = useState<"edit" | "preview">("edit");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [notePanelOpen, setNotePanelOpen] = useState(false);
   const [interactiveReady, setInteractiveReady] = useState(false);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [bookmarkFilter, setBookmarkFilter] = useState<BookmarkTag | null>(null);
   const [flashcardReviewOpen, setFlashcardReviewOpen] = useState(false);
   const [flashcardStats, setFlashcardStats] = useState<FlashcardStats | null>(null);
-  const notesMarkdownRef = useRef("");
-  const notebookLastSavedRef = useRef("");
-  const notebookDocumentRef = useRef<string | null>(null);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   const currentSlide = useMemo(
     () => upload.slides[currentSlideIndex],
@@ -137,145 +109,13 @@ export default function Page() {
     setExplanationMeta(cached?.meta ?? null);
   }, [currentSlide, upload.cachedExplanations, setExplanation, setExplanationMeta]);
 
-  const updateNotesMarkdown = useCallback((next: string) => {
-    notesMarkdownRef.current = next;
-    setNotesMarkdown(next);
-  }, []);
-
   const statusText =
     chat.statusText || upload.statusText || globalStatus || "待机";
 
   const loading =
-    upload.loading || chat.loading || notebookBusy || slideGenerationLoading;
+    upload.loading || chat.loading || slideGenerationLoading;
   const documentCount = upload.documents.length;
   const pageCount = upload.slides.length;
-
-  async function persistNotebook(targetDocumentId: string, markdown: string, silent: boolean = false) {
-    if (!targetDocumentId) return;
-    setNotebookSaving(true);
-    setNotebookSaveState("saving");
-    try {
-      await saveNotebook(targetDocumentId, markdown);
-      notebookLastSavedRef.current = markdown;
-      setNotebookSaveState("saved");
-      if (!silent) {
-        setGlobalStatus("笔记本已保存");
-      }
-    } catch (error) {
-      setNotebookSaveState("error");
-      if (!silent) {
-        setGlobalStatus(`笔记保存失败：${getErrorMessage(error)}`);
-      }
-    } finally {
-      setNotebookSaving(false);
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadNotebookForDocument() {
-      const previousDocumentId = notebookDocumentRef.current;
-      const nextDocumentId = upload.documentId;
-      if (
-        previousDocumentId &&
-        previousDocumentId !== nextDocumentId &&
-        notebookLastSavedRef.current !== notesMarkdownRef.current
-      ) {
-        await persistNotebook(previousDocumentId, notesMarkdownRef.current, true);
-      }
-
-      notebookDocumentRef.current = nextDocumentId;
-      if (!nextDocumentId) {
-        setNotesMarkdown("");
-        notesMarkdownRef.current = "";
-        notebookLastSavedRef.current = "";
-        setNotebookSaveState("idle");
-        setNotePanelOpen(false);
-        return;
-      }
-
-      setNotebookBusy(true);
-      setNotebookSaveState("idle");
-      try {
-        const notebook = await fetchNotebook(nextDocumentId);
-        if (cancelled) return;
-        updateNotesMarkdown(notebook.markdown);
-        notebookLastSavedRef.current = notebook.markdown;
-      } catch (error) {
-        if (cancelled) return;
-        setGlobalStatus(`笔记本加载失败：${getErrorMessage(error)}`);
-      } finally {
-        if (!cancelled) {
-          setNotebookBusy(false);
-        }
-      }
-    }
-
-    void loadNotebookForDocument();
-    return () => {
-      cancelled = true;
-    };
-  }, [upload.documentId]);
-
-  useEffect(() => {
-    if (!upload.documentId) return;
-    if (notesMarkdown === notebookLastSavedRef.current) return;
-    setNotebookSaveState("saving");
-    const timer = window.setTimeout(() => {
-      void persistNotebook(upload.documentId!, notesMarkdown, true);
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, [notesMarkdown, upload.documentId]);
-
-  async function handleExportNotes() {
-    if (!upload.documentId || !currentDocumentName) return;
-    setNotebookBusy(true);
-    setGlobalStatus("导出笔记本中…");
-    try {
-      const result = await exportNotebook(upload.documentId);
-      downloadMarkdown(`${currentDocumentName.replace(/\.[^.]+$/, "")}-notebook.md`, result.markdown);
-      setGlobalStatus("笔记本已导出");
-    } catch (error) {
-      setGlobalStatus(`导出失败：${getErrorMessage(error)}`);
-    } finally {
-      setNotebookBusy(false);
-    }
-  }
-
-  async function handleExportAllExplanations() {
-    if (!upload.documentId) return;
-    setNotebookBusy(true);
-    setGlobalStatus("导出解析中…");
-    try {
-      const result = await exportDocumentExplanations(upload.documentId);
-      downloadMarkdown("all-slides-explanations.md", result.markdown);
-      setGlobalStatus("解析已导出");
-    } catch (error) {
-      setGlobalStatus(`导出失败：${getErrorMessage(error)}`);
-    } finally {
-      setNotebookBusy(false);
-    }
-  }
-
-  async function handleAutoGenerateNotes() {
-    if (!upload.documentId) return;
-    setNotebookBusy(true);
-    setGlobalStatus("生成文档笔记本中…");
-    try {
-      const result = await autogenNotebook(upload.documentId, "自动笔记");
-      updateNotesMarkdown(result.markdown);
-      notebookLastSavedRef.current = result.markdown;
-      setNotebookViewMode("preview");
-      setNotePanelOpen(true);
-      setNotebookSaveState("saved");
-      setGlobalStatus("笔记本已生成");
-    } catch (error) {
-      setGlobalStatus(`笔记生成失败：${getErrorMessage(error)}`);
-    } finally {
-      setNotebookBusy(false);
-    }
-  }
 
   async function handleElaborateSelection(text: string) {
     if (!upload.sessionId || !currentSlide) {
@@ -299,27 +139,6 @@ export default function Page() {
       setGlobalStatus(`深入解析失败：${getErrorMessage(error)}`);
     } finally {
       setSlideGenerationLoading(false);
-    }
-  }
-
-  async function handleAIPolishNotes(content: string): Promise<string> {
-    if (!upload.sessionId) return content;
-    setGlobalStatus("润色中…");
-    try {
-      const response = await askSlideQuestion({
-        sessionId: upload.sessionId,
-        message:
-          "请优化整理以下学习笔记，保留现有 Markdown 结构与所有核心信息，保留已有 <mark> 荧光标注，" +
-          "并且只在真正值得记忆的定义、结论、公式、关键词上补充少量 <mark> 标注。" +
-          "不要满屏高亮，不要改成讲义式长篇讲解，不要删除原有核心内容，输出纯 Markdown，不要包代码块。\n\n" +
-          content,
-        mode: "global",
-      });
-      setGlobalStatus("润色完成");
-      return response.answer;
-    } catch (error) {
-      setGlobalStatus(`AI 润色失败：${getErrorMessage(error)}`);
-      return content;
     }
   }
 
@@ -349,30 +168,22 @@ export default function Page() {
     await upload.deleteFolder(folderId);
   }, [upload.deleteFolder]);
 
-  const notebookSaveLabel =
-    notebookSaveState === "saving"
-      ? "自动保存中"
-      : notebookSaveState === "saved"
-        ? "已保存"
-        : notebookSaveState === "error"
-          ? "保存失败"
-          : "已加载";
-
   return (
+    <ThemeProvider>
     <main className="relative flex h-screen min-h-screen flex-col overflow-hidden">
-      <header className="relative z-10 shrink-0 border-b border-[#d7c5aa] bg-[#fbf5eb]/85 backdrop-blur-xl">
+      <header className="relative z-10 shrink-0 border-b border-[var(--bd-1)] bg-[var(--sf-header)] backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3 px-4 py-2 md:px-5">
           <div className="flex items-center gap-2">
             {interactiveReady ? (
               <button
-                className="flex h-8 w-8 flex-col items-center justify-center gap-1.5 rounded-xl border border-[#d7c5aa] bg-[#fffaf1] hover:bg-[#f5ebda] transition-colors"
+                className="flex h-8 w-8 flex-col items-center justify-center gap-1.5 rounded-xl border border-[var(--bd-1)] bg-[var(--sf-1)] hover:bg-[var(--sf-3)] transition-colors"
                 onClick={() => setSidebarCollapsed((prev) => !prev)}
                 type="button"
                 aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
               >
-                <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
-                <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
-                <span className="h-[1.5px] w-4 rounded-full bg-[#7c6348]" />
+                <span className="h-[1.5px] w-4 rounded-full bg-[var(--tx-4)]" />
+                <span className="h-[1.5px] w-4 rounded-full bg-[var(--tx-4)]" />
+                <span className="h-[1.5px] w-4 rounded-full bg-[var(--tx-4)]" />
               </button>
             ) : (
               <div
@@ -381,18 +192,19 @@ export default function Page() {
               />
             )}
             <div>
-              <p className="text-[9px] uppercase tracking-[0.28em] text-[#8c765f]">Learning Studio</p>
-              <h1 className="text-sm font-semibold leading-tight text-[#463829]">幻灯片研习台</h1>
+              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--tx-5)]">Learning Studio</p>
+              <h1 className="text-sm font-semibold leading-tight text-[var(--tx-2)]">幻灯片研习台</h1>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5">
+            <ThemeToggle />
             <button
               aria-label="闪卡复习"
               className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-medium transition-colors ${
                 upload.documentId && upload.sessionId
-                  ? "border-[#d7c5aa] bg-[#fffaf1] text-[#5e4a34] hover:bg-[#f5ebda]"
-                  : "cursor-not-allowed border-[#e5dac7] bg-[#f7f1e7] text-[#af9d86]"
+                  ? "border-[var(--bd-1)] bg-[var(--sf-1)] text-[var(--tx-3)] hover:bg-[var(--sf-3)]"
+                  : "cursor-not-allowed border-[var(--bd-2)] bg-[var(--sf-4)] text-[var(--tx-6)]"
               }`}
               disabled={!upload.documentId || !upload.sessionId}
               onClick={() => setFlashcardReviewOpen(true)}
@@ -405,17 +217,14 @@ export default function Page() {
               <span>复习</span>
             </button>
             <button
-              aria-label={notePanelOpen ? "收起笔记本" : "打开笔记本"}
+              aria-label="导出学习笔记"
               className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-medium transition-colors ${
                 upload.documentId
-                  ? notePanelOpen
-                    ? "border-[#b59669] bg-[#ead6b8] text-[#553d20] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
-                    : "border-[#d7c5aa] bg-[#fffaf1] text-[#5e4a34] hover:bg-[#f5ebda]"
-                  : "cursor-not-allowed border-[#e5dac7] bg-[#f7f1e7] text-[#af9d86]"
+                  ? "border-[var(--bd-1)] bg-[var(--sf-1)] text-[var(--tx-3)] hover:bg-[var(--sf-3)]"
+                  : "cursor-not-allowed border-[var(--bd-2)] bg-[var(--sf-4)] text-[var(--tx-6)]"
               }`}
-              data-testid="header-notebook-toggle"
               disabled={!upload.documentId}
-              onClick={() => setNotePanelOpen((prev) => !prev)}
+              onClick={() => setExportModalOpen(true)}
               type="button"
             >
               <svg
@@ -428,37 +237,35 @@ export default function Page() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-                <polyline points="10 9 9 9 8 9" />
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              <span>{notePanelOpen ? "收起笔记" : "笔记本"}</span>
+              <span>导出笔记</span>
             </button>
-            <div className="rounded-full border border-[#cbb998] bg-[#f5ebda] px-2.5 py-0.5 text-[11px] text-[#5f6d52]">
+            <div className="rounded-full border border-[var(--bd-4)] bg-[var(--sf-3)] px-2.5 py-0.5 text-[11px] text-[var(--brand-sage)]">
               {documentCount} 篇
             </div>
             {/* Global parse progress capsule replaces page badge while generating */}
             {upload.generationProgress ? (
-              <div className="flex items-center gap-1.5 rounded-full border border-[#c9b07e] bg-[#fffbf0] px-3 py-0.5 shadow-sm">
+              <div className="flex items-center gap-1.5 rounded-full border border-[var(--bd-4)] bg-[var(--sf-1)] px-3 py-0.5 shadow-sm">
                 <span className="text-[10px] animate-pulse">✦</span>
-                <div className="relative h-1.5 w-20 overflow-hidden rounded-full bg-[#ede3cf]">
+                <div className="relative h-1.5 w-20 overflow-hidden rounded-full bg-[var(--sf-4)]">
                   <div
-                    className="absolute inset-y-0 left-0 w-full origin-left rounded-full bg-gradient-to-r from-[#c9a97a] to-[#8a9d76] transition-transform duration-500 ease-out"
+                    className="absolute inset-y-0 left-0 w-full origin-left rounded-full bg-gradient-to-r from-[var(--brand-amber)] to-[var(--brand-sage)] transition-transform duration-500 ease-out"
                     style={{ transform: `scaleX(${upload.generationProgress.current / upload.generationProgress.total})` }}
                   />
                 </div>
-                <span className="tabular-nums text-[10px] text-[#8c6c46]">
+                <span className="tabular-nums text-[10px] text-[var(--tx-5)]">
                   {upload.generationProgress.current}/{upload.generationProgress.total}
                 </span>
               </div>
             ) : (
-              <div className="rounded-full border border-[#d8bf94] bg-[#f7ecd6] px-2.5 py-0.5 text-[11px] text-[#8c6c46]">
+              <div className="rounded-full border border-[var(--bd-4)] bg-[var(--sf-3)] px-2.5 py-0.5 text-[11px] text-[var(--tx-5)]">
                 {currentSlide ? `P${currentSlide.page_num}/${pageCount || 0}` : "—"}
               </div>
             )}
-            <div className="max-w-[300px] truncate rounded-full border border-[#dbc9ae] bg-[#fffaf1] px-2.5 py-0.5 text-[11px] text-[#746452]">
+            <div className="max-w-[300px] truncate rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] px-2.5 py-0.5 text-[11px] text-[var(--tx-4)]">
               {statusText}
             </div>
           </div>
@@ -467,7 +274,7 @@ export default function Page() {
 
       <div className="relative z-10 flex min-h-0 flex-1 gap-4 overflow-hidden p-4 md:p-5">
         <aside
-          className={`min-h-0 shrink-0 overflow-hidden rounded-[28px] border border-[#d9c7ab] bg-[#f7f0e3]/95 shadow-[0_20px_50px_rgba(109,85,58,0.12)] backdrop-blur-xl transition-all duration-300 ${
+          className={`min-h-0 shrink-0 overflow-hidden rounded-[28px] border border-[var(--bd-1)] bg-[var(--sf-sidebar)] shadow-[var(--sh-panel)] backdrop-blur-xl transition-all duration-300 ${
             sidebarCollapsed ? "w-0 basis-0 min-w-0 p-0 border-0 opacity-0 pointer-events-none" : "w-[320px] basis-[320px]"
           }`}
         >
@@ -478,7 +285,6 @@ export default function Page() {
             generationProgress={upload.generationProgress}
             library={upload.library}
             loading={loading}
-            notePanelOpen={notePanelOpen}
             onAbortGeneration={upload.abortGeneration}
             onCreateFolder={(name) => upload.createFolder(name)}
             onDeleteDocument={handleDeleteDocument}
@@ -486,7 +292,6 @@ export default function Page() {
             onMoveDocument={upload.moveDocument}
             onRegenerateDocument={upload.regenerateDocumentExplanations}
             onSelectDocument={upload.loadDocument}
-            onToggleNotes={() => setNotePanelOpen((prev) => !prev)}
             onUpload={upload.handleUpload}
           />
         </aside>
@@ -494,13 +299,13 @@ export default function Page() {
         <section className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.92fr]">
             {/* Task 3: Processing animation for first upload */}
             {showProcessingAnimation ? (
-              <div className="flex h-full flex-col items-center justify-center rounded-[30px] border border-[#d9c7ab] bg-[linear-gradient(180deg,#fffaf2,#f6ebdb)] shadow-[0_28px_60px_rgba(122,98,66,0.12)]">
-                <svg className="mb-4 h-8 w-8 animate-spin text-[#9a7e63]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <div className="flex h-full flex-col items-center justify-center rounded-[30px] border border-[var(--bd-1)] bg-[var(--gd-processing)] shadow-[var(--sh-card)]">
+                <svg className="mb-4 h-8 w-8 animate-spin text-[var(--tx-5)]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                 </svg>
-                <p className="text-[15px] font-medium text-[#4b3d2f]">正在处理您的文档...</p>
-                <p className="mt-1 text-[13px] text-[#9a846a]">完成后将自动显示</p>
+                <p className="text-[15px] font-medium text-[var(--tx-2)]">正在处理您的文档...</p>
+                <p className="mt-1 text-[13px] text-[var(--tx-5)]">完成后将自动显示</p>
               </div>
             ) : (
             <ErrorBoundary resetKey={upload.documentId}>
@@ -545,28 +350,6 @@ export default function Page() {
                 }}
                 onGenerateExplanation={() => void handleGenerateCurrentSlideExplanation()}
                 onBatchGenerate={() => void handleBatchGenerate()}
-                onInsertToNotes={(text) => {
-                  if (!currentSlide || !currentDocumentName) return;
-                  const next = insertSelectionIntoNotebook({
-                    markdown: notesMarkdownRef.current,
-                    filename: currentDocumentName,
-                    pageNum: currentSlide.page_num,
-                    pageTitle: inferPageTitle({
-                      fallbackPageNum: currentSlide.page_num,
-                      explanationTitle: chat.explanationMeta?.title ?? null,
-                      extractTitle: currentSlide.extract?.title_candidates?.[0] ?? null,
-                    }),
-                    selectedText: text,
-                    sourceLabel: "当前页解析",
-                  });
-                  setNotePanelOpen(true);
-                  if (!next.inserted) {
-                    setGlobalStatus("该摘录已存在");
-                    return;
-                  }
-                  updateNotesMarkdown(next.markdown);
-                  setGlobalStatus("已加入笔记本");
-                }}
                 onJumpToSlide={handleJumpToSlide}
                 onModeChange={chat.setMode}
                 onSendChat={() => {
@@ -587,29 +370,13 @@ export default function Page() {
         onClose={() => setFlashcardReviewOpen(false)}
       />
 
-      <NotebookWindow
-        slides={upload.slides}
-        currentSlideIndex={currentSlideIndex}
+      <ExportNotesModal
         documentId={upload.documentId ?? ""}
-        disabled={!upload.documentId}
         documentName={currentDocumentName}
-        loading={loading || notebookSaving}
-        markdown={notesMarkdown}
-        onAIOrganize={() => void handleAutoGenerateNotes()}
-        onAIPolish={handleAIPolishNotes}
-        onChange={updateNotesMarkdown}
-        onCollapse={() => setNotePanelOpen(false)}
-        onExport={() => void handleExportNotes()}
-        onFormat={() => {
-          if (!currentDocumentName) return;
-          updateNotesMarkdown(formatNotebookMarkdown(notesMarkdownRef.current, currentDocumentName));
-          setGlobalStatus("笔记格式已整理");
-        }}
-        onViewModeChange={setNotebookViewMode}
-        open={notePanelOpen}
-        saveStateLabel={notebookSaveLabel}
-        viewMode={notebookViewMode}
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
       />
     </main>
+    </ThemeProvider>
   );
 }

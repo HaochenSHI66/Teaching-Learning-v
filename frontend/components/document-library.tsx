@@ -50,8 +50,6 @@ type DocumentLibraryProps = {
   backgroundProcessing: boolean;
   generationDocId: string | null;
   generationProgress: GenerationProgress;
-  notePanelOpen: boolean;
-  onToggleNotes: () => void;
   onUpload: (file: File, folderId?: string | null) => Promise<void>;
   onSelectDocument: (documentId: string) => Promise<void>;
   onDeleteDocument: (documentId: string, filename: string) => Promise<void>;
@@ -183,8 +181,8 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
         data-drag-state={resolvedDragState}
         className={`group relative flex flex-col rounded-[14px] border transition ${
           activeDocumentId === document.id
-            ? "border-[#cab384] bg-[linear-gradient(135deg,#fff8ec_0%,#f2e7d2_62%,#ece4d5_100%)] shadow-[0_4px_12px_rgba(122,98,66,0.10)]"
-            : "border-[#e0d1bc] bg-[#fffaf2] hover:border-[#cdb796] hover:bg-white"
+            ? "border-[var(--bd-4)] bg-[var(--gd-active-doc)] shadow-[var(--sh-sm)]"
+            : "border-[var(--bd-2)] bg-[var(--sf-1)] hover:border-[var(--bd-4)] hover:bg-[var(--sf-1)]"
         } ${
           isDragging || resolvedDragState === "source"
             ? "document-card-source opacity-50"
@@ -201,7 +199,7 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
               {...listeners}
               type="button"
               tabIndex={-1}
-              className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-transparent transition hover:text-[#b09a7e] group-hover:text-[#c4a97a] active:cursor-grabbing"
+              className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-transparent transition hover:text-[var(--tx-6)] group-hover:text-[var(--tx-6)] active:cursor-grabbing"
               aria-label="拖拽排序"
             >
               <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
@@ -222,7 +220,7 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
 
           {/* Filename */}
           <button
-            className="min-w-0 flex-1 truncate text-left text-[13px] text-[#463829]"
+            className="min-w-0 flex-1 truncate text-left text-[13px] text-[var(--tx-2)]"
             title={document.filename}
             onClick={() => void onSelectDocument(document.id)}
             type="button"
@@ -231,7 +229,7 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
           </button>
 
           {/* Page count */}
-          <span className="shrink-0 text-[11px] text-[#9a846a]">{document.page_count}p</span>
+          <span className="shrink-0 text-[11px] text-[var(--tx-5)]">{document.page_count}p</span>
 
           {/* Status dot */}
           {statusDot}
@@ -240,7 +238,7 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
           <div ref={menuRef} className="relative shrink-0">
             <button
               type="button"
-              className="flex h-6 w-6 items-center justify-center rounded text-[#b09a7e] transition hover:bg-[#f2e7d2] hover:text-[#5f4a33]"
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--tx-6)] transition hover:bg-[var(--sf-4)] hover:text-[var(--tx-3)]"
               onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
               aria-label="更多操作"
             >
@@ -252,17 +250,17 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-7 z-30 min-w-[136px] rounded-[14px] border border-[#e0d1bc] bg-[#fffaf2] py-1 shadow-[0_8px_24px_rgba(94,72,46,0.18)]">
+              <div className="absolute right-0 top-7 z-30 min-w-[136px] rounded-[14px] border border-[var(--bd-2)] bg-[var(--sf-1)] py-1 shadow-[var(--sh-popup)]">
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#463829] hover:bg-[#f2e7d2]"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--tx-2)] hover:bg-[var(--sf-4)]"
                   onClick={() => { setMenuOpen(false); void onSelectDocument(document.id); }}
                 >
                   打开 / 查看
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#463829] hover:bg-[#f2e7d2] disabled:opacity-40"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--tx-2)] hover:bg-[var(--sf-4)] disabled:opacity-40"
                   disabled={loading || document.status !== "ready"}
                   onClick={() => { setMenuOpen(false); void onRegenerateDocument(document.id); }}
                 >
@@ -270,15 +268,15 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#463829] hover:bg-[#f2e7d2]"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[var(--tx-2)] hover:bg-[var(--sf-4)]"
                   onClick={() => { setMenuOpen(false); setShowMovePicker(true); }}
                 >
                   移动到文件夹…
                 </button>
-                <div className="my-1 border-t border-[#ecdec8]" />
+                <div className="my-1 border-t border-[var(--bd-3)]" />
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#9a5e4e] hover:bg-[#f5e3dc]"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#9a5e4e] hover:bg-[var(--ac-red-bg)]"
                   disabled={loading}
                   onClick={() => { setMenuOpen(false); void onDeleteDocument(document.id, document.filename); }}
                 >
@@ -291,7 +289,7 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
 
         {/* Inline generation progress bar */}
         {(document.status === "processing" || isGeneratingThis) && (
-          <div className="border-t border-[#ecdec8] px-3 pb-2 pt-1.5">
+          <div className="border-t border-[var(--bd-3)] px-3 pb-2 pt-1.5">
             <ParseProgressBar
               current={isGeneratingThis ? (generationProgress?.current ?? 0) : 0}
               total={isGeneratingThis ? (generationProgress?.total ?? 0) : 0}
@@ -358,10 +356,10 @@ function FolderDropzone({
       data-drop-flash={isActiveDrop ? "true" : "false"}
       className={`document-dropzone rounded-[24px] border px-3 py-3 transition ${
         isOver
-          ? "document-dropzone-over border-[#b89b70] bg-[#fff8ee]"
+          ? "document-dropzone-over border-[var(--bd-4)] bg-[var(--sf-1)]"
           : isActiveDrop
-            ? "document-dropzone-flash border-[#c9a36c] bg-[#fff7e9]"
-            : "border-[#e1d2be] bg-[#fffaf3]"
+            ? "document-dropzone-flash border-[var(--bd-4)] bg-[var(--sf-1)]"
+            : "border-[var(--bd-2)] bg-[var(--sf-1)]"
       }`}
     >
       <div className={`flex items-center justify-between ${collapsed ? "" : "mb-3"}`}>
@@ -371,20 +369,20 @@ function FolderDropzone({
           type="button"
         >
           <svg
-            className={`h-3 w-3 shrink-0 text-[#8c765f] transition-transform duration-200 ${collapsed ? "-rotate-90" : ""}`}
+            className={`h-3 w-3 shrink-0 text-[var(--tx-4)] transition-transform duration-200 ${collapsed ? "-rotate-90" : ""}`}
             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
             strokeLinecap="round" strokeLinejoin="round"
           >
             <path d="M6 9l6 6 6-6" />
           </svg>
           <div>
-            <p className="text-sm font-semibold text-[#463829]">{name}</p>
-            <p className="text-[11px] text-[#8c765f]">{documents.length} 份文档</p>
+            <p className="text-sm font-semibold text-[var(--tx-2)]">{name}</p>
+            <p className="text-[11px] text-[var(--tx-4)]">{documents.length} 份文档</p>
           </div>
         </button>
         {folderId && onDeleteFolder && (
           <button
-            className="btn btn-outline !rounded-full !px-2.5 !py-1 text-[11px] !text-[#9a5e4e] hover:!border-[#d0a193] hover:!bg-[#f5e3dc]"
+            className="btn btn-outline !rounded-full !px-2.5 !py-1 text-[11px] !text-[#9a5e4e] hover:!border-[var(--ac-red-border)] hover:!bg-[var(--ac-red-bg)]"
             onClick={() => void onDeleteFolder(folderId, name)}
             type="button"
           >
@@ -418,10 +416,10 @@ function FolderShelfChip({
       data-drop-flash={isActiveDrop ? "true" : "false"}
       className={`document-folder-chip shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
         isOver
-          ? "document-folder-chip-over border-[#b38e5e] bg-[#f4e6cd] text-[#5f4a33]"
+          ? "document-folder-chip-over border-[var(--bd-4)] bg-[var(--sf-3)] text-[var(--tx-3)]"
           : isActiveDrop
-            ? "document-folder-chip-flash border-[#c39b5c] bg-[#f8ecd1] text-[#5f4a33]"
-            : "border-[#dcc9af] bg-[#fffaf2] text-[#7a6655]"
+            ? "document-folder-chip-flash border-[var(--bd-4)] bg-[var(--sf-3)] text-[var(--tx-3)]"
+            : "border-[var(--bd-1)] bg-[var(--sf-1)] text-[var(--tx-4)]"
       }`}
     >
       {name}
@@ -432,18 +430,18 @@ function FolderShelfChip({
 function DragPreviewCard({ document }: { document: FolderDocumentItem }) {
   return (
     <div
-      className="document-drag-overlay w-[280px] rounded-[24px] border border-[#cfb183] bg-[linear-gradient(145deg,#fffaf0_0%,#f5e8d0_100%)] p-3 shadow-[0_24px_50px_rgba(94,72,46,0.26)]"
+      className="document-drag-overlay w-[280px] rounded-[24px] border border-[var(--bd-4)] bg-[var(--gd-drag-overlay)] p-3 shadow-[var(--sh-panel)]"
       data-testid="document-drag-overlay"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-[#3f3125]">{document.filename}</p>
-          <div className="mt-2 flex items-center gap-2 text-[11px] text-[#7f6a58]">
-            <span className="rounded-full bg-[#f3e4cc] px-2 py-1">{document.page_count} 页</span>
-            <span className="rounded-full bg-[#e7efdf] px-2 py-1 text-[#607253]">{document.status}</span>
+          <p className="truncate text-sm font-semibold text-[var(--tx-1)]">{document.filename}</p>
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-[var(--tx-4)]">
+            <span className="rounded-full bg-[var(--sf-3)] px-2 py-1">{document.page_count} 页</span>
+            <span className="rounded-full bg-[var(--sf-4)] px-2 py-1 text-[#607253]">{document.status}</span>
           </div>
         </div>
-        <span className="rounded-full border border-[#ddc8aa] bg-white/70 px-2 py-1 text-[10px] font-medium text-[#8c7358]">
+        <span className="rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] px-2 py-1 text-[10px] font-medium text-[var(--tx-5)]">
           拖拽中
         </span>
       </div>
@@ -458,8 +456,6 @@ export function DocumentLibrary({
   backgroundProcessing,
   generationDocId,
   generationProgress,
-  notePanelOpen,
-  onToggleNotes,
   onUpload,
   onSelectDocument,
   onDeleteDocument,
@@ -632,11 +628,11 @@ export function DocumentLibrary({
         />
       </label>
 
-      <div className="mb-3 rounded-[18px] border border-[#e4d8c5] bg-[#fffdf8] p-2.5">
+      <div className="mb-3 rounded-[18px] border border-[var(--bd-2)] bg-[var(--sf-1)] p-2.5">
         {folderDraftOpen ? (
           <div className="flex flex-col gap-2">
             <input
-              className="rounded-[14px] border border-[#dac8ac] bg-white px-3 py-2 text-sm text-[#4f4030] outline-none focus:border-[#a88f69]"
+              className="rounded-[14px] border border-[var(--bd-1)] bg-[var(--sf-input)] px-3 py-2 text-sm text-[var(--tx-2)] outline-none focus:border-[var(--bd-4)]"
               onChange={(event) => setFolderName(event.target.value)}
               placeholder="文件夹名称"
               value={folderName}
@@ -665,7 +661,7 @@ export function DocumentLibrary({
       </div>
 
       <div className="mb-2 flex items-center justify-between gap-2 px-1">
-        <p className="shrink-0 text-xs font-medium uppercase tracking-[0.22em] text-[#9a846a]">文档库</p>
+        <p className="shrink-0 text-xs font-medium uppercase tracking-[0.22em] text-[var(--tx-5)]">文档库</p>
         <div className="flex items-center gap-1">
           {SORT_MODES.map((mode) => (
             <button
@@ -674,8 +670,8 @@ export function DocumentLibrary({
               onClick={() => setSortMode(mode)}
               className={`rounded-full px-2 py-0.5 text-[10px] transition ${
                 sortMode === mode
-                  ? "bg-[#e8d9c0] font-medium text-[#5f4a33]"
-                  : "text-[#9a846a] hover:bg-[#f0e6d6] hover:text-[#5f4a33]"
+                  ? "bg-[var(--sf-5)] font-medium text-[var(--tx-3)]"
+                  : "text-[var(--tx-5)] hover:bg-[var(--sf-3)] hover:text-[var(--tx-3)]"
               }`}
             >
               {mode === "manual" ? "手动" : mode === "name" ? "名称" : "时间"}
@@ -704,8 +700,8 @@ export function DocumentLibrary({
         </div>
 
         {activeDragDocument ? (
-          <div className="mb-3 rounded-[18px] border border-dashed border-[#d7bf96] bg-[#fff7ea] px-3 py-2 text-[11px] text-[#7a6655]">
-            正在拖动 <span className="font-semibold text-[#4f3c29]">{activeDragDocument.filename}</span>。
+          <div className="mb-3 rounded-[18px] border border-dashed border-[var(--bd-1)] bg-[var(--sf-1)] px-3 py-2 text-[11px] text-[var(--tx-4)]">
+            正在拖动 <span className="font-semibold text-[var(--tx-2)]">{activeDragDocument.filename}</span>。
             拖到上方文件夹标签或下方区域即可完成转移。
           </div>
         ) : null}
@@ -727,7 +723,7 @@ export function DocumentLibrary({
                 >
                   <div className="space-y-2">
                     {group.documents.length === 0 ? (
-                      <div className="rounded-[18px] border border-dashed border-[#dbc8ad] bg-[#fffdf8] px-3 py-4 text-xs text-[#8b7764]">
+                      <div className="rounded-[18px] border border-dashed border-[var(--bd-1)] bg-[var(--sf-1)] px-3 py-4 text-xs text-[var(--tx-5)]">
                         把文档拖到这里。
                       </div>
                     ) : (

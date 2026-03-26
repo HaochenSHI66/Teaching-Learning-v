@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 type SelectionPopupProps = {
   containerRef: React.RefObject<HTMLElement | null>;
-  onInsert: (text: string) => void;
+  onInsert?: (text: string) => void;
   onElaborate: (text: string) => void;
   disabled?: boolean;
 };
@@ -65,20 +65,24 @@ export function SelectionPopup({ containerRef, onInsert, onElaborate, disabled }
   return (
     <div
       ref={popupRef}
-      className="fixed z-50 flex items-center gap-1 rounded-xl border border-[#d9c7ab] bg-[#fffaf1] px-1.5 py-1 shadow-[0_4px_16px_rgba(109,85,58,0.18)]"
+      className="fixed z-50 flex items-center gap-1 rounded-xl border border-[var(--bd-1)] bg-[var(--sf-1)] px-1.5 py-1 shadow-[var(--sh-popup)]"
       style={{ left: popup.x, top: popup.y, transform: "translate(-50%, -100%)" }}
     >
+      {onInsert && (
+        <>
+          <button
+            className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-[var(--ac-green-text)] hover:bg-[var(--ac-green-hover-light)] transition-colors"
+            disabled={disabled}
+            onClick={() => { onInsert(popup.text); setPopup(null); }}
+            type="button"
+          >
+            摘录至笔记
+          </button>
+          <span className="h-3 w-px bg-[var(--bd-1)]" />
+        </>
+      )}
       <button
-        className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-[#607253] hover:bg-[#edf1e6] transition-colors"
-        disabled={disabled}
-        onClick={() => { onInsert(popup.text); setPopup(null); }}
-        type="button"
-      >
-        摘录至笔记
-      </button>
-      <span className="h-3 w-px bg-[#d9c7ab]" />
-      <button
-        className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-[#7290a6] hover:bg-[#eaf0f5] transition-colors"
+        className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-[var(--ac-blue-text)] hover:bg-[var(--ac-blue-hover)] transition-colors"
         disabled={disabled}
         onClick={() => { onElaborate(popup.text); setPopup(null); }}
         type="button"
