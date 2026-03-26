@@ -216,6 +216,9 @@ export type DocumentNotebook = {
   exists: boolean;
 };
 
+import { getToken } from "./auth";
+import { type AuthUser, setToken, setUser } from "./auth";
+
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 /** Network-layer failure (DNS, CORS, connection refused). */
@@ -243,7 +246,9 @@ async function request<T>(
   init?: RequestInit,
   options?: { timeoutMs?: number; retries?: number },
 ): Promise<T> {
-  const { timeoutMs = 30_000, retries = 1 } = options ?? {};
+  const { timeoutMs = 30_000, retries: requestedRetries = 1 } = options ?? {};
+  const method = (init?.method ?? "GET").toUpperCase();
+  const retries = method === "GET" ? requestedRetries : 0;
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -254,10 +259,16 @@ async function request<T>(
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+      const token = getToken();
+      const headers = new Headers(init?.headers);
+      if (token && !headers.has("Authorization")) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+
       const response = await fetch(`${apiBase}${path}`, {
         ...init,
         signal: controller.signal,
-        headers: { ...(init?.headers ?? {}) },
+        headers,
       });
       clearTimeout(timer);
 
@@ -417,6 +428,7 @@ export async function generateSlideExplanation(
     {
       method: "POST",
     },
+    { timeoutMs: 180_000 },
   );
 }
 
@@ -428,6 +440,7 @@ export async function generateDocumentExplanations(
     {
       method: "POST",
     },
+    { timeoutMs: 600_000 },
   );
 }
 
@@ -450,18 +463,22 @@ export async function askSlideQuestion(params: {
   slideId?: string;
   mode?: "slide" | "global";
 }): Promise<ChatPayload> {
-  return request<ChatPayload>("/api/v1/chat", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  return request<ChatPayload>(
+    "/api/v1/chat",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session_id: params.sessionId,
+        message: params.message,
+        slide_id: params.slideId,
+        mode: params.mode ?? "slide",
+      }),
     },
-    body: JSON.stringify({
-      session_id: params.sessionId,
-      message: params.message,
-      slide_id: params.slideId,
-      mode: params.mode ?? "slide",
-    }),
-  });
+    { timeoutMs: 120_000 },
+  );
 }
 
 export async function askRoiQuestion(params: {
@@ -470,18 +487,22 @@ export async function askRoiQuestion(params: {
   message: string;
   roi: RoiBox;
 }): Promise<RoiChatPayload> {
-  return request<RoiChatPayload>("/api/v1/chat/roi", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  return request<RoiChatPayload>(
+    "/api/v1/chat/roi",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session_id: params.sessionId,
+        slide_id: params.slideId,
+        message: params.message,
+        roi: params.roi,
+      }),
     },
-    body: JSON.stringify({
-      session_id: params.sessionId,
-      slide_id: params.slideId,
-      message: params.message,
-      roi: params.roi,
-    }),
-  });
+    { timeoutMs: 120_000 },
+  );
 }
 
 export async function generateQuiz(params: {
@@ -755,6 +776,7 @@ export type ConceptNode = {
   name: string;
   description: string;
   slide_ids: string[];
+  importance: number; // 1-5, default 3
 };
 
 export type ConceptEdge = {
@@ -848,4 +870,97 @@ export async function fetchConceptPrerequisites(
   return request<PrerequisiteChainPayload>(
     `/api/v1/knowledge-graph/${documentId}/concepts/${conceptId}/prerequisites`,
   );
+}
+
+// ── Auth ──────────────────────────────────────────────────────
+
+export async function loginApi(email: string, password: string): Promise<AuthUser> {
+  const data = await request<{ id: string; email: string; display_name: string; access_token: string }>("/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  setToken(data.access_token);
+  setUser({ id: data.id, email: data.email, display_name: data.display_name });
+  return { id: data.id, email: data.email, display_name: data.display_name };
+}
+
+export async function registerApi(email: string, password: string, displayName: string): Promise<AuthUser> {
+  const data = await request<{ id: string; email: string; display_name: string; access_token: string }>("/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, display_name: displayName }),
+  });
+  setToken(data.access_token);
+  setUser({ id: data.id, email: data.email, display_name: data.display_name });
+  return { id: data.id, email: data.email, display_name: data.display_name };
+}
+
+// ── Export Styled Notes ───────────────────────────────────────
+
+export type ExportNotesStyle = {
+  id: string;
+  name: string;
+  name_zh: string;
+  description: string;
+  color_primary: string;
+  color_accent: string;
+};
+
+export type ExportNotesRequest = {
+  style: string;
+  format: "html" | "pdf";
+  include_images: boolean;
+  include_explanations: boolean;
+  include_key_terms: boolean;
+  include_knowledge_map: boolean;
+  include_flashcards: boolean;
+};
+
+export async function fetchExportStyles(): Promise<ExportNotesStyle[]> {
+  const data = await request<{ styles: ExportNotesStyle[] }>(
+    "/api/v1/export-notes/styles",
+  );
+  return data.styles;
+}
+
+export async function previewExportNotes(
+  documentId: string,
+  options: ExportNotesRequest,
+): Promise<{ html: string; title: string; page_count: number; concept_count: number }> {
+  return request<{ html: string; title: string; page_count: number; concept_count: number }>(
+    `/api/v1/export-notes/${documentId}/preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    },
+    { timeoutMs: 120_000 },
+  );
+}
+
+export async function downloadExportNotes(
+  documentId: string,
+  options: ExportNotesRequest,
+): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${apiBase}/api/v1/export-notes/${documentId}/download`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(options),
+  });
+  if (!res.ok) throw new ServerError(await res.text() || `下载失败 (${res.status})`, res.status);
+  const blob = await res.blob();
+  const ext = options.format === "pdf" ? "pdf" : "html";
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `study-notes.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
