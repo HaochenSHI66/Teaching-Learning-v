@@ -1,0 +1,185 @@
+/* Clean Academic — Textbook feel with serif elegance */
+
+body.theme-clean-academic {
+    font-family: 'Noto Serif SC', 'Source Han Serif SC', Georgia, serif;
+    background: #fff;
+    color: #2d3748;
+}
+
+.cover {
+    page-break-after: always;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 90vh;
+    border-bottom: 4px double #1a365d;
+}
+.cover-inner { text-align: center; }
+.cover-title {
+    font-size: 2.4em;
+    color: #1a365d;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.3em;
+}
+.cover-subtitle {
+    font-size: 1.3em;
+    color: #4a5568;
+    margin-bottom: 1.5em;
+    font-style: italic;
+}
+.cover-meta {
+    display: flex;
+    gap: 1.5em;
+    justify-content: center;
+    font-size: 0.9em;
+    color: #718096;
+}
+
+.section-heading {
+    font-size: 1.5em;
+    color: #1a365d;
+    border-bottom: 2px solid #2b6cb0;
+    padding-bottom: 0.3em;
+    margin: 2em 0 1em;
+}
+.subsection-heading {
+    font-size: 1.1em;
+    color: #2b6cb0;
+    margin: 1.2em 0 0.5em;
+    font-weight: 600;
+}
+
+.summary-section { margin-bottom: 1.5em; }
+.summary-box {
+    background: #f7fafc;
+    border-left: 4px solid #2b6cb0;
+    padding: 1em 1.2em;
+    font-size: 0.95em;
+    line-height: 1.8;
+    color: #4a5568;
+}
+
+.toc-section { page-break-after: always; }
+.toc-list {
+    list-style: none;
+    padding: 0;
+}
+.toc-list li {
+    padding: 0.45em 0;
+    border-bottom: 1px dotted #cbd5e0;
+    display: flex;
+    align-items: center;
+    gap: 0.8em;
+}
+.toc-page {
+    display: inline-block;
+    min-width: 2.2em;
+    text-align: center;
+    font-weight: 700;
+    color: #2b6cb0;
+    font-size: 0.85em;
+}
+
+.slide-section {
+    page-break-inside: avoid;
+    margin-bottom: 2.5em;
+    padding-bottom: 1.5em;
+    border-bottom: 1px solid #e2e8f0;
+}
+.slide-header { display: flex; align-items: center; gap: 0.7em; margin-bottom: 0.8em; }
+.slide-badge {
+    background: #1a365d;
+    color: #fff;
+    font-size: 0.75em;
+    padding: 0.2em 0.6em;
+    border-radius: 3px;
+    font-weight: 700;
+}
+.slide-title { font-size: 1.25em; color: #1a365d; }
+.slide-image-wrap { margin: 1em 0; text-align: center; }
+.slide-image { max-height: 320px; border: 1px solid #e2e8f0; }
+
+.key-points ul { padding-left: 1.5em; }
+.key-points li { margin-bottom: 0.35em; }
+
+.explanation-content { font-size: 0.95em; line-height: 1.85; color: #4a5568; }
+
+.terms-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    margin: 0.8em 0;
+}
+.term-card {
+    background: #edf2f7;
+    padding: 0.3em 0.8em;
+    border-radius: 4px;
+    font-size: 0.88em;
+}
+.term-name { font-weight: 700; color: #1a365d; }
+.term-desc { color: #718096; margin-left: 0.4em; }
+.term-desc::before { content: "— "; }
+
+.formula-box {
+    background: #f7fafc;
+    border: 1px solid #cbd5e0;
+    padding: 0.6em 1em;
+    margin: 0.6em 0;
+    font-family: 'Cambria Math', 'Latin Modern Math', serif;
+    text-align: center;
+    font-size: 1.05em;
+}
+
+.knowledge-section { page-break-before: always; }
+.importance-group { margin-bottom: 1.5em; }
+.importance-label {
+    font-weight: 700;
+    color: #2b6cb0;
+    font-size: 1.05em;
+    margin-bottom: 0.5em;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 0.2em;
+}
+.concept-list { display: grid; gap: 0.8em; }
+.concept-card {
+    background: #f7fafc;
+    padding: 0.8em 1em;
+    border-left: 3px solid #2b6cb0;
+}
+.concept-name { font-weight: 700; color: #1a365d; margin-bottom: 0.2em; }
+.concept-desc { font-size: 0.92em; color: #4a5568; }
+.concept-relations { font-size: 0.82em; color: #718096; margin-top: 0.3em; font-style: italic; }
+
+.flashcard-section { page-break-before: always; }
+.flashcard-grid { display: grid; gap: 1em; }
+.flashcard {
+    border: 1px solid #cbd5e0;
+    padding: 1em;
+    page-break-inside: avoid;
+}
+.fc-front { margin-bottom: 0.6em; }
+.fc-back { color: #4a5568; border-top: 1px dashed #cbd5e0; padding-top: 0.6em; }
+.fc-label {
+    display: inline-block;
+    width: 1.6em;
+    height: 1.6em;
+    line-height: 1.6em;
+    text-align: center;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 0.8em;
+    margin-right: 0.5em;
+    vertical-align: middle;
+}
+.fc-front .fc-label { background: #2b6cb0; color: #fff; }
+.fc-back .fc-label { background: #e2e8f0; color: #2b6cb0; }
+
+.notes-footer {
+    margin-top: 3em;
+    text-align: center;
+    font-size: 0.8em;
+    color: #a0aec0;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 0.8em;
+}
