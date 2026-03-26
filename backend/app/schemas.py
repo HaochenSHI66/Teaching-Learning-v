@@ -466,6 +466,7 @@ class ConceptRead(BaseModel):
     name: str
     description: str
     slide_ids: list[str]
+    importance: int = 3
 
 
 class ConceptRelationRead(BaseModel):
@@ -503,3 +504,35 @@ class PrerequisiteChainResponse(BaseModel):
     document_id: str
     concept_id: str
     chain: list[ConceptRead]
+
+
+# ── Export Styled Notes ────────────────────────────────────────
+
+class ExportNotesRequest(BaseModel):
+    style: str = "modern-minimal"
+    format: str = "html"
+    include_images: bool = True
+    include_explanations: bool = True
+    include_key_terms: bool = True
+    include_knowledge_map: bool = True
+    include_flashcards: bool = True
+
+
+class ExportNotesStyle(BaseModel):
+    id: str
+    name: str
+    name_zh: str
+    description: str
+    color_primary: str
+    color_accent: str
+
+
+class ExportNotesStylesResponse(BaseModel):
+    styles: list[ExportNotesStyle]
+
+
+class ExportNotesPreviewResponse(BaseModel):
+    html: str
+    title: str
+    page_count: int
+    concept_count: int
