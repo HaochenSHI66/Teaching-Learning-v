@@ -183,13 +183,15 @@ extension WebViewWindow: WKNavigationDelegate {
         let port = url.port
 
         // Allow our services: frontend (3000) and backend static (8000)
-        if host == "127.0.0.1" && (port == 3000 || port == 8000) {
+        // Accept both 127.0.0.1 and localhost
+        let isLocal = (host == "127.0.0.1" || host == "localhost")
+        if isLocal && (port == 3000 || port == 8000 || port == nil) {
             decisionHandler(.allow)
             return
         }
 
-        // Allow about: scheme (initial empty page)
-        if url.scheme == "about" {
+        // Allow about: and blob: schemes (initial empty page, file downloads)
+        if url.scheme == "about" || url.scheme == "blob" {
             decisionHandler(.allow)
             return
         }
@@ -217,6 +219,20 @@ extension WebViewWindow: WKNavigationDelegate {
 // MARK: - WKUIDelegate (file upload + JS dialogs)
 
 extension WebViewWindow: WKUIDelegate {
+
+    // Handle target="_blank" links — load in same webview instead of opening Safari
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        // Load the URL in the existing webview instead of opening a new window
+        if let url = navigationAction.request.url {
+            webView.load(URLRequest(url: url))
+        }
+        return nil
+    }
 
     // File picker
     func webView(
