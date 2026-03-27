@@ -10,6 +10,7 @@ import { FlashcardReview } from "@/components/flashcard-review";
 import { SlideViewer } from "@/components/slide-viewer";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { UserButton } from "@/components/user-button";
 import { useChat } from "@/hooks/useChat";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { useSlideGeneration } from "@/hooks/useSlideGeneration";
@@ -29,6 +30,8 @@ export default function Page() {
   const upload = useUpload();
   const chat = useChat();
   const { setExplanation, setExplanationMeta } = chat;
+  const explanationRef = useRef(chat.explanation);
+  useEffect(() => { explanationRef.current = chat.explanation; }, [chat.explanation]);
 
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [roi, setRoi] = useState<RoiBox | null>(null);
@@ -57,8 +60,11 @@ export default function Page() {
   const {
     slideGenerationLoading,
     setSlideGenerationLoading,
+    generationProgress: slideGenerationProgress,
+    batchProgress,
     handleGenerateCurrentSlideExplanation,
     handleBatchGenerate,
+    abortBatchGeneration,
   } = useSlideGeneration({
     documentId: upload.documentId,
     slides: upload.slides,
@@ -122,17 +128,19 @@ export default function Page() {
       setGlobalStatus("请先选定页面");
       return;
     }
+    const sessionId = upload.sessionId;
     setSlideGenerationLoading(true);
     setGlobalStatus("深入解析中…");
     try {
       const response = await askSlideQuestion({
-        sessionId: upload.sessionId,
+        sessionId,
         message: `请对以下选中内容进行深入、详细的学术解析（约150～300字），结果补充至当前解析末尾：\n\n${text}`,
         slideId: currentSlide.id,
         mode: "slide",
       });
       const elaboration = `\n\n---\n\n**补充解析**\n\n${response.answer}`;
-      setExplanation(chat.explanation ? `${chat.explanation}${elaboration}` : response.answer);
+      const currentExplanation = explanationRef.current;
+      setExplanation(currentExplanation ? `${currentExplanation}${elaboration}` : response.answer);
       setExplanationMeta(null);
       setGlobalStatus("已追加至解析");
     } catch (error) {
@@ -171,7 +179,7 @@ export default function Page() {
   return (
     <ThemeProvider>
     <main className="relative flex h-screen min-h-screen flex-col overflow-hidden">
-      <header className="relative z-10 shrink-0 border-b border-[var(--bd-1)] bg-[var(--sf-header)] backdrop-blur-xl">
+      <header className="relative z-10 shrink-0 overflow-visible border-b border-[var(--bd-1)] bg-[var(--sf-header)] backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3 px-4 py-2 md:px-5">
           <div className="flex items-center gap-2">
             {interactiveReady ? (
@@ -268,11 +276,58 @@ export default function Page() {
             <div className="max-w-[300px] truncate rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] px-2.5 py-0.5 text-[11px] text-[var(--tx-4)]">
               {statusText}
             </div>
+            <UserButton />
           </div>
         </div>
       </header>
 
-      <div className="relative z-10 flex min-h-0 flex-1 gap-4 overflow-hidden p-4 md:p-5">
+      {/* Batch generation progress banner */}
+      {batchProgress && (
+        <div className="relative z-10 shrink-0 border-b border-[var(--bd-2)] bg-[var(--sf-2)] px-4 py-2 shadow-sm md:px-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 text-[13px] text-[var(--tx-3)]">
+              <span className="text-[14px]" aria-hidden="true">{batchProgress.isRunning ? "\u26A1" : "\u2714"}</span>
+              <span className="font-medium">
+                {batchProgress.isRunning ? "批量生成中" : "批量生成完成"}
+              </span>
+              <span className="tabular-nums text-[var(--tx-4)]">
+                {batchProgress.completed}/{batchProgress.total} 页完成
+                {batchProgress.failed > 0 && (
+                  <span className="ml-1 text-[var(--ac-red-text)]">({batchProgress.failed} 失败)</span>
+                )}
+              </span>
+              {batchProgress.isRunning && batchProgress.currentPages.length > 0 && (
+                <>
+                  <span className="text-[var(--tx-6)]">|</span>
+                  <span className="text-[12px] text-[var(--tx-5)]">
+                    正在处理: {batchProgress.currentPages.map((p) => `P${p}`).join(", ")}
+                  </span>
+                </>
+              )}
+            </div>
+            {batchProgress.isRunning && (
+              <button
+                className="rounded-lg border border-[var(--bd-2)] bg-[var(--sf-1)] px-2.5 py-1 text-[12px] font-medium text-[var(--tx-4)] transition-colors hover:bg-[var(--sf-3)]"
+                onClick={abortBatchGeneration}
+                type="button"
+              >
+                停止
+              </button>
+            )}
+          </div>
+          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--sf-4)]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[var(--brand-sage)] to-[var(--brand-amber)] transition-all duration-500 ease-out"
+              style={{ width: `${batchProgress.total > 0 ? Math.round((batchProgress.completed / batchProgress.total) * 100) : 0}%` }}
+            />
+          </div>
+          <p className="mt-0.5 text-right text-[11px] tabular-nums text-[var(--tx-6)]">
+            {batchProgress.total > 0 ? Math.round((batchProgress.completed / batchProgress.total) * 100) : 0}%
+          </p>
+        </div>
+      )}
+
+      <div className="relative flex min-h-0 flex-1 gap-4 overflow-hidden p-4 md:p-5">
         <aside
           className={`min-h-0 shrink-0 overflow-hidden rounded-[28px] border border-[var(--bd-1)] bg-[var(--sf-sidebar)] shadow-[var(--sh-panel)] backdrop-blur-xl transition-all duration-300 ${
             sidebarCollapsed ? "w-0 basis-0 min-w-0 p-0 border-0 opacity-0 pointer-events-none" : "w-[320px] basis-[320px]"
@@ -326,6 +381,7 @@ export default function Page() {
             )}
             <ErrorBoundary resetKey={upload.documentId}>
               <AIPanel
+                batchProgress={batchProgress}
                 chatInput={chat.chatInput}
                 chatMessages={chat.chatMessages}
                 currentSlideId={currentSlide?.id}
@@ -336,6 +392,7 @@ export default function Page() {
                 extraction={currentSlide?.extract ?? null}
                 explanation={chat.explanation}
                 explanationMeta={chat.explanationMeta}
+                generationProgress={slideGenerationProgress ?? null}
                 loading={loading}
                 mode={chat.mode}
                 onChatInputChange={chat.setChatInput}

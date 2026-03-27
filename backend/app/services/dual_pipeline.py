@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -23,12 +24,16 @@ _CONTEXT_WINDOW = 3
 
 # Singleton engine for context fetching (avoid creating one per page)
 _context_engine = None
+_context_engine_lock = threading.Lock()
 
 
 def _get_context_engine():
     global _context_engine
     if _context_engine is None:
-        _context_engine = create_db_engine(get_database_url())
+        with _context_engine_lock:
+            # Double-checked locking
+            if _context_engine is None:
+                _context_engine = create_db_engine(get_database_url())
     return _context_engine
 
 
@@ -63,7 +68,11 @@ def _fetch_previous_context(document_id: str, page_num: int) -> str:
         lines = []
         for row_page, meta_raw in sorted(rows, key=lambda r: r[0]):
             if isinstance(meta_raw, str):
-                meta = json.loads(meta_raw) if meta_raw else {}
+                try:
+                    meta = json.loads(meta_raw) if meta_raw else {}
+                except json.JSONDecodeError:
+                    logger.warning("Malformed meta JSON for page %d, skipping", row_page)
+                    meta = {}
             elif isinstance(meta_raw, dict):
                 meta = meta_raw
             else:

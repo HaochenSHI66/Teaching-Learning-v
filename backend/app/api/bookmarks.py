@@ -3,8 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.models import Document, Slide, SlideBookmark
+from app.api.deps import get_db_session, require_document_owner
+from app.auth import get_current_user
+from app.models import Document, Slide, SlideBookmark, User
 from app.schemas import (
     BookmarkCreateRequest,
     BookmarkDeleteResponse,
@@ -38,9 +39,10 @@ def _serialize_bookmark(bm: SlideBookmark) -> BookmarkRead:
 def list_bookmarks(
     document_id: str,
     tag: str | None = None,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> BookmarkListResponse:
-    _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
     query = select(SlideBookmark).where(SlideBookmark.document_id == document_id)
     if tag:
         query = query.where(SlideBookmark.tag == tag)
@@ -55,11 +57,13 @@ def list_bookmarks(
 @router.post("", response_model=BookmarkRead)
 def create_bookmark(
     payload: BookmarkCreateRequest,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> BookmarkRead:
     slide = session.get(Slide, payload.slide_id)
     if not slide:
         raise HTTPException(status_code=404, detail="Slide not found")
+    require_document_owner(slide.document_id, current_user.id, session)
 
     # Check duplicate (same slide + same tag)
     existing = session.exec(
@@ -86,11 +90,13 @@ def create_bookmark(
 @router.delete("/{bookmark_id}", response_model=BookmarkDeleteResponse)
 def delete_bookmark(
     bookmark_id: str,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> BookmarkDeleteResponse:
     bookmark = session.get(SlideBookmark, bookmark_id)
     if not bookmark:
         raise HTTPException(status_code=404, detail="Bookmark not found")
+    require_document_owner(bookmark.document_id, current_user.id, session)
     session.delete(bookmark)
     session.commit()
     return BookmarkDeleteResponse(id=bookmark_id, deleted=True)

@@ -1,0 +1,215 @@
+{
+  "project": "Teaching-Learning",
+  "branchName": "ralph/chat-redesign",
+  "description": "Chat system redesign - multi-turn conversation, streaming SSE, Chinese retrieval, question routing, separate chat engine",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create chat-specific system prompt",
+      "description": "As a developer, I need a dedicated chat prompt template so the model responds as a conversational tutor, not a lecturer.",
+      "acceptanceCriteria": [
+        "New file app/services/chat_prompts.py exists",
+        "Contains build_chat_system_prompt(slide_context, explanation_summary) returning a system message string",
+        "Prompt instructs conversational tutor behavior: concise answers, reference prior context, no full re-explanation",
+        "Prompt includes placeholders for slide extracted text and cached explanation summary",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Add multi-turn message support to ModelGateway",
+      "description": "As a developer, I need ModelGateway to accept a full messages array instead of only single user messages.",
+      "acceptanceCriteria": [
+        "New method ModelGateway.chat_completion(messages: list[dict]) accepts system/user/assistant message array",
+        "Supports OpenAI-compatible format: messages array passed directly",
+        "Supports Anthropic format: system message extracted to top-level 'system' field",
+        "Logs token usage via existing _log_usage method",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Create ChatEngine service",
+      "description": "As a developer, I need a dedicated chat engine that assembles conversation context and invokes the model.",
+      "acceptanceCriteria": [
+        "New file app/services/chat_engine.py exists",
+        "Function generate_chat_response(conversation_history, slide_context, slide_image_path, question, cached_explanation) returns answer string",
+        "Assembles messages: system prompt + last 8 conversation messages + current question",
+        "Injects cached SlideExplanation.markdown (first 500 chars) as context in system prompt",
+        "Falls back to template response if no model configured",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Rewrite chat endpoint to use ChatEngine",
+      "description": "As a user, I want my follow-up questions to reference previous conversation.",
+      "acceptanceCriteria": [
+        "POST /api/v1/chat queries last 10 Messages for the session from database before calling model",
+        "Passes conversation history to ChatEngine.generate_chat_response()",
+        "No longer calls generate_slide_explanation() for chat",
+        "User message and assistant response still saved to Message table",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Fix global mode to use AI",
+      "description": "As a user, I want global mode chat to use AI instead of returning a hardcoded template.",
+      "acceptanceCriteria": [
+        "When no matching slide found, ChatEngine generates AI response using document-level context",
+        "System prompt includes document title and summary of slide explanations",
+        "Hardcoded template string removed from chat.py",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Fix Chinese text retrieval",
+      "description": "As a user, I want to ask questions in Chinese and have the system find relevant slides.",
+      "acceptanceCriteria": [
+        "retrieval.py _tokenize() extracts Chinese character bigrams alongside ASCII tokens",
+        "Query '什么是互斥锁' matches a slide containing '互斥锁' in extracted text",
+        "English queries still work (existing behavior preserved)",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Add SSE streaming to ModelGateway",
+      "description": "As a developer, I need ModelGateway to support streaming responses.",
+      "acceptanceCriteria": [
+        "New method ModelGateway.stream_chat_completion(messages) yields string chunks",
+        "Uses httpx streaming with stream=true in payload for OpenAI-compatible API",
+        "Parses SSE data lines and yields choices[0].delta.content",
+        "Handles [DONE] terminator",
+        "Logs total usage after stream completes",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Add SSE streaming chat endpoint",
+      "description": "As a user, I want to see the tutor's response appear word by word.",
+      "acceptanceCriteria": [
+        "New endpoint POST /api/v1/chat/stream returns text/event-stream SSE response",
+        "Each SSE event: {delta: 'text chunk'}",
+        "Final event: {done: true, answer: 'full text'}",
+        "Full response saved to Message table after stream completes",
+        "sse-starlette package added to requirements",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Frontend SSE chat integration",
+      "description": "As a user, I want the chat panel to show streaming text as it arrives.",
+      "acceptanceCriteria": [
+        "api.ts has streamChatResponse(params) using fetch ReadableStream",
+        "Chat panel component calls streaming endpoint and appends chunks to displayed message",
+        "Shows typing indicator while streaming",
+        "Falls back to non-streaming endpoint if SSE connection fails",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Inject cached explanations as chat context",
+      "description": "As a developer, I want chat to reference pre-generated slide explanations.",
+      "acceptanceCriteria": [
+        "ChatEngine queries SlideExplanation for current slide before calling model",
+        "If explanation exists, first 800 chars included in system prompt as context",
+        "Model instructed to reference this context rather than re-explaining",
+        "Chat works without explanation (just without extra context)",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Conversation context window management",
+      "description": "As a developer, I need to manage conversation length to stay within token budgets.",
+      "acceptanceCriteria": [
+        "ChatEngine limits conversation history to last 8 messages (4 turns)",
+        "Total estimated input tokens logged for monitoring",
+        "If history exceeds 6000 tokens, oldest messages trimmed first",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Question type classification and routing",
+      "description": "As a developer, I want to classify questions to adjust response style.",
+      "acceptanceCriteria": [
+        "New function classify_question(text) returns: clarification, deep_dive, comparison, verification, or meta",
+        "Uses keyword matching only (no LLM call): '什么意思/为什么' → clarification, '展开讲/详细' → deep_dive, '和第X页/区别' → comparison",
+        "Classification appended to system prompt as style instruction",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Cross-slide comparison support",
+      "description": "As a user, I want to ask about relationships between different slides.",
+      "acceptanceCriteria": [
+        "When question type is 'comparison' and mentions page numbers, ChatEngine fetches context from multiple slides",
+        "Both slides' extracted text and explanation summaries injected as context",
+        "System prompt instructs comparative analysis",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "ROI chat with conversation history",
+      "description": "As a user, I want ROI region chat to support follow-up questions.",
+      "acceptanceCriteria": [
+        "ROI endpoint /api/v1/chat/roi queries conversation history like main chat endpoint",
+        "Previous messages about same ROI region included as context",
+        "Uses ChatEngine instead of generate_roi_explanation() for response",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": ""
+    }
+  ]
+}

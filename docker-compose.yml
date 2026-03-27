@@ -4,10 +4,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: teaching
-      POSTGRES_PASSWORD: teaching_pass
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: teaching_learning
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -25,7 +23,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       # PostgreSQL (default)
-      - DATABASE_URL=postgresql://teaching:teaching_pass@postgres:5432/teaching_learning
+      - DATABASE_URL=postgresql://teaching:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/teaching_learning
       # To use SQLite instead, comment the line above and uncomment below:
       # - DATABASE_URL=sqlite:///./storage/app.db
     depends_on:

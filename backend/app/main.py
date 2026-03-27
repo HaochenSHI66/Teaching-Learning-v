@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -70,15 +70,18 @@ def create_app(
             stacklevel=2,
         )
         allow_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # Starlette applies middleware in reverse add order — last added = outermost.
+    # RequestLoggingMiddleware must be added first so CORSMiddleware wraps it
+    # and injects CORS headers on all responses, including errors.
+    app.add_middleware(RequestLoggingMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allow_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept"],
     )
-
-    app.add_middleware(RequestLoggingMiddleware)
 
     app.include_router(account_router)
     app.include_router(auth_router)
@@ -101,8 +104,16 @@ def create_app(
     init_db(engine)
 
     @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health_check(request: Request):
+        db_ok = True
+        try:
+            from sqlmodel import Session, text
+            engine = request.app.state.engine
+            with Session(engine) as session:
+                session.exec(text("SELECT 1"))
+        except Exception:
+            db_ok = False
+        return {"status": "ok" if db_ok else "degraded", "db": "connected" if db_ok else "disconnected"}
 
     app.mount("/storage", StaticFiles(directory=app.state.storage_dir), name="storage")
 

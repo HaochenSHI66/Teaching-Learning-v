@@ -130,6 +130,12 @@ export function useUpload(): UploadState & UploadActions {
   const [generationDocId, setGenerationDocId] = useState<string | null>(null);
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
   const abortRef = useRef(false);
+  /** Abort controller for background upload polling. */
+  const pollAbortRef = useRef<AbortController | null>(null);
+  /** Tracks the document ID that hydrateDocument's auto-generation is working on. */
+  const autoGenDocRef = useRef<string | null>(null);
+  /** Ref that always holds the current documentId for stale-closure checks. */
+  const documentIdRef = useRef<string | null>(null);
   /** Track document IDs that have already been auto-generated to avoid repeating. */
   const autoGenDoneRef = useRef<Set<string>>(new Set());
 
@@ -137,13 +143,18 @@ export function useUpload(): UploadState & UploadActions {
     void refreshDocuments();
   }, []);
 
+  // Keep documentIdRef in sync for stale-closure checks in fire-and-forget async blocks.
+  useEffect(() => {
+    documentIdRef.current = documentId;
+  }, [documentId]);
+
   async function refreshDocuments() {
     try {
       const nextLibrary = await fetchFolderLibrary();
       setLibrary(nextLibrary);
       setDocuments(flattenLibrary(nextLibrary));
-    } catch {
-      // ignore silent refresh errors
+    } catch (err) {
+      console.error("[useUpload] refreshDocuments failed:", err);
     }
   }
 
@@ -174,17 +185,22 @@ export function useUpload(): UploadState & UploadActions {
         .filter((s) => !explanationMap.has(s.id));
 
       if (slidesToGenerate.length > 0) {
+        autoGenDocRef.current = targetDocumentId;
         // Fire sequentially in background — don't block UI
         void (async () => {
           for (const slide of slidesToGenerate) {
+            if (autoGenDocRef.current !== targetDocumentId) return;
+            if (documentIdRef.current !== targetDocumentId) return;
             try {
               const result = await generateSlideExplanation(targetDocumentId, slide.id);
+              if (autoGenDocRef.current !== targetDocumentId) return;
+              if (documentIdRef.current !== targetDocumentId) return;
               setCachedExplanations((prev) => ({ ...prev, [slide.id]: result }));
               setSlides((prev) =>
                 prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
               );
-            } catch {
-              // Silently skip individual failures
+            } catch (err) {
+              console.error(`[useUpload] auto-gen slide ${slide.id} failed:`, err);
             }
           }
         })();
@@ -193,6 +209,9 @@ export function useUpload(): UploadState & UploadActions {
   }
 
   async function loadDocument(targetDocumentId: string) {
+    // Cancel any in-flight background poll from a previous upload.
+    pollAbortRef.current?.abort();
+    autoGenDocRef.current = null;
     setStatusText("正在加载文档...");
     try {
       const status = await fetchDocumentStatus(targetDocumentId);
@@ -235,20 +254,28 @@ export function useUpload(): UploadState & UploadActions {
       await refreshDocuments();
       setStatusText("文件已上传，后台处理中，可继续使用其他文档…");
 
+      // Cancel any previous background poll.
+      pollAbortRef.current?.abort();
+      const controller = new AbortController();
+      pollAbortRef.current = controller;
+
       // Poll in the background — does NOT block foreground interactions.
       void (async () => {
         try {
           await pollDocumentReady(uploaded.document.id, (progress) => {
+            if (controller.signal.aborted) return;
             if (progress.status === "processing") {
               setStatusText(`后台处理中（${progress.page_count} 页已完成）…`);
             }
-          });
+          }, controller.signal);
           await refreshDocuments();
           setStatusText("新文档处理完成，可在文档库中点击查看。");
-        } catch {
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
           setStatusText("新文档处理超时或失败，请重新上传。");
         } finally {
           setBackgroundProcessing(false);
+          if (pollAbortRef.current === controller) pollAbortRef.current = null;
         }
       })();
     } catch (error) {
@@ -259,6 +286,8 @@ export function useUpload(): UploadState & UploadActions {
   }
 
   async function deleteDocument(targetDocumentId: string) {
+    // Cancel any in-flight background poll before deleting.
+    pollAbortRef.current?.abort();
     setLoading(true);
     setStatusText("正在删除文档...");
 
@@ -381,8 +410,8 @@ export function useUpload(): UploadState & UploadActions {
             setSlides((prev) =>
               prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
             );
-          } catch {
-            // Single page failure won't abort the whole batch
+          } catch (err) {
+            console.error(`[useUpload] regenerate slide ${slide.id} failed:`, err);
             completedRef.value++;
             setGenerationProgress({ current: completedRef.value, total });
             setSlides((prev) =>

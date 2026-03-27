@@ -37,10 +37,13 @@ def _save_thumbnail(source: Path, destination: Path, max_width: int = 320) -> tu
 
 def _save_thumbnail_from_pixmap(pixmap: "fitz.Pixmap", destination: Path, max_width: int = 320) -> tuple[int, int]:
     image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
-    width, height = image.size
-    image.thumbnail((max_width, max_width * 8))
-    image.save(destination, format="PNG", compress_level=1)
-    return width, height
+    try:
+        width, height = image.size
+        image.thumbnail((max_width, max_width * 8))
+        image.save(destination, format="PNG", compress_level=1)
+        return width, height
+    finally:
+        image.close()
 
 
 def _normalize_bbox(bbox: tuple[float, float, float, float] | list[float]) -> list[float]:
@@ -137,7 +140,11 @@ def _save_figure_previews(
                 continue
 
             preview_file = extracts_dir / f"slide_{page_num:03d}_figure_{index:02d}.png"
-            image.crop(crop_box).save(preview_file, format="PNG")
+            cropped = image.crop(crop_box)
+            try:
+                cropped.save(preview_file, format="PNG")
+            finally:
+                cropped.close()
             figure["preview_image_path"] = preview_file.relative_to(output_dir).as_posix()
 
 
@@ -284,9 +291,11 @@ def _render_pdf(pdf_path: Path, output_dir: Path, render_scale: float = 2.0) -> 
             slide_file = slides_dir / f"slide_{page_index:03d}.png"
             # compress_level=1: fastest PNG write (~3x faster than default level 6)
             pil_image.save(slide_file, format="PNG", compress_level=1)
+            pil_image.close()
 
             thumb_file = thumbs_dir / f"thumb_{page_index:03d}.png"
             width, height = _save_thumbnail_from_pixmap(pixmap, thumb_file)
+            del pixmap
             extracted_text, extract_payload = _extract_pdf_payload(
                 page=page,
                 slide_file=slide_file,

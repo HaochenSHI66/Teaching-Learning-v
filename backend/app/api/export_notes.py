@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlmodel import Session
 
-from app.api.deps import get_db_session
+from app.api.deps import get_db_session, require_document_owner
+from app.auth import get_current_user
+from app.models import User
 from app.schemas import (
     ExportNotesPreviewResponse,
     ExportNotesRequest,
@@ -17,8 +19,6 @@ from app.schemas import (
 )
 from app.services.notes_renderer import (
     STYLE_META,
-    VALID_STYLES,
-    _generate_study_summary,
     gather_export_data,
     render_notes_html,
     render_notes_pdf,
@@ -43,41 +43,28 @@ def preview_notes(
     body: ExportNotesRequest,
     request: Request,
     db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Generate HTML preview of the styled notes."""
-    storage_dir = str(getattr(request.app.state, "storage_dir", "./storage"))
-    base_url = str(request.base_url).rstrip("/")
-
+    require_document_owner(document_id, current_user.id, db)
     data = gather_export_data(
-        db=db,
-        document_id=document_id,
+        db,
+        document_id,
         include_images=body.include_images,
         include_explanations=body.include_explanations,
         include_key_terms=body.include_key_terms,
         include_knowledge_map=body.include_knowledge_map,
         include_flashcards=body.include_flashcards,
-        storage_dir=storage_dir,
     )
 
-    summary = _generate_study_summary(
-        title=data["title"],
-        slides_data=data["slides"],
-        concepts=data["concepts"],
-        relations=data["relations"],
-    )
-
-    html = render_notes_html(
-        data=data,
-        style=body.style,
-        study_summary=summary,
-        base_url=base_url,
-    )
+    base_url = str(request.base_url).rstrip("/")
+    html = render_notes_html(data, style=body.style, base_url=base_url)
 
     return ExportNotesPreviewResponse(
         html=html,
         title=data["title"],
-        page_count=data["total_slides"],
-        concept_count=data["total_concepts"],
+        page_count=data.get("page_count", 0),
+        concept_count=data.get("concept_count", 0),
     )
 
 
@@ -87,40 +74,26 @@ def download_notes(
     body: ExportNotesRequest,
     request: Request,
     db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Generate and download the styled notes as PDF or HTML file."""
-    storage_dir = str(getattr(request.app.state, "storage_dir", "./storage"))
-    base_url = str(request.base_url).rstrip("/")
-
+    require_document_owner(document_id, current_user.id, db)
     data = gather_export_data(
-        db=db,
-        document_id=document_id,
+        db,
+        document_id,
         include_images=body.include_images,
         include_explanations=body.include_explanations,
         include_key_terms=body.include_key_terms,
         include_knowledge_map=body.include_knowledge_map,
         include_flashcards=body.include_flashcards,
-        storage_dir=storage_dir,
     )
 
-    summary = _generate_study_summary(
-        title=data["title"],
-        slides_data=data["slides"],
-        concepts=data["concepts"],
-        relations=data["relations"],
-    )
-
-    html = render_notes_html(
-        data=data,
-        style=body.style,
-        study_summary=summary,
-        base_url=base_url,
-    )
-
+    base_url = str(request.base_url).rstrip("/")
+    html = render_notes_html(data, style=body.style, base_url=base_url)
     title = data["title"]
 
     if body.format == "pdf":
-        pdf_bytes = render_notes_pdf(html=html, base_url=base_url)
+        pdf_bytes = render_notes_pdf(html)
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",

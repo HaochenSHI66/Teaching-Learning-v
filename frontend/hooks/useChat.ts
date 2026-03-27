@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { askRoiQuestion, askSlideQuestion, type RoiBox, type Slide, type SlideExplanation } from "@/lib/api";
 
@@ -10,11 +10,6 @@ export type ChatMessage = {
   content: string;
   slideId?: string;
 };
-
-let _counter = 0;
-function nextId() {
-  return `msg-${Date.now()}-${++_counter}`;
-}
 
 type ChatState = {
   chatMessages: ChatMessage[];
@@ -46,12 +41,30 @@ export function useChat(): ChatState & ChatActions {
   const [statusText, setStatusText] = useState("");
   const [mode, setMode] = useState<"slide" | "global">("slide");
 
+  const abortRef = useRef<AbortController | null>(null);
+  const msgIdRef = useRef(0);
+  function nextId() {
+    return `msg-${++msgIdRef.current}-${crypto.randomUUID()}`;
+  }
+
+  // Abort pending request on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   const ask = useCallback(
     async (message: string, sessionId: string, slide?: Slide) => {
       const question = message.trim();
       if (!question) return;
 
-      const slideId = mode === "slide" ? slide?.id : undefined;
+      // Abort any in-flight request before starting a new one
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const slideId = slide?.id;
 
       setLoading(true);
       setStatusText("AI 正在生成回答...");
@@ -70,6 +83,8 @@ export function useChat(): ChatState & ChatActions {
         ]);
         setStatusText(response.degraded ? "回答完成（降级模式）" : "回答完成");
       } catch (error) {
+        // If this request was aborted (superseded), don't update UI
+        if (controller.signal.aborted) return;
         const msg = error instanceof Error ? error.message : "未知错误";
         setChatMessages((prev) => [
           ...prev,
@@ -77,7 +92,9 @@ export function useChat(): ChatState & ChatActions {
         ]);
         setStatusText(`提问失败：${msg}`);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     },
     [mode],

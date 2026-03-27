@@ -67,6 +67,19 @@ export function ExportNotesModal({
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const overlayRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Abort in-flight requests when modal closes or component unmounts
+  useEffect(() => {
+    if (!open && abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, [open]);
 
   // ── Load styles on mount ──────────────────────────────────
   useEffect(() => {
@@ -120,10 +133,14 @@ export function ExportNotesModal({
 
   // ── Generate preview ──────────────────────────────────────
   async function handleGeneratePreview() {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setPhase("generating");
     setErrorMsg("");
     try {
       const result = await previewExportNotes(documentId, buildRequest("html"));
+      if (controller.signal.aborted) return;
       setPreviewHtml(result.html);
       setPreviewMeta({
         title: result.title,
@@ -132,6 +149,7 @@ export function ExportNotesModal({
       });
       setPhase("preview");
     } catch (err) {
+      if (controller.signal.aborted) return;
       setErrorMsg(err instanceof Error ? err.message : "生成预览失败");
       setPhase("error");
     }
@@ -139,12 +157,17 @@ export function ExportNotesModal({
 
   // ── Download ──────────────────────────────────────────────
   async function handleDownload(format: "html" | "pdf") {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setPhase("downloading");
     setErrorMsg("");
     try {
       await downloadExportNotes(documentId, buildRequest(format));
+      if (controller.signal.aborted) return;
       setPhase("preview");
     } catch (err) {
+      if (controller.signal.aborted) return;
       setErrorMsg(err instanceof Error ? err.message : "下载失败");
       setPhase("error");
     }

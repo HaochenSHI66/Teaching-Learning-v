@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import base64
+import io
+import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
-
-import logging
 
 import httpx
 import re
@@ -160,6 +161,109 @@ class ModelGateway:
             "temperature": float(os.getenv("MODEL_TEMPERATURE", "0.2")),
         }
 
+    def chat_completion(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Multi-turn chat completion with a full messages array.
+
+        Accepts [{"role": "system", "content": "..."}, {"role": "user", ...}, ...].
+        """
+        temp = temperature if temperature is not None else float(os.getenv("MODEL_TEMPERATURE", "0.2"))
+
+        if self._is_anthropic:
+            # Anthropic: system goes in top-level field, not in messages
+            system_text = ""
+            chat_messages = []
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_text += msg["content"] + "\n"
+                else:
+                    chat_messages.append(msg)
+            payload: dict[str, Any] = {
+                "model": self.model,
+                "messages": chat_messages,
+                "temperature": temp,
+                "max_tokens": max_tokens or 4096,
+            }
+            if system_text.strip():
+                payload["system"] = system_text.strip()
+        else:
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temp,
+            }
+            if max_tokens:
+                payload["max_tokens"] = max_tokens
+
+        return self._post_chat_completion(payload)
+
+    def stream_chat_completion(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ):
+        """Streaming multi-turn chat. Yields string chunks.
+
+        Only supports OpenAI-compatible API (not Anthropic) for now.
+        """
+        if not self.is_configured():
+            raise RuntimeError("Model gateway is not configured")
+
+        temp = temperature if temperature is not None else float(os.getenv("MODEL_TEMPERATURE", "0.2"))
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temp,
+            "stream": True,
+        }
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+
+        full_output_parts: list[str] = []
+        with httpx.stream(
+            "POST",
+            f"{self.base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=self.timeout,
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[len("data: "):]
+                if data_str.strip() == "[DONE]":
+                    break
+                try:
+                    import json as _json
+                    chunk = _json.loads(data_str)
+                    delta = (chunk.get("choices") or [{}])[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        full_output_parts.append(content)
+                        yield content
+                except (json.JSONDecodeError, KeyError) as exc:
+                    logger.debug("Skipping malformed SSE chunk: %s", exc)
+                    continue
+                except Exception:
+                    raise
+
+        full_output = "".join(full_output_parts)
+        if full_output:
+            # Build a minimal payload for logging
+            log_payload: dict[str, Any] = {"model": self.model, "messages": messages}
+            self._log_usage(log_payload, full_output)
+
     def _extract_input_text(self, payload: dict[str, Any]) -> str:
         """Extract text portions from the payload for token estimation."""
         parts: list[str] = []
@@ -263,15 +367,16 @@ class ModelGateway:
     def _image_to_data_url(self, image_path: Path, max_width: int = 1500) -> str:
         """Convert image to base64 data URL, resizing if wider than max_width."""
         from PIL import Image
-        import io
-
-        img = Image.open(image_path)
-        if img.width > max_width:
-            ratio = max_width / img.width
-            new_size = (max_width, int(img.height * ratio))
-            img = img.resize(new_size, Image.LANCZOS)
 
         buf = io.BytesIO()
-        img.save(buf, format="PNG", optimize=True)
-        encoded = base64.b64encode(buf.getvalue()).decode("ascii")
-        return f"data:image/png;base64,{encoded}"
+        try:
+            with Image.open(image_path) as img:
+                if img.width > max_width:
+                    ratio = max_width / img.width
+                    new_size = (max_width, int(img.height * ratio))
+                    img = img.resize(new_size, Image.LANCZOS)
+                img.save(buf, format="PNG", optimize=True)
+            encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+            return f"data:image/png;base64,{encoded}"
+        finally:
+            buf.close()

@@ -5,7 +5,7 @@ import os
 import threading
 from typing import Any
 
-from sqlmodel import Session, create_engine
+from sqlmodel import Session
 
 from app.models import LLMUsage
 
@@ -23,6 +23,10 @@ _DEFAULT_COST_TABLE: dict[str, tuple[float, float]] = {
     "qwen-vl-max": (3.0, 9.0),
     "qwen-turbo": (0.3, 0.6),
 }
+
+# Module-level shared engine (created once, reused across persist calls)
+_shared_engine = None
+_shared_engine_lock = threading.Lock()
 
 
 def estimate_tokens(text: str) -> int:
@@ -63,11 +67,14 @@ def log_usage(
 
     def _persist() -> None:
         try:
-            db_url = database_url or os.getenv("DATABASE_URL", "sqlite:///./storage/app.db")
-            # Import here to avoid circular imports at module level
-            from app.db import create_db_engine
-            engine = create_db_engine(db_url)
-            with Session(engine) as session:
+            global _shared_engine
+            if _shared_engine is None:
+                with _shared_engine_lock:
+                    if _shared_engine is None:
+                        db_url = database_url or os.getenv("DATABASE_URL", "sqlite:///./storage/app.db")
+                        from app.db import create_db_engine
+                        _shared_engine = create_db_engine(db_url)
+            with Session(_shared_engine) as session:
                 usage = LLMUsage(
                     user_id=user_id,
                     model=model,
@@ -81,5 +88,5 @@ def log_usage(
         except Exception as exc:
             logger.warning("Failed to log LLM usage: %s", exc)
 
-    thread = threading.Thread(target=_persist, daemon=True)
+    thread = threading.Thread(target=_persist, daemon=False)
     thread.start()

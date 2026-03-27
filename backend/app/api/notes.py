@@ -3,8 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.models import LearningSession, Message, Slide, SlideExplanation
+from app.api.deps import get_db_session, require_session_owner
+from app.auth import get_current_user
+from app.models import LearningSession, Message, Slide, SlideExplanation, User
 from app.schemas import NotesAutoGenerateRequest, NotesExportRequest, NotesExportResponse
 from app.services.explanation_engine import (
     CURRENT_EXPLANATION_VERSION,
@@ -30,8 +31,10 @@ def _current_explanations_only(items: list[SlideExplanation]) -> list[SlideExpla
 @router.post("/export", response_model=NotesExportResponse)
 def export_notes_markdown(
     payload: NotesExportRequest,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> NotesExportResponse:
+    require_session_owner(payload.session_id, current_user.id, session)
     learning_session = session.get(LearningSession, payload.session_id)
     if not learning_session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -59,8 +62,10 @@ def export_notes_markdown(
 @router.post("/autogen", response_model=NotesExportResponse)
 def autogen_notes_from_cached_explanations(
     payload: NotesAutoGenerateRequest,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> NotesExportResponse:
+    require_session_owner(payload.session_id, current_user.id, session)
     learning_session = session.get(LearningSession, payload.session_id)
     if not learning_session:
         raise HTTPException(status_code=404, detail="Session not found")

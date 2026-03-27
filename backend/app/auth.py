@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import secrets
+import warnings
 from datetime import datetime, timezone, timedelta
 
 import jwt
@@ -9,7 +11,15 @@ from sqlmodel import Session
 
 from app.models import User
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+if not JWT_SECRET:
+    warnings.warn(
+        "JWT_SECRET is not set! Using random secret (tokens won't survive restarts).",
+        stacklevel=2,
+    )
+    if os.getenv("ENVIRONMENT") == "production" and not os.getenv("JWT_SECRET"):
+        raise RuntimeError("JWT_SECRET must be set in production environment")
+    JWT_SECRET = secrets.token_hex(32)
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_DAYS = 7
 

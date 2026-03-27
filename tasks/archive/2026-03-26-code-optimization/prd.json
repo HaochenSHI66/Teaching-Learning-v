@@ -1,0 +1,133 @@
+{
+  "project": "Teaching-Learning",
+  "branchName": "ralph/code-optimization-bug-fixes",
+  "description": "Code optimization and bug fixes - security user-scoping, CORS ordering, race conditions, page limit fix, automated tests",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add user-scoping to list_documents endpoint",
+      "description": "As a user, I want to only see my own documents so that other users cannot view my files.",
+      "acceptanceCriteria": [
+        "list_documents endpoint accepts current_user via get_optional_user dependency",
+        "When authenticated, filters Document.user_id == current_user.id",
+        "When unauthenticated, returns only documents with user_id IS NULL",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Add user-scoping to delete_document endpoint",
+      "description": "As a user, I want to ensure only I can delete my own documents so that my files are protected from other users.",
+      "acceptanceCriteria": [
+        "delete_document endpoint accepts current_user via get_optional_user dependency",
+        "Returns 403 if document.user_id != current_user.id (and document has a user_id)",
+        "Unauthenticated users can only delete documents with user_id IS NULL",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add user-scoping to document detail endpoints",
+      "description": "As a user, I want document detail endpoints to verify ownership so that other users cannot access my document content.",
+      "acceptanceCriteria": [
+        "get_document_status, list_document_slides, list_document_explanations verify document.user_id matches current user",
+        "Returns 404 (not 403) when document belongs to another user (prevents enumeration)",
+        "Unauthenticated access still works for documents with user_id IS NULL",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Fix CORS middleware ordering",
+      "description": "As a developer, I need CORS headers to be properly injected on all responses so that the frontend can handle errors correctly.",
+      "acceptanceCriteria": [
+        "In main.py, swap middleware order: add RequestLoggingMiddleware first, then CORSMiddleware (Starlette applies in reverse, so CORS becomes outermost)",
+        "CORS headers appear on 4xx/5xx error responses from cross-origin requests",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Fix check_monthly_page_limit to count pages not rows",
+      "description": "As a developer, I need the monthly page limit to count actual pages processed, not LLMUsage rows.",
+      "acceptanceCriteria": [
+        "Check LLMUsage model for page_count field; if absent, sum Document.page_count for user's documents created this month",
+        "check_monthly_page_limit returns accurate page count",
+        "get_usage_stats returns consistent page count",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Need to check LLMUsage model schema first to determine approach"
+    },
+    {
+      "id": "US-006",
+      "title": "Cancel background polling when document changes",
+      "description": "As a user, I want background polling to stop when I switch documents so stale updates don't overwrite my current view.",
+      "acceptanceCriteria": [
+        "handleUpload stores an AbortController ref for the background polling IIFE",
+        "loadDocument cancels any active background poll before starting",
+        "pollDocumentReady in api.ts accepts an optional AbortSignal parameter and threads it to fetch",
+        "Switching documents during upload polling does not cause stale setStatusText calls",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Fix auto-generation race condition in hydrateDocument",
+      "description": "As a developer, I need the fire-and-forget auto-generation to be cancellable so switching documents doesn't cause stale state updates.",
+      "acceptanceCriteria": [
+        "Auto-generation IIFE uses a ref to track current document ID",
+        "setCachedExplanations and setSlides calls check if documentId still matches before updating",
+        "Loading a different document aborts any in-flight auto-generation for the previous document",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Write backend API tests for document endpoints",
+      "description": "As a developer, I want automated tests for document CRUD endpoints so that regressions are caught early.",
+      "acceptanceCriteria": [
+        "Test file tests/test_documents_api.py exists in backend directory",
+        "Tests cover: upload (success + size limit), list (user-scoped filtering), delete (owner + non-owner rejection), status polling",
+        "Tests use a test database (SQLite in-memory or temp file)",
+        "All tests pass"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Write Playwright E2E tests for critical UI flows",
+      "description": "As a developer, I want automated E2E tests covering login, upload, and document viewing so UI regressions are caught.",
+      "acceptanceCriteria": [
+        "Test script covers: login page render, login flow, document list, theme toggle, user dropdown",
+        "Tests run headless with Playwright Chromium",
+        "Screenshots saved to /tmp/webapp_tests for debugging",
+        "All tests pass"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Existing test script at /tmp/test_webapp.py can be used as base"
+    }
+  ]
+}

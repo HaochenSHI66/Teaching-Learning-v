@@ -7,8 +7,9 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.models import Document, Flashcard, LearningSession, ReviewItem, Slide, SlideExplanation
+from app.api.deps import get_db_session, require_document_owner
+from app.auth import get_current_user
+from app.models import Document, Flashcard, LearningSession, ReviewItem, Slide, SlideExplanation, User
 from app.schemas import (
     FlashcardBatchGenerateResponse,
     FlashcardCreateRequest,
@@ -96,8 +97,9 @@ def _create_review_items(db: Session, flashcards: list[Flashcard], session_id: s
 def list_flashcards(
     document_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> FlashcardListResponse:
-    _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
     cards = session.exec(
         select(Flashcard)
         .where(Flashcard.document_id == document_id)
@@ -115,10 +117,12 @@ def list_flashcards(
 def create_flashcard(
     payload: FlashcardCreateRequest,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> FlashcardRead:
     slide = session.get(Slide, payload.slide_id)
     if not slide:
         raise HTTPException(status_code=404, detail="Slide not found")
+    require_document_owner(slide.document_id, current_user.id, session)
 
     fc = Flashcard(
         document_id=slide.document_id,
@@ -144,10 +148,12 @@ def create_flashcard(
 def delete_flashcard(
     flashcard_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> FlashcardDeleteResponse:
     fc = session.get(Flashcard, flashcard_id)
     if not fc:
         raise HTTPException(status_code=404, detail="Flashcard not found")
+    require_document_owner(fc.document_id, current_user.id, session)
     # Also remove linked review items
     review_items = session.exec(
         select(ReviewItem).where(ReviewItem.source_ref == f"flashcard:{flashcard_id}")
@@ -165,10 +171,12 @@ def delete_flashcard(
 def generate_flashcards(
     slide_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> FlashcardGenerateResponse:
     slide = session.get(Slide, slide_id)
     if not slide:
         raise HTTPException(status_code=404, detail="Slide not found")
+    require_document_owner(slide.document_id, current_user.id, session)
 
     explanation = session.exec(
         select(SlideExplanation).where(SlideExplanation.slide_id == slide_id)
@@ -224,8 +232,9 @@ def generate_flashcards(
 def generate_all_flashcards(
     document_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> FlashcardBatchGenerateResponse:
-    _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
 
     # Find slides that already have auto flashcards
     existing_slide_ids = set()
@@ -293,8 +302,9 @@ def generate_all_flashcards(
 def flashcard_stats(
     document_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> FlashcardStatsResponse:
-    _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
 
     cards = session.exec(
         select(Flashcard).where(Flashcard.document_id == document_id)

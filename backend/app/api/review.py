@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.models import LearningSession, ReviewItem
+from app.api.deps import get_db_session, require_session_owner
+from app.auth import get_current_user
+from app.models import LearningSession, ReviewItem, User
 from app.schemas import ReviewCompleteResponse, ReviewItemRead, ReviewQueueResponse
 from app.services.sm2 import SM2State, sm2_next
 
@@ -21,10 +22,9 @@ def get_review_queue(
     session_id: str,
     limit: int = 20,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> ReviewQueueResponse:
-    learning_session = session.get(LearningSession, session_id)
-    if not learning_session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    require_session_owner(session_id, current_user.id, session)
 
     query = (
         select(ReviewItem)
@@ -60,10 +60,12 @@ def complete_review_item(
     review_id: str,
     payload: ReviewCompleteRequest = ReviewCompleteRequest(),
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> ReviewCompleteResponse:
     item = session.get(ReviewItem, review_id)
     if not item:
         raise HTTPException(status_code=404, detail="Review item not found")
+    require_session_owner(item.session_id, current_user.id, session)
 
     state = SM2State(
         repetitions=item.repetitions,

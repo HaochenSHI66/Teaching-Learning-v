@@ -5,8 +5,9 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.models import LearningSession, Quiz, QuizAttempt, ReviewItem, Slide, SlideExtract
+from app.api.deps import get_db_session, require_session_owner
+from app.auth import get_current_user
+from app.models import LearningSession, Quiz, QuizAttempt, ReviewItem, Slide, SlideExtract, User
 from app.schemas import (
     QuizGenerateRequest,
     QuizGenerateResponse,
@@ -24,7 +25,9 @@ router = APIRouter(prefix="/api/v1/quizzes", tags=["quizzes"])
 def generate_slide_quiz(
     payload: QuizGenerateRequest,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> QuizGenerateResponse:
+    require_session_owner(payload.session_id, current_user.id, session)
     learning_session = session.get(LearningSession, payload.session_id)
     if not learning_session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -66,10 +69,12 @@ def grade_slide_quiz(
     quiz_id: str,
     payload: QuizGradeRequest,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> QuizGradeResponse:
     quiz = session.get(Quiz, quiz_id)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
+    require_session_owner(quiz.session_id, current_user.id, session)
 
     score, total, feedback, results = grade_quiz(answer_key=quiz.answer_key, answers=payload.answers)
 

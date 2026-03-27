@@ -279,6 +279,13 @@ async function request<T>(
           lastError = new ServerError(text || `服务器错误 (${response.status})`, response.status);
           continue;
         }
+        // 401 — token expired, auto logout
+        if (response.status === 401 && typeof window !== "undefined" && !path.includes("/auth/")) {
+          const { clearAuth } = await import("./auth");
+          clearAuth();
+          window.location.href = "/login";
+          throw new Error("登录已过期，请重新登录");
+        }
         // 4xx — not retryable
         throw new Error(text || `请求失败 (${response.status})`);
       }
@@ -384,17 +391,22 @@ export async function deleteDocument(documentId: string): Promise<{ id: string; 
 export async function pollDocumentReady(
   documentId: string,
   onProgress?: (status: DocumentStatus) => void,
+  signal?: AbortSignal,
 ): Promise<DocumentStatus> {
   const INTERVAL_MS = 1500;
   const MAX_ATTEMPTS = 120;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new DOMException("Polling aborted", "AbortError");
     const status = await fetchDocumentStatus(documentId);
     onProgress?.(status);
     if (status.status === "ready" || status.status === "error") {
       return status;
     }
-    await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, INTERVAL_MS);
+      signal?.addEventListener("abort", () => { clearTimeout(timer); resolve(undefined); }, { once: true });
+    });
   }
   throw new Error("Document processing timed out");
 }
@@ -479,6 +491,88 @@ export async function askSlideQuestion(params: {
     },
     { timeoutMs: 120_000 },
   );
+}
+
+/** Streaming chat via SSE. Calls onChunk for each token, returns full answer. */
+export async function streamChatResponse(params: {
+  sessionId: string;
+  message: string;
+  slideId?: string;
+  mode?: "slide" | "global";
+  onChunk?: (text: string) => void;
+  signal?: AbortSignal;
+}): Promise<ChatPayload> {
+  const token = getToken();
+  const response = await fetch(`${apiBase}/api/v1/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      session_id: params.sessionId,
+      message: params.message,
+      slide_id: params.slideId,
+      mode: params.mode ?? "slide",
+    }),
+    signal: params.signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `请求失败 (${response.status})`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let fullAnswer = "";
+  let buffer = "";
+
+  try {
+    while (true) {
+      if (params.signal?.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+        try {
+          const data = JSON.parse(jsonStr);
+          if (data.delta) {
+            params.onChunk?.(data.delta);
+            fullAnswer += data.delta;
+          }
+          if (data.done && data.answer) {
+            fullAnswer = data.answer;
+          }
+          if (data.error) {
+            throw new Error(data.error);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== jsonStr) throw e;
+        }
+      }
+    }
+  } catch (err) {
+    // Release the reader lock before re-throwing
+    reader.cancel().catch(() => {});
+    throw err;
+  }
+
+  return {
+    answer: fullAnswer,
+    used_slide_ids: [],
+    degraded: false,
+    follow_ups: ["能再详细说说吗", "给我举个例子", "这个和前一页有什么关系"],
+  };
 }
 
 export async function askRoiQuestion(params: {
@@ -875,25 +969,25 @@ export async function fetchConceptPrerequisites(
 // ── Auth ──────────────────────────────────────────────────────
 
 export async function loginApi(email: string, password: string): Promise<AuthUser> {
-  const data = await request<{ id: string; email: string; display_name: string; access_token: string }>("/login", {
+  const data = await request<{ token: string; user: { id: string; email: string; display_name: string } }>("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
-  setToken(data.access_token);
-  setUser({ id: data.id, email: data.email, display_name: data.display_name });
-  return { id: data.id, email: data.email, display_name: data.display_name };
+  setToken(data.token);
+  setUser({ id: data.user.id, email: data.user.email, display_name: data.user.display_name });
+  return { id: data.user.id, email: data.user.email, display_name: data.user.display_name };
 }
 
 export async function registerApi(email: string, password: string, displayName: string): Promise<AuthUser> {
-  const data = await request<{ id: string; email: string; display_name: string; access_token: string }>("/register", {
+  const data = await request<{ token: string; user: { id: string; email: string; display_name: string } }>("/api/v1/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, display_name: displayName }),
   });
-  setToken(data.access_token);
-  setUser({ id: data.id, email: data.email, display_name: data.display_name });
-  return { id: data.id, email: data.email, display_name: data.display_name };
+  setToken(data.token);
+  setUser({ id: data.user.id, email: data.user.email, display_name: data.user.display_name });
+  return { id: data.user.id, email: data.user.email, display_name: data.user.display_name };
 }
 
 // ── Export Styled Notes ───────────────────────────────────────

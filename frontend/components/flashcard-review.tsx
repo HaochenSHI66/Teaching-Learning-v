@@ -148,14 +148,14 @@ export function FlashcardReview({
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, phase, flipped, submitting, currentIndex]);
+  }, [open, phase, flipped, submitting, currentIndex, cards]);
 
   // ── Rate handler ─────────────────────────────────────────
 
   async function handleRate(quality: number) {
     if (submitting || phase !== "reviewing") return;
+    if (!cards[currentIndex]) return;
     const card = cards[currentIndex];
-    if (!card) return;
 
     setSubmitting(true);
     try {
@@ -209,21 +209,21 @@ export function FlashcardReview({
       aria-modal="true"
       aria-label="闪卡复习"
     >
-      <div className="w-[420px] max-w-[92vw] rounded-[20px] border border-[#e0d1bc] bg-[#fffaf2] shadow-[0_24px_60px_rgba(94,72,46,0.22)]">
+      <div className="w-[420px] max-w-[92vw] rounded-[20px] border border-[var(--bd-2)] bg-[var(--sf-1)] shadow-[var(--sh-panel)]">
         {/* ── Header ─────────────────────────────────────── */}
-        <div className="flex items-center justify-between border-b border-[#ecdec8] px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-[var(--bd-3)] px-5 py-3.5">
           <div className="flex items-center gap-2">
             <span className="text-base">🃏</span>
-            <h2 className="text-sm font-semibold text-[#3f3125]">闪卡复习</h2>
+            <h2 className="text-sm font-semibold text-[var(--tx-1)]">闪卡复习</h2>
             {phase === "reviewing" && cards.length > 0 && (
-              <span className="ml-1 text-xs text-[#8c765f]">
+              <span className="ml-1 text-xs text-[var(--tx-5)]">
                 {currentIndex + 1} / {cards.length}
               </span>
             )}
           </div>
           <button
             type="button"
-            className="flex h-7 w-7 items-center justify-center rounded-full text-[#8c765f] transition hover:bg-[#f2e7d2] hover:text-[#5f4a33]"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--tx-5)] transition hover:bg-[var(--sf-3)] hover:text-[var(--tx-3)]"
             onClick={onClose}
             aria-label="关闭"
           >
@@ -241,7 +241,7 @@ export function FlashcardReview({
         {/* ── Progress bar ───────────────────────────────── */}
         {(phase === "reviewing" || phase === "summary") && (
           <div className="px-5 pt-3">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#ecdec8]">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--bd-3)]">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-[#6f8c68] to-[#7f8763] transition-all duration-300 ease-out"
                 style={{ width: `${progress}%` }}
@@ -278,8 +278,8 @@ export function FlashcardReview({
 function LoadingView() {
   return (
     <div className="flex flex-col items-center justify-center py-10">
-      <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#ecdec8] border-t-[#a07844]" />
-      <p className="mt-3 text-sm text-[#8c765f]">正在加载复习卡片…</p>
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--bd-3)] border-t-[var(--bd-4)]" />
+      <p className="mt-3 text-sm text-[var(--tx-5)]">正在加载复习卡片…</p>
     </div>
   );
 }
@@ -303,8 +303,8 @@ function EmptyView() {
   return (
     <div className="flex flex-col items-center justify-center py-10">
       <span className="text-3xl">✨</span>
-      <p className="mt-3 text-sm font-medium text-[#3f3125]">暂无待复习卡片</p>
-      <p className="mt-1 text-xs text-[#8c765f]">所有卡片都已复习完毕，稍后再来</p>
+      <p className="mt-3 text-sm font-medium text-[var(--tx-1)]">暂无待复习卡片</p>
+      <p className="mt-1 text-xs text-[var(--tx-5)]">所有卡片都已复习完毕，稍后再来</p>
     </div>
   );
 }
@@ -327,17 +327,17 @@ function CardView({
       {/* Card area with flip */}
       <div className="perspective-[800px]">
         <div
-          className={`relative min-h-[160px] rounded-[16px] border border-[#e0d1bc] bg-[#fbf6ed] p-5 shadow-[0_8px_24px_rgba(94,72,46,0.08)] transition-transform duration-500 ${
+          className={`relative min-h-[160px] rounded-[16px] border border-[var(--bd-2)] bg-[var(--sf-2)] p-5 shadow-[var(--sh-sm)] transition-transform duration-500 ${
             flipped ? "[transform:rotateX(0deg)]" : ""
           }`}
           style={{ transformStyle: "preserve-3d" }}
         >
           {/* Front */}
           <div className="flex flex-col gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#b09a7e]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--tx-6)]">
               {flipped ? "答案" : "问题"}
             </span>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#3f3125]">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--tx-1)]">
               {flipped ? card.back : card.front}
             </p>
           </div>
@@ -356,7 +356,7 @@ function CardView({
         </button>
       ) : (
         <div className="flex flex-col gap-2">
-          <p className="text-center text-[10px] text-[#8c765f]">你觉得这道题如何？</p>
+          <p className="text-center text-[10px] text-[var(--tx-5)]">你觉得这道题如何？</p>
           <div className="flex items-center justify-center gap-2">
             {QUALITY_OPTIONS.map((opt, idx) => (
               <button
@@ -387,7 +387,7 @@ function SummaryView({
   return (
     <div className="flex flex-col items-center py-6">
       <span className="text-3xl">🎉</span>
-      <p className="mt-3 text-base font-semibold text-[#3f3125]">复习完成</p>
+      <p className="mt-3 text-base font-semibold text-[var(--tx-1)]">复习完成</p>
 
       <div className="mt-4 grid w-full max-w-[280px] grid-cols-3 gap-3 text-center">
         <StatCell label="总计" value={String(stats.total)} />
@@ -416,15 +416,15 @@ function StatCell({
   accent?: boolean;
 }) {
   return (
-    <div className="rounded-[12px] border border-[#ecdec8] bg-[#fbf6ed] px-2 py-2.5">
+    <div className="rounded-[12px] border border-[var(--bd-3)] bg-[var(--sf-2)] px-2 py-2.5">
       <p
         className={`text-lg font-bold ${
-          accent ? "text-[#6f8c68]" : "text-[#3f3125]"
+          accent ? "text-[#6f8c68]" : "text-[var(--tx-1)]"
         }`}
       >
         {value}
       </p>
-      <p className="mt-0.5 text-[10px] text-[#8c765f]">{label}</p>
+      <p className="mt-0.5 text-[10px] text-[var(--tx-5)]">{label}</p>
     </div>
   );
 }

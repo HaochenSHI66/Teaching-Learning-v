@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.models import Document, DocumentNotebook, SlideExplanation
+from app.api.deps import get_db_session, require_document_owner
+from app.auth import get_current_user
+from app.models import Document, DocumentNotebook, SlideExplanation, User
 from app.schemas import (
     DocumentNotebookAutoGenerateRequest,
     DocumentNotebookExportResponse,
@@ -128,8 +129,10 @@ def _persist_notebook(
 @router.get("/{document_id}", response_model=DocumentNotebookRead)
 def get_document_notebook(
     document_id: str,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> DocumentNotebookRead:
+    require_document_owner(document_id, current_user.id, session)
     document = _get_document_or_404(session, document_id)
     notebook = _get_notebook(session, document_id)
     if not notebook:
@@ -151,8 +154,10 @@ def get_document_notebook(
 def save_document_notebook(
     document_id: str,
     payload: DocumentNotebookSaveRequest,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> DocumentNotebookRead:
+    require_document_owner(document_id, current_user.id, session)
     document = _get_document_or_404(session, document_id)
     notebook = _persist_notebook(
         session=session,
@@ -171,8 +176,10 @@ def save_document_notebook(
 def autogen_document_notebook(
     document_id: str,
     payload: DocumentNotebookAutoGenerateRequest,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> DocumentNotebookRead:
+    require_document_owner(document_id, current_user.id, session)
     document = _get_document_or_404(session, document_id)
     explanations = session.exec(
         select(SlideExplanation)
@@ -204,8 +211,10 @@ def autogen_document_notebook(
 @router.post("/{document_id}/export", response_model=DocumentNotebookExportResponse)
 def export_document_notebook(
     document_id: str,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> DocumentNotebookExportResponse:
+    require_document_owner(document_id, current_user.id, session)
     document = _get_document_or_404(session, document_id)
     notebook = _get_notebook(session, document.id)
     markdown = notebook.content_md if notebook else default_notebook_markdown(document.filename)

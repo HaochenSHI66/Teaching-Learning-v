@@ -7,9 +7,11 @@ import { KnowledgeGraphPanel } from "@/components/knowledge-graph";
 import { MarkdownContent } from "@/components/markdown-content";
 import { SelectionPopup } from "@/components/selection-popup";
 import type { ChatMessage } from "@/hooks/useChat";
+import type { BatchProgress, GenerationProgress } from "@/hooks/useSlideGeneration";
 import { getAssetUrl, type SlideExplanation, type SlideExtract } from "@/lib/api";
 
 type AIPanelProps = {
+  batchProgress?: BatchProgress | null;
   disabled: boolean;
   explanation: string;
   explanationMeta: SlideExplanation["meta"] | null;
@@ -23,6 +25,7 @@ type AIPanelProps = {
   documentId?: string;
   mode: "slide" | "global";
   roiReady: boolean;
+  generationProgress: GenerationProgress | null;
   onModeChange: (mode: "slide" | "global") => void;
   onChatInputChange: (value: string) => void;
   onSendChat: () => void;
@@ -135,6 +138,7 @@ function getExplanationBadge(
 }
 
 export function AIPanel({
+  batchProgress,
   disabled,
   explanation,
   explanationMeta,
@@ -148,6 +152,7 @@ export function AIPanel({
   documentId,
   mode,
   roiReady,
+  generationProgress,
   onModeChange,
   onChatInputChange,
   onSendChat,
@@ -243,14 +248,60 @@ export function AIPanel({
             </header>
 
             {explanationLoading && (
-              <div className="shrink-0 border-b border-[var(--bd-3)] px-3 py-2">
-                <div className="mb-1 flex items-center justify-between text-[12px] text-[var(--tx-5)]">
-                  <span>解析生成中…</span>
-                  <span className="animate-pulse">●</span>
-                </div>
-                <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--sf-4)]">
-                  <div className="h-full w-1/2 animate-[slide_1.6s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-[var(--bd-4)] via-[#e8c98a] to-[var(--bd-4)]" />
-                </div>
+              <div className="shrink-0 border-b border-[var(--bd-3)] px-3 py-3">
+                {generationProgress ? (
+                  <div className="flex items-center gap-3">
+                    {/* Animated icon */}
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                      generationProgress.stage === "done"
+                        ? "bg-[var(--ac-green-bg)]"
+                        : "bg-[var(--sf-3)]"
+                    }`}>
+                      {generationProgress.stage === "done" ? (
+                        <svg className="h-4 w-4 text-[var(--ac-green-text)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      ) : generationProgress.stage === "vision" ? (
+                        <svg className="h-4 w-4 animate-pulse text-[var(--tx-4)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                      ) : (
+                        <svg className="h-4 w-4 animate-spin text-[var(--tx-4)]" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                      )}
+                    </div>
+                    {/* Text + progress bar */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[12px] font-medium text-[var(--tx-2)]">
+                          {generationProgress.stage === "vision" ? "读取页面内容..." : generationProgress.stage === "text" ? "生成讲解中..." : "✓ 完成"}
+                        </span>
+                        <span className="tabular-nums text-[11px] text-[var(--tx-5)]">{generationProgress.elapsed}s</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--sf-4)]">
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ease-out ${
+                            generationProgress.stage === "done"
+                              ? "bg-[var(--brand-sage)]"
+                              : "bg-gradient-to-r from-[var(--brand-amber)] to-[var(--brand-sage)]"
+                          }`}
+                          style={{
+                            width: generationProgress.stage === "vision"
+                              ? `${Math.min(30, generationProgress.elapsed * 4)}%`
+                              : generationProgress.stage === "text"
+                                ? `${Math.min(92, 30 + Math.max(0, generationProgress.elapsed - 8) * 1.2)}%`
+                                : "100%",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="mb-1 flex items-center justify-between text-[12px] text-[var(--tx-5)]">
+                      <span>解析生成中...</span>
+                      <span className="animate-pulse">*</span>
+                    </div>
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--sf-4)]">
+                      <div className="h-full w-1/2 animate-[slide_1.6s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-[var(--bd-4)] via-[#e8c98a] to-[var(--bd-4)]" />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -290,19 +341,42 @@ export function AIPanel({
                 />
               ) : (
                 <div className="space-y-3">
-                  <MarkdownContent
-                    content={
-                      "**当前页解析尚未生成。** 点击「生成解析」开始。"
-                    }
-                  />
+                  {batchProgress?.isRunning ? (
+                    <div className="flex flex-col items-center gap-2 py-6 text-center">
+                      <svg className="h-5 w-5 animate-spin text-[var(--tx-5)]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                      <p className="text-[13px] font-medium text-[var(--tx-3)]">正在生成本页讲解...</p>
+                      <p className="text-[12px] tabular-nums text-[var(--tx-5)]">
+                        整体进度 {batchProgress.completed}/{batchProgress.total}
+                      </p>
+                    </div>
+                  ) : (
+                    <MarkdownContent
+                      content={
+                        "**当前页解析尚未生成。** 点击「生成解析」开始。"
+                      }
+                    />
+                  )}
                   {onBatchGenerate && (
                     <button
-                      className="btn btn-outline !px-3 !py-1.5 !text-[13px]"
-                      disabled={disabled || loading}
+                      className="btn btn-outline !px-3 !py-1.5 !text-[13px] gap-1.5"
+                      disabled={disabled || loading || (batchProgress?.isRunning ?? false)}
                       onClick={onBatchGenerate}
                       type="button"
                     >
-                      为所有页面生成解析
+                      {batchProgress?.isRunning ? (
+                        <>
+                          <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                          </svg>
+                          生成中 {batchProgress.completed}/{batchProgress.total}
+                        </>
+                      ) : (
+                        "为所有页面生成解析"
+                      )}
                     </button>
                   )}
                 </div>

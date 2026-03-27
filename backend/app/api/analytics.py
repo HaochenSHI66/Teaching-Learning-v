@@ -5,8 +5,9 @@ from collections import Counter
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.models import LearningSession, Message, Quiz, QuizAttempt
+from app.api.deps import get_db_session, require_session_owner
+from app.auth import get_current_user
+from app.models import LearningSession, Message, Quiz, QuizAttempt, User
 from app.schemas import HotSlideStat, SessionAnalyticsResponse
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
@@ -16,10 +17,9 @@ router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 def get_session_analytics(
     session_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> SessionAnalyticsResponse:
-    learning_session = session.get(LearningSession, session_id)
-    if not learning_session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    require_session_owner(session_id, current_user.id, session)
 
     messages = session.exec(select(Message).where(Message.session_id == session_id)).all()
     user_messages = sum(1 for message in messages if message.role == "user")

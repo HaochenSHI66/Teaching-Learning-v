@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.models import Document, DocumentNotebook, Slide, SlideBookmark, SlideExplanation, SlideNote
+from app.api.deps import get_db_session, require_document_owner
+from app.auth import get_current_user
+from app.models import Document, DocumentNotebook, Slide, SlideBookmark, SlideExplanation, SlideNote, User
 from app.schemas import (
     SlideNoteBatchGenerateResponse,
     SlideNoteExportResponse,
@@ -52,9 +53,10 @@ def _serialize_note(note: SlideNote) -> SlideNoteRead:
 @router.get("/{document_id}", response_model=SlideNoteListResponse)
 def list_slide_notes(
     document_id: str,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> SlideNoteListResponse:
-    _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
     notes = session.exec(
         select(SlideNote)
         .where(SlideNote.document_id == document_id)
@@ -71,6 +73,7 @@ def list_slide_notes(
 @router.get("/slide/{slide_id}", response_model=SlideNoteRead)
 def get_slide_note(
     slide_id: str,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> SlideNoteRead:
     note = session.exec(
@@ -80,6 +83,7 @@ def get_slide_note(
         slide = session.get(Slide, slide_id)
         if not slide:
             raise HTTPException(status_code=404, detail="Slide not found")
+        require_document_owner(slide.document_id, current_user.id, session)
         return SlideNoteRead(
             id="",
             document_id=slide.document_id,
@@ -89,6 +93,7 @@ def get_slide_note(
             source="manual",
             updated_at=None,
         )
+    require_document_owner(note.document_id, current_user.id, session)
     return _serialize_note(note)
 
 
@@ -98,11 +103,13 @@ def get_slide_note(
 def save_slide_note(
     slide_id: str,
     payload: SlideNoteSaveRequest,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> SlideNoteRead:
     slide = session.get(Slide, slide_id)
     if not slide:
         raise HTTPException(status_code=404, detail="Slide not found")
+    require_document_owner(slide.document_id, current_user.id, session)
 
     note = session.exec(
         select(SlideNote).where(SlideNote.slide_id == slide_id)
@@ -132,27 +139,29 @@ def save_slide_note(
 
 # ── AI generate note for one slide ────────────────────────────
 
-NOTE_GEN_PROMPT = """你是一个学习笔记助手。请将以下PPT讲解内容精简为结构化学习笔记。
+NOTE_GEN_PROMPT = """将以下PPT讲解精简为复习笔记。
 
-要求格式：
-- **要点**：用 bullet list 列出 3-5 个核心知识点
-- **关键术语**：列出重要术语及简要解释
-- **总结**：用 1-2 句话概括本页核心
+要求：
+- 3-5 条 bullet，每条一个要点，不要展开解释
+- 关键定义用 <mark>标注</mark>，最多 1-2 处
+- 术语保留英文括注，如：虚拟内存 (Virtual Memory)
+- 不要加标题、不要加总结段、不要加考试技巧
+- 直接输出 bullet list
 
 讲解内容：
-{explanation}
-
-请直接输出 Markdown 格式的笔记，不要额外说明。"""
+{explanation}"""
 
 
 @router.post("/slide/{slide_id}/generate", response_model=SlideNoteGenerateResponse)
 def generate_slide_note(
     slide_id: str,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> SlideNoteGenerateResponse:
     slide = session.get(Slide, slide_id)
     if not slide:
         raise HTTPException(status_code=404, detail="Slide not found")
+    require_document_owner(slide.document_id, current_user.id, session)
 
     explanation = session.exec(
         select(SlideExplanation).where(SlideExplanation.slide_id == slide_id)
@@ -200,9 +209,10 @@ def generate_slide_note(
 @router.post("/{document_id}/generate-all", response_model=SlideNoteBatchGenerateResponse)
 def generate_all_slide_notes(
     document_id: str,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> SlideNoteBatchGenerateResponse:
-    doc = _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
 
     existing_slide_ids = {
         row.slide_id
@@ -252,9 +262,10 @@ def generate_all_slide_notes(
 @router.post("/{document_id}/export", response_model=SlideNoteExportResponse)
 def export_slide_notes(
     document_id: str,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> SlideNoteExportResponse:
-    doc = _get_document_or_404(session, document_id)
+    doc = require_document_owner(document_id, current_user.id, session)
 
     notes = session.exec(
         select(SlideNote)

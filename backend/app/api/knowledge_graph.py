@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.middleware.rate_limit import rate_limit
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.models import Concept, ConceptRelation, Document, Flashcard, Slide, SlideExplanation
+from app.api.deps import get_db_session, require_document_owner
+from app.auth import get_current_user
+from app.models import Concept, ConceptRelation, Document, Flashcard, Slide, SlideExplanation, User
 from app.schemas import (
     ConceptRead,
     ConceptRelationRead,
@@ -28,33 +29,83 @@ logger = logging.getLogger(__name__)
 # ── Chunked generation settings ──────────────────────────────────
 CHUNK_SIZE = 12  # pages per LLM call (within the 10-15 range)
 
-CONCEPT_EXTRACT_PROMPT = """你是一个知识图谱提取助手。请从以下PPT讲解内容中提取关键概念及其关系。
+CONCEPT_EXTRACT_PROMPT = """你是一个专业的学术知识图谱提取引擎。你的任务是从PPT讲解内容中精确提取核心概念和它们之间的逻辑关系，构建高质量的知识图谱。
 
-要求：
-- 提取 10-30 个核心概念（名词/术语）
-- 每个概念附带一句话描述
-- 标注概念出现的页码（slide_nums），使用讲解内容中标注的 Page 数字
-- 积极识别 prerequisite（前置知识）关系——这是最有价值的关系类型。如果理解概念 B 需要先理解概念 A，则 A 是 B 的前置知识
-- 同时识别 related（相关）、part_of（从属）、contrast（对比）关系
-- 输出严格JSON格式
+═══ 概念提取规则 ═══
 
-以下是好的 prerequisite 关系示例，供参考：
-1. "线性代数" → "特征值分解"：理解特征值分解需要先掌握线性代数中的矩阵运算和向量空间
-2. "概率论" → "贝叶斯定理"：贝叶斯定理建立在条件概率的基础之上
-3. "数据结构-树" → "二叉搜索树"：二叉搜索树是树这一数据结构的特殊化应用
+数量：根据文档复杂度提取 15-40 个概念。简单主题取下限，复杂主题取上限。
 
-请尽可能多地识别 prerequisite 关系。对于每个概念，思考"学习这个概念之前需要掌握什么"，如果那个前置知识也在概念列表中，就建立 prerequisite 关系。
+命名规范：
+- 使用精确的学术术语，不要泛化。例如用"梯度下降法(Gradient Descent)"而非"优化方法"，用"B+树"而非"树结构"
+- 中文为主，重要英文术语用括号附注，如"反向传播(Backpropagation)"、"时间复杂度(Time Complexity)"
+- 避免提取元概念：不要提取"总结"、"目录"、"引言"、"本章内容"、"课程大纲"等非知识性条目
+- 去重：如果两个名称指向同一概念（如"BP算法"和"反向传播"），只保留更规范的那个
 
-所有页面讲解内容：
+概念类型覆盖（尽量全面）：
+- 定义与术语：核心定义、专业名词
+- 定理与公式：数学定理、推导公式、重要等式
+- 算法与方法：具体算法步骤、方法论
+- 数据结构：具体的数据组织方式
+- 关键示例：文档中用于说明概念的重要例子（仅当例子本身有教学价值时提取）
+
+描述要求：
+- 每个概念必须附带1-2句有意义的描述，说明"这个概念是什么"或"这个概念解决什么问题"
+- 不要写空洞的描述如"一个重要的概念"。要写具体内容，如"一种基于梯度信息迭代更新参数以最小化损失函数的优化算法"
+
+页码标注（slide_nums）：
+- 只标注该概念被**实质性讨论**的页码，即该页对概念有定义、推导、举例或深入解释
+- 如果某页只是在列表中提到了概念名称但没有展开，不要标注该页
+
+重要度评分（importance）：
+- 5：文档的核心主题概念，贯穿全文
+- 4：在多页中被深入讨论的主要概念
+- 3：重要的支撑概念，有专门段落讲解
+- 2：简要提及的次要概念
+- 1：外围/切线性质的概念
+
+═══ 关系提取规则 ═══
+
+关系类型（4种）：
+1. "prerequisite"：A 是理解 B 的逻辑前提。这是最重要的关系类型，但要严格把关——只有真正的逻辑依赖才算。问自己："不懂 A 的人能否理解 B？"如果不能，才建立此关系。
+2. "related"：A 和 B 在主题上相关，但没有前置依赖关系，常常在同一上下文中出现。
+3. "part_of"：A 是 B 的子概念、组成部分或特例。例如"快速排序" part_of "排序算法"。
+4. "contrast"：A 和 B 在文档中被明确对比或比较。例如"BFS" contrast "DFS"。
+
+关系数量指导：
+- 目标边数 = 概念数 x 1.5 到 概念数 x 2.5
+- 每个概念至少要有1条关系，不要出现孤立节点
+- 不要建立自环（source 和 target 相同）
+- prerequisite 关系应占总关系数的 30-50%
+
+好的 prerequisite 示例：
+- "矩阵乘法" → "特征值分解"：特征值分解的计算过程依赖矩阵乘法运算
+- "条件概率" → "贝叶斯定理"：贝叶斯定理是条件概率的直接推论
+- "二叉树" → "二叉搜索树"：二叉搜索树在二叉树结构上增加了有序性约束
+- "损失函数" → "梯度下降法"：梯度下降法通过计算损失函数的梯度来优化参数
+
+═══ 输入内容 ═══
+
+以下是PPT各页面的讲解内容：
 {explanations}
 
-输出格式（纯JSON，不要```标记）：
+═══ 输出格式 ═══
+
+输出纯JSON，不要用```markdown标记包裹，不要添加任何注释：
 {{
   "concepts": [
-    {{"name": "概念名", "description": "一句话描述", "slide_nums": [1, 3, 5]}}
+    {{
+      "name": "概念名称(English Term)",
+      "description": "1-2句精确描述该概念的定义或作用",
+      "slide_nums": [1, 3, 5],
+      "importance": 4
+    }}
   ],
   "relations": [
-    {{"source": "前置概念A", "target": "概念B", "type": "prerequisite"}}
+    {{
+      "source": "前置概念A",
+      "target": "依赖概念B",
+      "type": "prerequisite"
+    }}
   ]
 }}"""
 
@@ -112,6 +163,47 @@ def _call_llm_for_chunk(
     return _parse_llm_json(raw)
 
 
+def _normalize_concept_name(name: str) -> str:
+    """Normalize a concept name for deduplication comparison.
+
+    Strips whitespace, normalizes Chinese/English parentheses, and lowercases
+    any ASCII portions for matching.
+    """
+    n = name.strip()
+    # Unify parentheses: Chinese fullwidth -> ASCII
+    n = n.replace("\uff08", "(").replace("\uff09", ")")
+    # Collapse multiple spaces
+    n = " ".join(n.split())
+    # Lowercase ASCII portions only (preserve CJK)
+    result = []
+    for ch in n:
+        if ch.isascii():
+            result.append(ch.lower())
+        else:
+            result.append(ch)
+    return ''.join(result)
+
+
+def _are_similar_concepts(a: str, b: str) -> bool:
+    """Return True if two concept names are similar enough to merge.
+
+    Similarity criteria: one name is a substring of the other and covers >80%
+    of the shorter name's length, OR the normalized forms are identical.
+    """
+    na = _normalize_concept_name(a)
+    nb = _normalize_concept_name(b)
+    if na == nb:
+        return True
+    shorter, longer = (na, nb) if len(na) <= len(nb) else (nb, na)
+    if not shorter:
+        return False
+    # If the shorter name is contained in the longer one and is >80% of the
+    # longer name's length, treat them as the same concept.
+    if shorter in longer and len(shorter) / len(longer) > 0.8:
+        return True
+    return False
+
+
 def _merge_chunk_results(
     chunk_results: list[dict],
     page_to_slide: dict[int, str],
@@ -119,45 +211,100 @@ def _merge_chunk_results(
     """Merge and deduplicate concepts from multiple chunk results.
 
     Returns (merged_concepts, filtered_relations) where:
-    - Concepts are deduplicated by name (slide_ids merged)
+    - Concepts are deduplicated by exact name and fuzzy similarity
     - Relations only include edges where both endpoints exist
+    - Duplicate edges (same source+target+type) are removed
     """
-    # Deduplicate concepts by name
-    concept_map: dict[str, dict] = {}  # name -> concept dict
+    # ── Phase 1: collect raw concepts and normalize names ──
+    raw_concepts: list[dict] = []  # list of (normalized_name, original_item, slide_ids)
     for result in chunk_results:
         for item in result.get("concepts", []):
-            name = item.get("name", "").strip()
+            name = _normalize_concept_name(item.get("name", ""))
             if not name:
                 continue
             slide_nums = item.get("slide_nums", [])
             slide_ids = [page_to_slide[pn] for pn in slide_nums if pn in page_to_slide]
-            if name in concept_map:
-                # Merge slide_ids (deduplicate)
-                existing_ids = set(concept_map[name]["slide_ids"])
-                existing_ids.update(slide_ids)
-                concept_map[name]["slide_ids"] = list(existing_ids)
-                # Keep the longer description
-                if len(item.get("description", "")) > len(concept_map[name].get("description", "")):
-                    concept_map[name]["description"] = item.get("description", "")
-            else:
-                concept_map[name] = {
-                    "name": name,
-                    "description": item.get("description", ""),
-                    "slide_ids": slide_ids,
-                }
+            raw_concepts.append({
+                "name": name,
+                "description": item.get("description", ""),
+                "slide_ids": slide_ids,
+                "importance": item.get("importance", 3),
+            })
 
-    # Collect all concept names for relation filtering
+    # ── Phase 2: deduplicate with fuzzy matching ──
+    # Maps normalized canonical name -> merged concept dict
+    concept_map: dict[str, dict] = {}
+    # Maps any name variant -> canonical name (for relation remapping)
+    name_alias: dict[str, str] = {}
+
+    for rc in raw_concepts:
+        name = rc["name"]
+        # Check if this name matches an existing canonical name
+        canonical = name_alias.get(name)
+        if canonical is None:
+            # Try fuzzy match against all existing canonical names
+            for existing_name in list(concept_map.keys()):
+                if _are_similar_concepts(name, existing_name):
+                    canonical = existing_name
+                    break
+
+        if canonical is not None:
+            # Merge into existing concept
+            existing = concept_map[canonical]
+            existing_ids = set(existing["slide_ids"])
+            existing_ids.update(rc["slide_ids"])
+            existing["slide_ids"] = list(existing_ids)
+            # Keep the longer description
+            if len(rc["description"]) > len(existing["description"]):
+                existing["description"] = rc["description"]
+            # Keep the higher importance
+            existing["importance"] = max(existing["importance"], rc["importance"])
+            # If the new name is longer (more specific), adopt it as canonical
+            if len(name) > len(canonical):
+                concept_map[name] = concept_map.pop(canonical)
+                concept_map[name]["name"] = name
+                name_alias[canonical] = name
+                name_alias[name] = name
+            else:
+                name_alias[name] = canonical
+        else:
+            # New concept
+            concept_map[name] = {
+                "name": name,
+                "description": rc["description"],
+                "slide_ids": rc["slide_ids"],
+                "importance": rc["importance"],
+            }
+            name_alias[name] = name
+
+    # ── Phase 3: collect and filter relations ──
     valid_names = set(concept_map.keys())
 
-    # Collect and filter relations
+    def _resolve_name(n: str) -> str | None:
+        """Resolve a relation endpoint to a canonical concept name."""
+        normalized = _normalize_concept_name(n)
+        # Direct alias lookup
+        if normalized in name_alias:
+            canon = name_alias[normalized]
+            if canon in valid_names:
+                return canon
+        # Direct match
+        if normalized in valid_names:
+            return normalized
+        # Fuzzy fallback for relation endpoints
+        for vn in valid_names:
+            if _are_similar_concepts(normalized, vn):
+                return vn
+        return None
+
     all_relations: list[dict] = []
     seen_relations: set[tuple[str, str, str]] = set()
     for result in chunk_results:
         for item in result.get("relations", []):
-            source = item.get("source", "").strip()
-            target = item.get("target", "").strip()
+            source = _resolve_name(item.get("source", ""))
+            target = _resolve_name(item.get("target", ""))
             rel_type = item.get("type", "related")
-            if source in valid_names and target in valid_names and source != target:
+            if source and target and source != target:
                 key = (source, target, rel_type)
                 if key not in seen_relations:
                     seen_relations.add(key)
@@ -203,11 +350,13 @@ def generate_knowledge_graph_for_document(
     # Chunked generation
     chunks = _chunk_explanations(explanations, CHUNK_SIZE)
     chunk_results: list[dict] = []
+    failed_chunks = 0
     for chunk in chunks:
         try:
             result = _call_llm_for_chunk(gateway, chunk)
             chunk_results.append(result)
         except Exception as exc:
+            failed_chunks += 1
             logger.error(
                 "Knowledge graph chunk failed for %s (pages %s-%s): %s",
                 document_id,
@@ -221,8 +370,42 @@ def generate_knowledge_graph_for_document(
     if not chunk_results:
         raise RuntimeError("All knowledge graph generation chunks failed")
 
+    if failed_chunks:
+        logger.warning(
+            "Knowledge graph for %s: %d/%d chunks failed — graph may be incomplete",
+            document_id,
+            failed_chunks,
+            len(chunks),
+        )
+
     # Merge results across chunks
     merged_concepts, merged_relations = _merge_chunk_results(chunk_results, page_to_slide)
+
+    # ── Post-processing validation ──
+    # 1. Build set of concept names referenced by at least one relation
+    names_in_relations: set[str] = set()
+    for rel in merged_relations:
+        names_in_relations.add(rel["source"])
+        names_in_relations.add(rel["target"])
+
+    # 2. Remove orphan concepts — only low-importance ones (importance <= 2)
+    merged_concepts = [
+        c for c in merged_concepts
+        if c["name"] in names_in_relations or c.get("importance", 3) > 2
+    ]
+
+    # 3. Rebuild valid names after orphan removal and filter edges
+    valid_concept_names = {c["name"] for c in merged_concepts}
+    seen_edges: set[tuple[str, str, str]] = set()
+    validated_relations: list[dict] = []
+    for rel in merged_relations:
+        src, tgt, rtype = rel["source"], rel["target"], rel["type"]
+        if src in valid_concept_names and tgt in valid_concept_names and src != tgt:
+            edge_key = (src, tgt, rtype)
+            if edge_key not in seen_edges:
+                seen_edges.add(edge_key)
+                validated_relations.append(rel)
+    merged_relations = validated_relations
 
     # Delete existing concepts and relations for this document
     old_relations = session.exec(
@@ -246,6 +429,7 @@ def generate_knowledge_graph_for_document(
             name=item["name"],
             description=item.get("description", ""),
             slide_ids=item.get("slide_ids", []),
+            importance=item.get("importance", 3),
         )
         session.add(concept)
         session.commit()
@@ -279,8 +463,9 @@ def generate_knowledge_graph_for_document(
 def get_knowledge_graph(
     document_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> KnowledgeGraphResponse:
-    _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
 
     concepts = session.exec(
         select(Concept).where(Concept.document_id == document_id)
@@ -292,7 +477,7 @@ def get_knowledge_graph(
     return KnowledgeGraphResponse(
         document_id=document_id,
         nodes=[
-            ConceptRead(id=c.id, name=c.name, description=c.description, slide_ids=c.slide_ids)
+            ConceptRead(id=c.id, name=c.name, description=c.description, slide_ids=c.slide_ids, importance=c.importance)
             for c in concepts
         ],
         edges=[
@@ -308,9 +493,10 @@ def get_knowledge_graph(
 def generate_knowledge_graph(
     document_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
     _rate_limit=Depends(rate_limit(3, 60, "knowledge_graph_generate")),
 ) -> KnowledgeGraphGenerateResponse:
-    _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
 
     explanations = session.exec(
         select(SlideExplanation)
@@ -348,8 +534,9 @@ def get_concepts_by_slide(
     document_id: str,
     slide_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> ConceptsBySlideResponse:
-    _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
 
     # Verify slide exists and belongs to document
     slide = session.get(Slide, slide_id)
@@ -396,13 +583,13 @@ def get_concepts_by_slide(
     items = []
     for c in slide_concepts:
         prereq_reads = [
-            ConceptRead(id=p.id, name=p.name, description=p.description, slide_ids=p.slide_ids)
+            ConceptRead(id=p.id, name=p.name, description=p.description, slide_ids=p.slide_ids, importance=p.importance)
             for p in prereqs_for.get(c.id, [])
         ]
         items.append(
             ConceptsBySlideItem(
                 concept=ConceptRead(
-                    id=c.id, name=c.name, description=c.description, slide_ids=c.slide_ids
+                    id=c.id, name=c.name, description=c.description, slide_ids=c.slide_ids, importance=c.importance
                 ),
                 prerequisites=prereq_reads,
                 flashcard_count=_flashcard_count_for_concept(c),
@@ -426,8 +613,9 @@ def get_prerequisite_chain(
     document_id: str,
     concept_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> PrerequisiteChainResponse:
-    _get_document_or_404(session, document_id)
+    require_document_owner(document_id, current_user.id, session)
 
     target = session.get(Concept, concept_id)
     if not target or target.document_id != document_id:
@@ -477,7 +665,7 @@ def get_prerequisite_chain(
         c = concept_by_id.get(cid)
         if c:
             chain_reads.append(
-                ConceptRead(id=c.id, name=c.name, description=c.description, slide_ids=c.slide_ids)
+                ConceptRead(id=c.id, name=c.name, description=c.description, slide_ids=c.slide_ids, importance=c.importance)
             )
 
     return PrerequisiteChainResponse(

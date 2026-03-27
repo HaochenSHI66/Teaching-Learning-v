@@ -6,11 +6,25 @@ from sqlmodel import Session, select
 
 from app.models import Slide, SlideExtract
 
-TOKEN_PATTERN = re.compile(r"[a-z0-9_]{3,}")
+TOKEN_PATTERN = re.compile(r"[a-z0-9_]{2,}")
+# CJK Unified Ideographs range
+_CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]+")
 
 
 def _tokenize(text: str) -> set[str]:
-    return set(TOKEN_PATTERN.findall(text.lower()))
+    tokens: set[str] = set()
+    # ASCII tokens (existing behavior)
+    tokens.update(TOKEN_PATTERN.findall(text.lower()))
+    # Chinese character bigrams + individual chars for CJK text
+    for match in _CJK_RE.finditer(text):
+        chars = match.group()
+        # Always add individual characters
+        for c in chars:
+            tokens.add(c)
+        # Also add bigrams for multi-char runs
+        for i in range(len(chars) - 1):
+            tokens.add(chars[i : i + 2])
+    return tokens
 
 
 def retrieve_related_slides(

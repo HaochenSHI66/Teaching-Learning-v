@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
-from app.api.deps import get_db_session
-from app.auth import get_optional_user
+from app.api.deps import get_db_session, require_document_owner, require_folder_owner
+from app.auth import get_current_user
 from app.models import Document, Folder, User
 from app.schemas import (
     FolderCreateRequest,
@@ -60,9 +60,9 @@ def _reindex_documents(session: Session, *, folder_id: str | None) -> None:
         session.add(document)
 
 
-def _build_library(session: Session) -> FolderLibraryResponse:
-    folders = _sort_folders(session.exec(select(Folder)).all())
-    documents = session.exec(select(Document)).all()
+def _build_library(session: Session, user_id: str) -> FolderLibraryResponse:
+    folders = _sort_folders(session.exec(select(Folder).where(Folder.user_id == user_id)).all())
+    documents = session.exec(select(Document).where(Document.user_id == user_id)).all()
 
     grouped_docs: dict[str | None, list[Document]] = {}
     for document in documents:
@@ -82,22 +82,25 @@ def _build_library(session: Session) -> FolderLibraryResponse:
 
 
 @router.get("", response_model=FolderLibraryResponse)
-def list_folder_library(session: Session = Depends(get_db_session)) -> FolderLibraryResponse:
-    return _build_library(session)
+def list_folder_library(
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> FolderLibraryResponse:
+    return _build_library(session, current_user.id)
 
 
 @router.post("", response_model=FolderResponse, status_code=status.HTTP_201_CREATED)
 def create_folder(
     payload: FolderCreateRequest,
     session: Session = Depends(get_db_session),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ) -> FolderResponse:
-    next_order = len(session.exec(select(Folder)).all())
+    next_order = len(session.exec(select(Folder).where(Folder.user_id == current_user.id)).all())
     folder = Folder(
         name=payload.name.strip(),
         color=payload.color.strip(),
         sort_order=next_order,
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
     )
     session.add(folder)
     session.commit()
@@ -110,10 +113,9 @@ def update_folder(
     folder_id: str,
     payload: FolderUpdateRequest,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> FolderResponse:
-    folder = session.get(Folder, folder_id)
-    if not folder:
-        raise HTTPException(status_code=404, detail="Folder not found")
+    folder = require_folder_owner(folder_id, current_user.id, session)
 
     if payload.name is not None:
         folder.name = payload.name.strip()
@@ -130,10 +132,9 @@ def update_folder(
 def delete_folder(
     folder_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> FolderDeleteResponse:
-    folder = session.get(Folder, folder_id)
-    if not folder:
-        raise HTTPException(status_code=404, detail="Folder not found")
+    folder = require_folder_owner(folder_id, current_user.id, session)
 
     uncategorized_documents = _sort_documents(session.exec(select(Document).where(Document.folder_id.is_(None))).all())
     offset = len(uncategorized_documents)
@@ -153,13 +154,12 @@ def delete_folder(
 def move_document(
     payload: MoveDocumentRequest,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> MoveDocumentResponse:
-    document = session.get(Document, payload.document_id)
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
+    document = require_document_owner(payload.document_id, current_user.id, session)
 
-    if payload.target_folder_id is not None and not session.get(Folder, payload.target_folder_id):
-        raise HTTPException(status_code=404, detail="Target folder not found")
+    if payload.target_folder_id is not None:
+        require_folder_owner(payload.target_folder_id, current_user.id, session)
 
     source_folder_id = document.folder_id
     target_folder_id = payload.target_folder_id

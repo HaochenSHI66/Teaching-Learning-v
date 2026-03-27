@@ -21,7 +21,7 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: str
+    email: str  # Also accepts username
     password: str
 
 
@@ -93,10 +93,13 @@ def login(
     payload: LoginRequest,
     session: Session = Depends(get_db_session),
 ) -> AuthResponse:
-    email = payload.email.strip().lower()
-    user = session.exec(select(User).where(User.email == email)).first()
+    identifier = payload.email.strip().lower()
+    # Try email first, then display_name (username)
+    user = session.exec(select(User).where(User.email == identifier)).first()
+    if not user:
+        user = session.exec(select(User).where(User.display_name == payload.email.strip())).first()
     if not user or not _verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     token = create_access_token(user.id)
     return AuthResponse(token=token, user=_user_read(user))
