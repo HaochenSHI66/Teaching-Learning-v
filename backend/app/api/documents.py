@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import logging
 import os
+import re as _re
 import shutil
 from copy import deepcopy
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, status
 from app.middleware.rate_limit import rate_limit
 from sqlmodel import Session, select
+from sqlalchemy import func
 
-from app.api.deps import get_db_session
-from app.auth import get_optional_user
+from app.api.deps import get_db_session, require_document_owner
+from app.auth import get_current_user
+from app.services.usage_limits import check_document_limit
 from app.db import create_db_engine
 from app.models import (
     Concept,
@@ -66,6 +69,45 @@ router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))  # 50 MB default
+
+# ── Magic-byte MIME detection ────────────────────────────────────
+_MAGIC_SIGNATURES = {
+    b'%PDF': 'application/pdf',
+    b'\x89PNG': 'image/png',
+    b'\xff\xd8\xff': 'image/jpeg',
+    b'RIFF': 'image/webp',  # WebP starts with RIFF....WEBP
+}
+_ALLOWED_MIMES = set(_MAGIC_SIGNATURES.values())
+
+
+def _detect_mime(content: bytes) -> str | None:
+    """Detect MIME type from magic bytes. Returns None if unrecognised."""
+    for sig, mime in _MAGIC_SIGNATURES.items():
+        if content[:len(sig)] == sig:
+            if sig == b'RIFF' and content[8:12] != b'WEBP':
+                continue
+            return mime
+    return None
+
+
+def _sanitize_filename(raw: str) -> str:
+    """Strip path components and dangerous characters from an uploaded filename."""
+    # Take only the final path component (handles ../../foo and C:\foo\bar)
+    name = PurePosixPath(raw).name
+    name = name.split("\\")[-1]  # handle Windows paths too
+    # Remove any remaining path separators or null bytes
+    name = name.replace("\x00", "").strip()
+    # Keep only safe characters: letters, digits, dots, hyphens, underscores, CJK
+    name = _re.sub(r'[^\w.\-\u4e00-\u9fff\u3400-\u4dbf]', '_', name)
+    if not name or name.startswith('.'):
+        name = "uploaded_file"
+    return name
+
+
+def _check_document_owner(document: Document, current_user: User) -> None:
+    """Return 404 if document belongs to a different user (prevents enumeration)."""
+    if document.user_id is not None and document.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Document not found")
 
 
 async def _read_upload(file: UploadFile) -> bytes:
@@ -141,7 +183,8 @@ def _process_document_background(
                 document_dir=document_dir,
                 render_scale=render_scale,
             )
-        except Exception:
+        except Exception as exc:
+            logger.exception("Document processing failed for %s: %s", document_id, exc)
             document.status = "error"
             session.add(document)
             session.commit()
@@ -182,29 +225,50 @@ def _process_document_background(
         # so the document is immediately accessible in the UI.
         session.commit()
 
-        for slide, asset in zip(slides, assets):
-            slide_image_path = document_dir / asset.image_rel_path
+        # Generate explanations in windowed batches (3 at a time, sequential windows)
+        # to preserve cross-page context while still gaining speedup
+        import concurrent.futures
+
+        _BG_WINDOW = 3
+        pairs = list(zip(slides, assets))
+
+        def _gen_one(slide_asset_pair):
+            s, a = slide_asset_pair
+            img = document_dir / a.image_rel_path
             try:
-                explanation_markdown, _, _, explanation_meta = generate_slide_explanation(
-                    slide=slide,
+                md, _, _, meta = generate_slide_explanation(
+                    slide=s,
                     question="请生成这一页的完整讲解",
-                    extracted_text=asset.extracted_text,
-                    slide_image_path=slide_image_path,
-                    extract_payload=asset.extract_payload,
-                    related_pages=[asset.page_num],
+                    extracted_text=a.extracted_text,
+                    slide_image_path=img,
+                    extract_payload=a.extract_payload,
+                    related_pages=[a.page_num],
                 )
+                return (s, a, md, meta)
             except Exception:
-                continue
-            session.add(
-                SlideExplanation(
-                    document_id=document.id,
-                    slide_id=slide.id,
-                    page_num=asset.page_num,
-                    markdown=explanation_markdown,
-                    meta=explanation_meta,
-                    version=CURRENT_EXPLANATION_VERSION,
+                return None
+
+        for win_start in range(0, len(pairs), _BG_WINDOW):
+            window = pairs[win_start:win_start + _BG_WINDOW]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=_BG_WINDOW) as pool:
+                futures = [pool.submit(_gen_one, pair) for pair in window]
+                window_results = [f.result() for f in futures]
+
+            # Commit this window before starting next (so next window has context)
+            for result in window_results:
+                if result is None:
+                    continue
+                slide, asset, explanation_markdown, explanation_meta = result
+                session.add(
+                    SlideExplanation(
+                        document_id=document.id,
+                        slide_id=slide.id,
+                        page_num=asset.page_num,
+                        markdown=explanation_markdown,
+                        meta=explanation_meta,
+                        version=CURRENT_EXPLANATION_VERSION,
+                    )
                 )
-            )
             session.commit()
 
         # Auto-generate knowledge graph after all explanations are done
@@ -356,7 +420,53 @@ def _upsert_slide_explanation(
     )
     session.add(explanation)
     session.flush()
+
+    # Auto-upsert concepts extracted from the explanation
+    _upsert_concepts_from_meta(session=session, document_id=document_id, slide=slide, meta=meta)
+
     return explanation, overwrote_existing
+
+
+def _upsert_concepts_from_meta(*, session: Session, document_id: str, slide: Slide, meta: dict) -> None:
+    """Create or update Concept records from meta.concepts extracted during explanation generation."""
+    concepts = meta.get("concepts") or []
+    if not concepts:
+        return
+
+    for item in concepts:
+        name_en = str(item.get("name_en", "")).strip()
+        name_zh = str(item.get("name_zh", "")).strip()
+        description = str(item.get("description", "")).strip()
+        if not name_en or not name_zh:
+            continue
+
+        # Use Chinese name as canonical name, with English in the description
+        canonical_name = f"{name_zh} ({name_en})"
+
+        # Check if concept already exists for this document
+        existing = session.exec(
+            select(Concept).where(
+                Concept.document_id == document_id,
+                Concept.name == canonical_name,
+            )
+        ).first()
+
+        if existing:
+            # Add this slide_id if not already present
+            slide_ids = existing.slide_ids or []
+            if slide.id not in slide_ids:
+                existing.slide_ids = [*slide_ids, slide.id]
+                if description and len(description) > len(existing.description):
+                    existing.description = description
+                session.add(existing)
+        else:
+            session.add(Concept(
+                document_id=document_id,
+                name=canonical_name,
+                description=description,
+                slide_ids=[slide.id],
+                importance=3,
+            ))
 
 
 def _delete_document_related_records(*, session: Session, document_id: str) -> None:
@@ -415,8 +525,10 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     folder_id: str | None = Form(default=None),
     session: Session = Depends(get_db_session),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ) -> UploadResponse:
+    check_document_limit(session, current_user.id)
+
     media_type = file.content_type or "application/octet-stream"
     if media_type not in SUPPORTED_TYPES:
         raise HTTPException(
@@ -433,14 +545,24 @@ async def upload_document(
 
     content = await _read_upload(file)
 
+    # Validate file type by magic bytes, not client-provided content_type
+    detected_mime = _detect_mime(content)
+    if detected_mime is not None and detected_mime != media_type:
+        media_type = detected_mime  # trust magic bytes over client header
+    if detected_mime is not None and detected_mime not in _ALLOWED_MIMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File content does not match an allowed type (detected: {detected_mime})",
+        )
+
     document = Document(
-        filename=file.filename or "uploaded_file",
+        filename=_sanitize_filename(file.filename or "uploaded_file"),
         media_type=media_type,
         storage_path="",
         folder_id=resolved_folder_id,
-        sort_order=len(session.exec(select(Document).where(Document.folder_id == resolved_folder_id)).all()),
+        sort_order=session.exec(select(func.count()).select_from(Document).where(Document.folder_id == resolved_folder_id)).one(),
         status="processing",
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
     )
 
     storage_root: Path = request.app.state.storage_dir
@@ -450,7 +572,7 @@ async def upload_document(
     original_dir = document_dir / "original"
     original_dir.mkdir(parents=True, exist_ok=True)
 
-    file_name = file.filename or "uploaded_file"
+    file_name = _sanitize_filename(file.filename or "uploaded_file")
     source_file = original_dir / file_name
     source_file.write_bytes(content)
 
@@ -486,8 +608,13 @@ async def upload_document(
 
 
 @router.get("", response_model=DocumentListResponse)
-def list_documents(session: Session = Depends(get_db_session)) -> DocumentListResponse:
-    documents = session.exec(select(Document).order_by(Document.created_at.desc())).all()
+def list_documents(
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> DocumentListResponse:
+    stmt = select(Document)
+    stmt = stmt.where(Document.user_id == current_user.id)
+    documents = session.exec(stmt.order_by(Document.created_at.desc())).all()
     return DocumentListResponse(
         documents=[
             DocumentListItem(
@@ -508,10 +635,12 @@ def list_documents(session: Session = Depends(get_db_session)) -> DocumentListRe
 def get_document_status(
     document_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> DocumentStatusResponse:
     document = session.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    _check_document_owner(document, current_user)
     return DocumentStatusResponse(
         id=document.id,
         status=document.status,
@@ -524,10 +653,12 @@ def list_document_slides(
     document_id: str,
     request: Request,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> SlidesResponse:
     document = session.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    _check_document_owner(document, current_user)
     if document.status == "processing":
         raise HTTPException(status_code=409, detail="Document is still being processed")
     if document.status == "error":
@@ -578,10 +709,12 @@ def list_document_slides(
 def list_document_explanations(
     document_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> DocumentExplanationsResponse:
     document = session.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    _check_document_owner(document, current_user)
     if document.status != "ready":
         raise HTTPException(status_code=409, detail="Document explanations are not ready")
 
@@ -615,11 +748,13 @@ def regenerate_slide_explanation(
     slide_id: str,
     request: Request,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
     _rate_limit=Depends(rate_limit(20, 60, "explanation_generate")),
 ) -> SlideExplanationGenerateResponse:
     document = session.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    _check_document_owner(document, current_user)
     if document.status != "ready":
         raise HTTPException(status_code=409, detail="Document is not ready")
 
@@ -665,11 +800,13 @@ def regenerate_document_explanations(
     document_id: str,
     request: Request,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
     _rate_limit=Depends(rate_limit(20, 60, "explanation_generate")),
 ) -> DocumentExplanationGenerateResponse:
     document = session.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    _check_document_owner(document, current_user)
     if document.status != "ready":
         raise HTTPException(status_code=409, detail="Document is not ready")
 
@@ -684,14 +821,21 @@ def regenerate_document_explanations(
     overwrote_existing = False
     for slide in slides:
         extracted_text = str((extract_map.get(slide.id) or {}).get("text") or "")
-        _, overwrote = _upsert_slide_explanation(
-            session=session,
-            document_id=document_id,
-            storage_root=request.app.state.storage_dir,
-            slide=slide,
-            extracted_text=extracted_text,
-            extract_payload=extract_map.get(slide.id),
-        )
+        try:
+            _, overwrote = _upsert_slide_explanation(
+                session=session,
+                document_id=document_id,
+                storage_root=request.app.state.storage_dir,
+                slide=slide,
+                extracted_text=extracted_text,
+                extract_payload=extract_map.get(slide.id),
+            )
+        except Exception:
+            logger.warning(
+                "Failed to regenerate explanation for slide %s (page %d), skipping",
+                slide.id, slide.page_num,
+            )
+            continue
         generated_count += 1
         overwrote_existing = overwrote_existing or overwrote
         # Commit slide-by-slide to avoid holding a long SQLite write lock for the
@@ -709,11 +853,23 @@ def regenerate_document_explanations(
 def export_document_explanations(
     document_id: str,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> DocumentExplanationsExportResponse:
-    payload = list_document_explanations(document_id=document_id, session=session)
+    document = session.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    _check_document_owner(document, current_user)
+    if document.status != "ready":
+        raise HTTPException(status_code=409, detail="Document explanations are not ready")
+    explanations = session.exec(
+        select(SlideExplanation)
+        .where(SlideExplanation.document_id == document_id)
+        .order_by(SlideExplanation.page_num)
+    ).all()
+    explanations = [item for item in explanations if _explanation_is_current(item)]
     markdown = build_document_explanations_markdown(
         title="全部PPT讲解",
-        slide_markdowns=[item.markdown for item in payload.explanations],
+        slide_markdowns=[item.markdown for item in explanations],
     )
     return DocumentExplanationsExportResponse(document_id=document_id, markdown=markdown)
 
@@ -723,10 +879,12 @@ def delete_document(
     document_id: str,
     request: Request,
     session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
 ) -> DocumentDeleteResponse:
     document = session.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    _check_document_owner(document, current_user)
 
     _delete_document_related_records(session=session, document_id=document_id)
     session.delete(document)
