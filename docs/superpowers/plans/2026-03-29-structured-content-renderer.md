@@ -130,7 +130,7 @@ function InlineMarkdown({ text }: { text: string }) {
 
 const CALLOUT_CONFIG = {
   IMPORTANT: { emoji: "❗", label: "重点", border: "var(--brand-terracotta)", bg: "var(--ac-red-bg)" },
-  TIP:       { emoji: "💡", label: "提示", border: "var(--brand-blue)",       bg: "var(--ac-blue-bg, var(--ac-muted-bg))" },
+  TIP:       { emoji: "💡", label: "提示", border: "var(--brand-blue)",       bg: "var(--ac-muted-bg)" },
   WARNING:   { emoji: "⚠️", label: "注意", border: "var(--brand-amber)",      bg: "var(--ac-amber-bg)" },
   NOTE:      { emoji: "📌", label: "说明", border: "var(--brand-sage)",       bg: "var(--ac-green-bg)" },
 } as const;
@@ -460,9 +460,27 @@ Read `concept-highlighted-content.tsx` line 49: `if (concepts.length === 0)` ret
 
 The real issue: if we want ONLY the chips bar (no markdown body), we should skip the `<MarkdownContent>` when content is empty.
 
-- [ ] **Step 2: Modify to skip empty markdown**
+- [ ] **Step 2: Guard early return for empty content**
 
-In `concept-highlighted-content.tsx`, change lines 70-71 from:
+In `concept-highlighted-content.tsx`, change lines 49-50 from:
+
+```tsx
+  if (concepts.length === 0) {
+    return <MarkdownContent content={content} className={className} />;
+  }
+```
+
+to:
+
+```tsx
+  if (concepts.length === 0) {
+    return content ? <MarkdownContent content={content} className={className} /> : null;
+  }
+```
+
+- [ ] **Step 3: Skip empty markdown in chips-bar branch**
+
+In the same file, change line 71 from:
 
 ```tsx
       <MarkdownContent content={content} className={className} />
@@ -474,12 +492,12 @@ to:
       {content && <MarkdownContent content={content} className={className} />}
 ```
 
-- [ ] **Step 3: Verify build**
+- [ ] **Step 4: Verify build**
 
 Run: `cd frontend && npx next build --no-lint 2>&1 | tail -5`
 Expected: Build succeeds
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add frontend/components/concept-highlighted-content.tsx
