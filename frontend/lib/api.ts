@@ -231,7 +231,16 @@ export type DocumentNotebook = {
 import { getToken } from "./auth";
 import { type AuthUser, setToken, setUser } from "./auth";
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+// API base: empty string = same origin (production behind tunnel).
+// Only use localhost:8000 when running locally on localhost.
+function _detectApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) return process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (typeof window === "undefined") return "http://localhost:8000"; // SSR fallback
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:8000"
+    : "";  // same origin — relative URLs
+}
+const apiBase = _detectApiBase();
 
 /** Network-layer failure (DNS, CORS, connection refused). */
 export class NetworkError extends Error {
@@ -435,6 +444,36 @@ export async function fetchDocumentExplanations(documentId: string): Promise<Sli
     `/api/v1/documents/${documentId}/explanations`,
   );
   return payload.explanations;
+}
+
+// ── Prefetch cache: warm up document data on hover ──
+const _prefetchCache = new Map<string, { slides: Promise<Slide[]>; explanations: Promise<SlideExplanation[]>; ts: number }>();
+
+/** Call on mouseenter of a document card. Fires fetch early so loadDocument is instant. */
+export function prefetchDocument(documentId: string): void {
+  if (_prefetchCache.has(documentId)) return;
+  _prefetchCache.set(documentId, {
+    slides: fetchSlides(documentId),
+    explanations: fetchDocumentExplanations(documentId),
+    ts: Date.now(),
+  });
+  // Evict stale entries (>60s)
+  for (const [key, val] of _prefetchCache) {
+    if (Date.now() - val.ts > 60_000) _prefetchCache.delete(key);
+  }
+}
+
+/** Consume prefetched data if available, otherwise fetch fresh. */
+export async function fetchSlidesWithPrefetch(documentId: string): Promise<Slide[]> {
+  const cached = _prefetchCache.get(documentId);
+  if (cached) return cached.slides;
+  return fetchSlides(documentId);
+}
+
+export async function fetchExplanationsWithPrefetch(documentId: string): Promise<SlideExplanation[]> {
+  const cached = _prefetchCache.get(documentId);
+  if (cached) return cached.explanations;
+  return fetchDocumentExplanations(documentId);
 }
 
 export async function exportDocumentExplanations(documentId: string): Promise<{ markdown: string }> {
@@ -981,14 +1020,15 @@ export async function fetchConceptPrerequisites(
 // ── Auth ──────────────────────────────────────────────────────
 
 export async function loginApi(email: string, password: string): Promise<AuthUser> {
-  const data = await request<{ token: string; user: { id: string; email: string; display_name: string } }>("/api/v1/auth/login", {
+  const data = await request<{ token: string; user: { id: string; email: string; display_name: string; is_admin?: boolean } }>("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
+  const user: AuthUser = { id: data.user.id, email: data.user.email, display_name: data.user.display_name, is_admin: data.user.is_admin ?? false };
   setToken(data.token);
-  setUser({ id: data.user.id, email: data.user.email, display_name: data.user.display_name });
-  return { id: data.user.id, email: data.user.email, display_name: data.user.display_name };
+  setUser(user);
+  return user;
 }
 
 export async function registerApi(email: string, password: string, displayName: string): Promise<AuthUser> {
@@ -1069,4 +1109,75 @@ export async function downloadExportNotes(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+
+// ── Admin API ────────────────────────────────────────────────
+
+export type AdminStats = {
+  total_users: number;
+  total_documents: number;
+  total_explanations: number;
+  today_explanations: number;
+  daily_explanations: { date: string; count: number }[];
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  display_name: string;
+  is_admin: boolean;
+  is_disabled: boolean;
+  created_at: string;
+  document_count: number;
+};
+
+export type AdminDocument = {
+  id: string;
+  filename: string;
+  owner_email: string;
+  owner_name: string;
+  page_count: number;
+  explanation_count: number;
+  coverage: number;
+  created_at: string;
+};
+
+export type AdminSystem = {
+  status: string;
+  db_size_mb: number;
+  storage_size_mb: number;
+  llm_configured: boolean;
+  vision_configured: boolean;
+  uptime_seconds: number;
+};
+
+export async function fetchAdminStats(): Promise<AdminStats> {
+  return request<AdminStats>("/api/v1/admin/stats");
+}
+
+export async function fetchAdminUsers(): Promise<AdminUser[]> {
+  const data = await request<{ users: AdminUser[] }>("/api/v1/admin/users");
+  return data.users;
+}
+
+export async function updateAdminUser(userId: string, body: { is_disabled?: boolean; is_admin?: boolean }): Promise<void> {
+  await request("/api/v1/admin/users/" + userId, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchAdminDocuments(): Promise<AdminDocument[]> {
+  const data = await request<{ documents: AdminDocument[] }>("/api/v1/admin/documents");
+  return data.documents;
+}
+
+export async function deleteAdminDocument(documentId: string): Promise<void> {
+  await request("/api/v1/admin/documents/" + documentId, { method: "DELETE" });
+}
+
+export async function fetchAdminSystem(): Promise<AdminSystem> {
+  return request<AdminSystem>("/api/v1/admin/system");
 }

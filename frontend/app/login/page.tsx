@@ -15,22 +15,55 @@ const PARTICLES = [
   { id: 5, size: 35, delay: 3, duration: 18, x: "50%", y: "85%" },
 ];
 
-function getSavedUsername(): string {
-  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return "";
-  try { return window.localStorage.getItem("remembered_username") || ""; } catch { return ""; }
+function getSavedCredentials(): { username: string; password: string; autoLogin: boolean } | null {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem("auto_login_credentials");
+    if (raw) return JSON.parse(raw);
+    // Legacy: check old remembered_username
+    const username = window.localStorage.getItem("remembered_username") || "";
+    if (username) return { username, password: "", autoLogin: false };
+    return null;
+  } catch { return null; }
+}
+
+function saveAutoLoginCredentials(username: string, password: string) {
+  try { window.localStorage.setItem("auto_login_credentials", JSON.stringify({ username, password, autoLogin: true })); } catch {}
+}
+
+function clearAutoLoginCredentials() {
+  try {
+    window.localStorage.removeItem("auto_login_credentials");
+    window.localStorage.removeItem("remembered_username");
+  } catch {}
 }
 
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState<TabType>("login");
-  const [loginForm, setLoginForm] = useState({ username: "", password: "", rememberMe: false });
+  const [loginForm, setLoginForm] = useState({ username: "", password: "", autoLogin: false });
   const [registerForm, setRegisterForm] = useState({ nickname: "", username: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [autoLoggingIn, setAutoLoggingIn] = useState(false);
 
   useEffect(() => {
-    const saved = getSavedUsername();
-    if (saved) setLoginForm((f) => ({ ...f, username: saved, rememberMe: true }));
+    const saved = getSavedCredentials();
+    if (!saved) return;
+    if (saved.autoLogin && saved.password) {
+      // Auto login
+      setAutoLoggingIn(true);
+      setLoginForm({ username: saved.username, password: saved.password, autoLogin: true });
+      loginApi(saved.username, saved.password)
+        .then(() => { window.location.href = "/"; })
+        .catch(() => {
+          clearAutoLoginCredentials();
+          setAutoLoggingIn(false);
+          setError("自动登录失败，请重新登录");
+        });
+    } else {
+      setLoginForm((f) => ({ ...f, username: saved.username, autoLogin: false }));
+    }
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -40,8 +73,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await loginApi(loginForm.username, loginForm.password);
-      if (loginForm.rememberMe) window.localStorage.setItem("remembered_username", loginForm.username);
-      else window.localStorage.removeItem("remembered_username");
+      if (loginForm.autoLogin) saveAutoLoginCredentials(loginForm.username, loginForm.password);
+      else clearAutoLoginCredentials();
       window.location.href = "/";
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "登录失败，请重试。");
@@ -64,6 +97,17 @@ export default function LoginPage() {
   };
 
   const particles = PARTICLES;
+
+  if (autoLoggingIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#f5f1eb" }}>
+        <div className="text-center">
+          <div className="mb-4 h-8 w-8 mx-auto animate-spin rounded-full border-2 border-[#6f8c68] border-t-transparent" />
+          <p className="text-sm" style={{ color: "#4a5946" }}>自动登录中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex relative overflow-hidden" style={{ backgroundColor: "#f5f1eb" }}>
@@ -331,11 +375,11 @@ export default function LoginPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <input type="checkbox" id="rememberMe" checked={loginForm.rememberMe}
-                      onChange={(e) => setLoginForm({ ...loginForm, rememberMe: e.target.checked })}
+                    <input type="checkbox" id="autoLogin" checked={loginForm.autoLogin}
+                      onChange={(e) => setLoginForm({ ...loginForm, autoLogin: e.target.checked })}
                       className="w-4 h-4 rounded cursor-pointer" style={{ accentColor: "#6f8c68" }} />
-                    <label htmlFor="rememberMe" className="cursor-pointer select-none text-sm" style={{ color: "#4a5946" }}>
-                      记住用户名
+                    <label htmlFor="autoLogin" className="cursor-pointer select-none text-sm" style={{ color: "#4a5946" }}>
+                      自动登录
                     </label>
                   </div>
 

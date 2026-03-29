@@ -162,6 +162,6 @@ def build_meta_from_json(data: dict) -> dict:
             "repeat_md": "",
             "summary_md": "",
         },
-        "concepts": [],
+        "concepts": data.get("concepts") or [],
         "structured_items": data.get("items") or [],
     }

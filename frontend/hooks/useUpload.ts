@@ -9,9 +9,12 @@ import {
   deleteFolder as deleteFolderRequest,
   fetchDocumentExplanations,
   fetchDocumentStatus,
+  fetchExplanationsWithPrefetch,
   fetchFolderLibrary,
   fetchSlides,
+  fetchSlidesWithPrefetch,
   generateSlideExplanation,
+  getAssetUrl,
   moveDocumentToFolder,
   pollDocumentReady,
   uploadDocument,
@@ -35,6 +38,8 @@ type UploadState = {
   /** True while a newly-uploaded document is being processed in the background.
    *  Does NOT block foreground interactions (switching documents, etc.). */
   backgroundProcessing: boolean;
+  /** True once the initial document library fetch has completed (success or failure). */
+  initialLoaded: boolean;
   statusText: string;
   generationDocId: string | null;
   generationProgress: GenerationProgress | null;
@@ -126,6 +131,7 @@ export function useUpload(): UploadState & UploadActions {
   const [cachedExplanations, setCachedExplanations] = useState<Record<string, SlideExplanation>>({});
   const [loading, setLoading] = useState(false);
   const [backgroundProcessing, setBackgroundProcessing] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
   const [statusText, setStatusText] = useState("请先上传 PDF/图片开始学习。");
   const [generationDocId, setGenerationDocId] = useState<string | null>(null);
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
@@ -155,24 +161,61 @@ export function useUpload(): UploadState & UploadActions {
       setDocuments(flattenLibrary(nextLibrary));
     } catch (err) {
       console.error("[useUpload] refreshDocuments failed:", err);
+    } finally {
+      setInitialLoaded(true);
     }
   }
 
   async function hydrateDocument(targetDocumentId: string, options?: { resetSession?: boolean }) {
-    const [fetchedSlides, explanations] = await Promise.all([
-      fetchSlides(targetDocumentId),
-      fetchDocumentExplanations(targetDocumentId),
-    ]);
+    // Use prefetch cache if available (hover-triggered), otherwise fetch fresh
+    const slidesPromise = fetchSlidesWithPrefetch(targetDocumentId);
+    const explanationsPromise = fetchExplanationsWithPrefetch(targetDocumentId);
 
+    // Show slides as soon as they arrive — don't wait for explanations
+    const fetchedSlides = await slidesPromise;
     setDocumentId(targetDocumentId);
     setSlides(fetchedSlides);
-    setCachedExplanations(Object.fromEntries(explanations.map((item) => [item.slide_id, item])));
 
-    if (options?.resetSession ?? true) {
-      const newSession =
-        fetchedSlides.length > 0 ? await createSession(targetDocumentId, fetchedSlides[0].id) : null;
-      setSessionId(newSession?.id ?? null);
+    // ── Preload ALL thumbnail + first slide images in parallel ──
+    // This runs concurrently with session creation & explanations fetch.
+    // We await the first batch so the loading screen waits for images too.
+    if (fetchedSlides.length > 0 && typeof window !== "undefined") {
+      const preloadImg = (url: string) =>
+        new Promise<void>((resolve) => {
+          const img = new window.Image();
+          img.onload = () => resolve();
+          img.onerror = () => resolve(); // don't block on error
+          img.src = getAssetUrl(url);
+        });
+
+      // Critical: first slide + all thumbnails — must be ready before showing UI
+      const criticalLoads = [
+        preloadImg(fetchedSlides[0].image_url),
+        ...fetchedSlides.map((s) => preloadImg(s.thumbnail_url)),
+      ];
+      // Also preload nearby full-size images (non-blocking)
+      for (let i = 1; i < Math.min(4, fetchedSlides.length); i++) {
+        criticalLoads.push(preloadImg(fetchedSlides[i].image_url));
+      }
+
+      // Wait for all critical images, but cap at 6s to avoid hanging forever
+      await Promise.race([
+        Promise.all(criticalLoads),
+        new Promise<void>((r) => setTimeout(r, 6000)),
+      ]);
     }
+
+    // Start session creation immediately (don't block on explanations)
+    if (options?.resetSession ?? true) {
+      const sessionPromise = fetchedSlides.length > 0
+        ? createSession(targetDocumentId, fetchedSlides[0].id)
+        : Promise.resolve(null);
+      sessionPromise.then((s) => setSessionId(s?.id ?? null)).catch(() => {});
+    }
+
+    // Now wait for explanations (loads in background while user sees slides)
+    const explanations = await explanationsPromise;
+    setCachedExplanations(Object.fromEntries(explanations.map((item) => [item.slide_id, item])));
 
     setStatusText(`文档加载完成，共 ${fetchedSlides.length} 页。`);
 
@@ -236,7 +279,8 @@ export function useUpload(): UploadState & UploadActions {
 
       setLoading(true);
       await hydrateDocument(targetDocumentId, { resetSession: true });
-      await refreshDocuments();
+      // Refresh doc list in background — don't block user from viewing the document
+      void refreshDocuments();
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知错误";
       setStatusText(`加载失败：${message}`);
@@ -471,6 +515,7 @@ export function useUpload(): UploadState & UploadActions {
     cachedExplanations,
     loading,
     backgroundProcessing,
+    initialLoaded,
     statusText,
     generationDocId,
     generationProgress,

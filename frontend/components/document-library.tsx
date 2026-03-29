@@ -25,7 +25,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import type { DocumentLibrary, FolderDocumentItem, FolderGroup } from "@/lib/api";
+import { prefetchDocument, type DocumentLibrary, type FolderDocumentItem, type FolderGroup } from "@/lib/api";
 
 type GenerationProgress = { current: number; total: number } | null;
 type SortMode = "manual" | "name" | "date";
@@ -179,15 +179,20 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
         style={style}
         data-testid={`document-item-${document.filename}`}
         data-drag-state={resolvedDragState}
-        className={`group relative flex flex-col rounded-[14px] border transition ${
+        className={`group relative flex flex-col rounded-[14px] border transition-all duration-150 cursor-pointer ${
           activeDocumentId === document.id
-            ? "border-[var(--bd-4)] bg-[var(--gd-active-doc)] shadow-[var(--sh-sm)]"
-            : "border-[var(--bd-2)] bg-[var(--sf-1)] hover:border-[var(--bd-4)] hover:bg-[var(--sf-1)]"
+            ? "border-[var(--bd-4)] bg-[var(--gd-active-doc)] shadow-[var(--sh-sm)] ring-2 ring-[var(--brand-amber)]/25"
+            : "border-[var(--bd-2)] bg-[var(--sf-1)] hover:border-[var(--bd-4)] hover:bg-[var(--sf-3)] hover:shadow-[var(--sh-sm)] active:scale-[0.97] active:bg-[var(--sf-4)]"
         } ${
           isDragging || resolvedDragState === "source"
             ? "document-card-source opacity-50"
             : "document-card-idle"
         }`}
+        onClick={(e) => {
+          // Don't trigger if clicking menu or drag handle
+          if ((e.target as HTMLElement).closest('[aria-label="更多操作"], [aria-label="拖拽排序"]')) return;
+          if (!loading) void onSelectDocument(document.id);
+        }}
         {...attributes}
       >
         {/* Main row */}
@@ -219,20 +224,25 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
           <span className="shrink-0 text-sm leading-none">📄</span>
 
           {/* Filename */}
-          <button
-            className="min-w-0 flex-1 truncate text-left text-[13px] text-[var(--tx-2)]"
+          <span
+            className="min-w-0 flex-1 truncate text-left text-[13px] text-[var(--tx-2)] group-hover:text-[var(--tx-1)] group-hover:underline decoration-[var(--bd-4)] underline-offset-2 transition-colors"
             title={document.filename}
-            onClick={() => void onSelectDocument(document.id)}
-            type="button"
+            onMouseEnter={() => prefetchDocument(document.id)}
+            onTouchStart={() => prefetchDocument(document.id)}
           >
             {document.filename}
-          </button>
+          </span>
 
           {/* Page count */}
           <span className="shrink-0 text-[11px] text-[var(--tx-5)]">{document.page_count}p</span>
 
-          {/* Status dot */}
-          {statusDot}
+          {/* Status dot / loading spinner */}
+          {loading && activeDocumentId === document.id ? (
+            <svg className="h-3 w-3 shrink-0 animate-spin text-[var(--brand-amber)]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+          ) : statusDot}
 
           {/* ⋯ menu */}
           <div ref={menuRef} className="relative shrink-0">

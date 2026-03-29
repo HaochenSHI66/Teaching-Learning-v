@@ -7,6 +7,7 @@ import { KnowledgeGraphPanel } from "@/components/knowledge-graph";
 import { MarkdownContent } from "@/components/markdown-content";
 import { SelectionPopup } from "@/components/selection-popup";
 import { StructuredContent } from "@/components/structured-content";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import type { ChatMessage } from "@/hooks/useChat";
 import type { BatchProgress, GenerationProgress } from "@/hooks/useSlideGeneration";
 import { getAssetUrl, type SlideExplanation, type SlideExtract } from "@/lib/api";
@@ -167,6 +168,7 @@ export function AIPanel({
   const [tab, setTab] = useState<TabKey>("explain");
   const explanationRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
   const badge = getExplanationBadge(explanationState, explanationLoading);
   const extractionMarkdown = useMemo(() => buildExtractionMarkdown(extraction), [extraction]);
   const repeatSummary = explanationMeta?.repeat_summary;
@@ -193,9 +195,11 @@ export function AIPanel({
   };
 
   return (
-    <section className="flex h-full min-h-0 flex-col rounded-[30px] border border-[var(--bd-1)] bg-[var(--gd-card)] p-3 shadow-[var(--sh-panel)]">
+    <section className={`flex h-full min-h-0 flex-col border border-[var(--bd-1)] bg-[var(--gd-card)] shadow-[var(--sh-panel)] ${
+      isMobile ? "rounded-none border-x-0 p-2" : "rounded-[30px] p-3"
+    }`}>
       {/* Tab bar */}
-      <header className="mb-2 shrink-0">
+      <header className="mb-1.5 shrink-0 md:mb-2">
         <div className="inline-flex flex-wrap gap-0.5 rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] p-0.5 shadow-sm">
           {TABS.map((item) => (
             <button

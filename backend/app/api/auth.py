@@ -34,6 +34,7 @@ class UserRead(BaseModel):
     id: str
     email: str
     display_name: str
+    is_admin: bool = False
     created_at: str
 
 
@@ -52,6 +53,7 @@ def _user_read(user: User) -> UserRead:
         id=user.id,
         email=user.email,
         display_name=user.display_name,
+        is_admin=getattr(user, "is_admin", False),
         created_at=user.created_at.isoformat(),
     )
 

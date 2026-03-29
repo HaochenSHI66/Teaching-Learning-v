@@ -40,7 +40,9 @@ def _save_thumbnail_from_pixmap(pixmap: "fitz.Pixmap", destination: Path, max_wi
     try:
         width, height = image.size
         image.thumbnail((max_width, max_width * 8))
-        image.save(destination, format="PNG", compress_level=1)
+        fmt = "WEBP" if destination.suffix == ".webp" else "PNG"
+        save_args = {"format": fmt, "quality": 80} if fmt == "WEBP" else {"format": fmt, "compress_level": 1}
+        image.save(destination, **save_args)
         return width, height
     finally:
         image.close()
@@ -288,12 +290,11 @@ def _render_pdf(pdf_path: Path, output_dir: Path, render_scale: float = 2.0) -> 
             pixmap = page.get_pixmap(matrix=fitz.Matrix(render_scale, render_scale), alpha=False)
             # Build PIL image from in-memory pixmap samples (no intermediate file)
             pil_image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
-            slide_file = slides_dir / f"slide_{page_index:03d}.png"
-            # compress_level=1: fastest PNG write (~3x faster than default level 6)
-            pil_image.save(slide_file, format="PNG", compress_level=1)
+            slide_file = slides_dir / f"slide_{page_index:03d}.webp"
+            pil_image.save(slide_file, format="WEBP", quality=85)
             pil_image.close()
 
-            thumb_file = thumbs_dir / f"thumb_{page_index:03d}.png"
+            thumb_file = thumbs_dir / f"thumb_{page_index:03d}.webp"
             width, height = _save_thumbnail_from_pixmap(pixmap, thumb_file)
             del pixmap
             extracted_text, extract_payload = _extract_pdf_payload(

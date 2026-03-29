@@ -5,6 +5,7 @@ export interface AuthUser {
   id: string;
   email: string;
   display_name: string;
+  is_admin?: boolean;
 }
 
 function safeStorage(): Storage | null {

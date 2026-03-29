@@ -184,6 +184,11 @@ _JSON_SCHEMA_EXAMPLE = """\
       ],
       "callout": {"type": "WARNING", "text": "Overlay 需要程序员手动管理模块，已被 Virtual Memory 取代。"}
     }
+  ],
+  "concepts": [
+    {"name_en": "Main Memory", "name_zh": "主存", "description": "CPU 可直接访问的物理存储器"},
+    {"name_en": "Virtual Memory", "name_zh": "虚拟内存", "description": "操作系统提供的逻辑地址空间，允许程序使用超过物理内存的地址范围"},
+    {"name_en": "Overlay", "name_zh": "覆盖技术", "description": "早期手动管理内存的方式，将程序分段加载"}
   ]
 }"""
 
@@ -229,6 +234,14 @@ title / toc / intro / content / example / summary
 - intro / content / summary：4-8 个 items
 - example：4-6 个 items，必要时用 sub_items
 - 每个 item 的 explanation 要充分展开，讲清楚"为什么"和"怎么理解"，不要只陈述事实
+
+概念提取规则（concepts 字段）：
+- 只提取本页出现的**真正的学科概念/专业术语**
+- 每个概念需要 name_en（英文名）、name_zh（中文名）、description（一句话定义）
+- 什么算概念：算法名、数据结构、理论模型、协议、定理、技术方案等
+- 什么不算概念：变量名（如 tableA、n、i）、页面元素（如标题、图片）、课程编号、人名、泛化词（如 example、problem）
+- 每页 2-5 个概念，没有就写空数组 []
+- title / toc 页通常没有概念，写 []
 
 请严格输出以下 JSON schema，不要输出任何其他内容（不要 ```json 包裹）：
 

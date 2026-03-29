@@ -93,9 +93,25 @@ def get_current_user(request: Request) -> User:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
             )
+        if getattr(user, "is_disabled", False):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account is disabled",
+            )
         # Detach from session so it can be used outside
         session.expunge(user)
         return user
+
+
+def require_admin(request: Request) -> User:
+    """FastAPI dependency: requires admin user. Raises 403 if not admin."""
+    user = get_current_user(request)
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user
 
 
 def get_optional_user(request: Request) -> User | None:

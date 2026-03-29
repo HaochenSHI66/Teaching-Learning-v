@@ -174,6 +174,7 @@ def _create_sqlite_indexes(engine) -> None:
 
 
 def init_db(engine) -> None:
+    import app.models  # noqa: F401 — ensure all models are registered before create_all
     SQLModel.metadata.create_all(engine)
     _backfill_sqlite_columns(engine)
     _create_sqlite_indexes(engine)

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 
 import { BookmarkFilter } from "@/components/bookmark-filter";
 import { SlideBookmarks } from "@/components/slide-bookmarks";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { getAssetUrl, type Bookmark, type BookmarkTag, type FlashcardStats, type RoiBox, type Slide } from "@/lib/api";
 
 type SlideViewerProps = {
@@ -31,6 +33,22 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [draftRoi, setDraftRoi] = useState<RoiBox | null>(null);
+  const isMobile = useIsMobile();
+
+  const swipeHandlers = useSwipeNavigation({
+    onSwipeLeft: () => {
+      if (currentIndex < slides.length - 1) {
+        onSelect(currentIndex + 1);
+        onRoiChange(null);
+      }
+    },
+    onSwipeRight: () => {
+      if (currentIndex > 0) {
+        onSelect(currentIndex - 1);
+        onRoiChange(null);
+      }
+    },
+  });
   // Track which URL has finished loading. mainImageLoaded is derived inline so
   // it becomes false immediately when the URL changes (no effect delay → no flash).
   const [loadedUrl, setLoadedUrl] = useState<string | undefined>(undefined);
@@ -149,6 +167,59 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
     );
   }
 
+  // ── Mobile layout: no thumbnails, swipe to navigate ──
+  if (isMobile) {
+    return (
+      <section
+        className="mobile-slide-viewer flex h-full min-h-0 flex-col rounded-[16px] border border-[var(--bd-1)] bg-[var(--sf-2)]/96 shadow-[var(--sh-card)] overflow-hidden"
+        {...swipeHandlers}
+      >
+        {/* Compact page indicator */}
+        <header className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-[var(--bd-2)] bg-[var(--sf-1)]">
+          <span className="text-[12px] font-medium text-[var(--tx-2)]">P{currentSlide.page_num}</span>
+          <div className="flex items-center gap-2">
+            <SlideBookmarks
+              slideId={currentSlide.id}
+              documentId={documentId}
+              bookmarks={bookmarks}
+              onBookmarksChange={onBookmarksChange}
+            />
+            <span className="text-[12px] tabular-nums text-[var(--tx-5)]">
+              {currentIndex + 1}/{slides.length}
+            </span>
+          </div>
+        </header>
+
+        {/* Slide image — fills remaining space */}
+        <div className="flex-1 min-h-0 overflow-auto bg-[var(--gd-slide)] p-1.5 flex items-center justify-center">
+          <div className="relative inline-block rounded-[12px] border border-[var(--bd-1)] bg-[var(--sf-1)] p-1 shadow-sm">
+            {!mainImageLoaded && (
+              <div className="absolute inset-1 animate-pulse rounded-[10px] bg-[var(--sf-4)]" aria-hidden="true" />
+            )}
+            <img
+              ref={imgRef}
+              alt={`Slide ${currentSlide.page_num}`}
+              className={`block h-auto max-w-full max-h-full rounded-[10px] ${mainImageLoaded ? "" : "opacity-0"}`}
+              draggable={false}
+              fetchPriority="high"
+              decoding="async"
+              src={getAssetUrl(currentSlide.image_url)}
+              onLoad={() => setLoadedUrl(currentSlide.image_url)}
+            />
+          </div>
+        </div>
+
+        {/* Swipe hint (only first few views) */}
+        <div className="shrink-0 flex items-center justify-center gap-3 py-1.5 text-[11px] text-[var(--tx-6)]">
+          <span>← 上一页</span>
+          <span className="h-1 w-1 rounded-full bg-[var(--tx-6)]" />
+          <span>下一页 →</span>
+        </div>
+      </section>
+    );
+  }
+
+  // ── Desktop layout: thumbnails + main slide ──
   return (
     <section className="grid h-full min-h-0 grid-cols-[112px_1fr] gap-4 rounded-[30px] border border-[var(--bd-1)] bg-[var(--sf-2)]/96 p-4 shadow-[var(--sh-card)]">
       <aside className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-[var(--bd-2)] bg-[var(--sf-3)] p-2">

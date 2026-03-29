@@ -7,11 +7,13 @@ import { DocumentLibrary } from "@/components/document-library";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { ExportNotesModal } from "@/components/export-notes-modal";
 import { FlashcardReview } from "@/components/flashcard-review";
+import { LoadingScreen } from "@/components/loading-screen";
 import { SlideViewer } from "@/components/slide-viewer";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserButton } from "@/components/user-button";
 import { useChat } from "@/hooks/useChat";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { useSlideGeneration } from "@/hooks/useSlideGeneration";
 import { useUpload } from "@/hooks/useUpload";
@@ -29,6 +31,7 @@ import { getErrorMessage } from "@/lib/errorMessage";
 export default function Page() {
   const upload = useUpload();
   const chat = useChat();
+  const isMobile = useIsMobile();
   const { setExplanation, setExplanationMeta } = chat;
   const explanationRef = useRef(chat.explanation);
   useEffect(() => { explanationRef.current = chat.explanation; }, [chat.explanation]);
@@ -44,6 +47,56 @@ export default function Page() {
   const [flashcardStats, setFlashcardStats] = useState<FlashcardStats | null>(null);
   const [exportModalOpen, setExportModalOpen] = useState(false);
 
+  // ── Loading screen state ──
+  const [appReady, setAppReady] = useState(false);
+  const [showLoadingScreen, setShowLoadingScreen] = useState(true);
+  const firstDocLoadedRef = useRef(false);
+  const [loadingSteps, setLoadingSteps] = useState([
+    { label: "正在连接服务器…", done: false },
+    { label: "加载文档库…", done: false },
+    { label: "预载最近文档…", done: false },
+  ]);
+
+  // Step 1: mark "connected" once component mounts
+  useEffect(() => {
+    setLoadingSteps((prev) => prev.map((s, i) => i === 0 ? { ...s, done: true } : s));
+  }, []);
+
+  // Step 2: mark "library loaded" when initial fetch completes
+  useEffect(() => {
+    if (upload.initialLoaded) {
+      setLoadingSteps((prev) => prev.map((s, i) => i <= 1 ? { ...s, done: true } : s));
+    }
+  }, [upload.initialLoaded]);
+
+  // Step 3: auto-load first document during loading screen
+  useEffect(() => {
+    if (!upload.initialLoaded || firstDocLoadedRef.current) return;
+    firstDocLoadedRef.current = true;
+
+    const firstDoc = upload.documents[0];
+    if (firstDoc) {
+      // Preload first document while loading screen is still showing
+      upload.loadDocument(firstDoc.id).finally(() => {
+        setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true })));
+      });
+    } else {
+      // No documents — skip step 3
+      setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true })));
+    }
+  }, [upload.initialLoaded, upload.documents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-dismiss loading screen after all steps done
+  useEffect(() => {
+    if (loadingSteps.every((s) => s.done)) {
+      const t = setTimeout(() => {
+        setAppReady(true);
+        setShowLoadingScreen(false);
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [loadingSteps]);
+
   const currentSlide = useMemo(
     () => upload.slides[currentSlideIndex],
     [upload.slides, currentSlideIndex],
@@ -52,6 +105,19 @@ export default function Page() {
     () => upload.documents.find((d) => d.id === upload.documentId)?.filename,
     [upload.documents, upload.documentId],
   );
+
+  // Preload nearby full-size slide images when user navigates
+  // (thumbnails + first few slides are preloaded by hydrateDocument)
+  useEffect(() => {
+    const slides = upload.slides;
+    if (!slides.length) return;
+    const start = Math.max(0, currentSlideIndex - 3);
+    const end = Math.min(slides.length, currentSlideIndex + 4);
+    for (let i = start; i < end; i++) {
+      const img = new Image();
+      img.src = slides[i].image_url;
+    }
+  }, [upload.slides, currentSlideIndex]);
 
   // Task 1 & 6: Keyboard navigation via extracted hook
   useKeyboardNavigation(upload.slides, currentSlideIndex, setCurrentSlideIndex);
@@ -178,9 +244,10 @@ export default function Page() {
 
   return (
     <ThemeProvider>
+    <LoadingScreen steps={loadingSteps} visible={showLoadingScreen} />
     <main className="relative flex h-screen min-h-screen flex-col overflow-hidden">
       <header className="relative z-10 shrink-0 overflow-visible border-b border-[var(--bd-1)] bg-[var(--sf-header)] backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-3 px-4 py-2 md:px-5">
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 md:gap-3 md:px-5 md:py-2">
           <div className="flex items-center gap-2">
             {interactiveReady ? (
               <button
@@ -200,16 +267,17 @@ export default function Page() {
               />
             )}
             <div>
-              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--tx-5)]">Learning Studio</p>
-              <h1 className="text-sm font-semibold leading-tight text-[var(--tx-2)]">幻灯片研习台</h1>
+              <p className="hidden text-[9px] uppercase tracking-[0.28em] text-[var(--tx-5)] md:block">Learning Studio</p>
+              <h1 className="text-xs font-semibold leading-tight text-[var(--tx-2)] md:text-sm">幻灯片研习台</h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 md:gap-1.5">
             <ThemeToggle />
+            {/* Hide review/export buttons on mobile to save space */}
             <button
               aria-label="闪卡复习"
-              className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-medium transition-colors ${
+              className={`hidden md:inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-medium transition-colors ${
                 upload.documentId && upload.sessionId
                   ? "border-[var(--bd-1)] bg-[var(--sf-1)] text-[var(--tx-3)] hover:bg-[var(--sf-3)]"
                   : "cursor-not-allowed border-[var(--bd-2)] bg-[var(--sf-4)] text-[var(--tx-6)]"
@@ -226,7 +294,7 @@ export default function Page() {
             </button>
             <button
               aria-label="导出学习笔记"
-              className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-medium transition-colors ${
+              className={`hidden md:inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-medium transition-colors ${
                 upload.documentId
                   ? "border-[var(--bd-1)] bg-[var(--sf-1)] text-[var(--tx-3)] hover:bg-[var(--sf-3)]"
                   : "cursor-not-allowed border-[var(--bd-2)] bg-[var(--sf-4)] text-[var(--tx-6)]"
@@ -251,14 +319,14 @@ export default function Page() {
               </svg>
               <span>导出笔记</span>
             </button>
-            <div className="rounded-full border border-[var(--bd-4)] bg-[var(--sf-3)] px-2.5 py-0.5 text-[11px] text-[var(--brand-sage)]">
+            <div className="hidden rounded-full border border-[var(--bd-4)] bg-[var(--sf-3)] px-2.5 py-0.5 text-[11px] text-[var(--brand-sage)] md:block">
               {documentCount} 篇
             </div>
             {/* Global parse progress capsule replaces page badge while generating */}
             {upload.generationProgress ? (
-              <div className="flex items-center gap-1.5 rounded-full border border-[var(--bd-4)] bg-[var(--sf-1)] px-3 py-0.5 shadow-sm">
+              <div className="flex items-center gap-1.5 rounded-full border border-[var(--bd-4)] bg-[var(--sf-1)] px-2 py-0.5 shadow-sm md:px-3">
                 <span className="text-[10px] animate-pulse">✦</span>
-                <div className="relative h-1.5 w-20 overflow-hidden rounded-full bg-[var(--sf-4)]">
+                <div className="relative h-1.5 w-12 overflow-hidden rounded-full bg-[var(--sf-4)] md:w-20">
                   <div
                     className="absolute inset-y-0 left-0 w-full origin-left rounded-full bg-gradient-to-r from-[var(--brand-amber)] to-[var(--brand-sage)] transition-transform duration-500 ease-out"
                     style={{ transform: `scaleX(${upload.generationProgress.current / upload.generationProgress.total})` }}
@@ -269,11 +337,11 @@ export default function Page() {
                 </span>
               </div>
             ) : (
-              <div className="rounded-full border border-[var(--bd-4)] bg-[var(--sf-3)] px-2.5 py-0.5 text-[11px] text-[var(--tx-5)]">
+              <div className="rounded-full border border-[var(--bd-4)] bg-[var(--sf-3)] px-2 py-0.5 text-[11px] text-[var(--tx-5)] md:px-2.5">
                 {currentSlide ? `P${currentSlide.page_num}/${pageCount || 0}` : "—"}
               </div>
             )}
-            <div className="max-w-[300px] truncate rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] px-2.5 py-0.5 text-[11px] text-[var(--tx-4)]">
+            <div className="hidden max-w-[300px] truncate rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] px-2.5 py-0.5 text-[11px] text-[var(--tx-4)] md:block">
               {statusText}
             </div>
             <UserButton />
@@ -327,31 +395,38 @@ export default function Page() {
         </div>
       )}
 
-      <div className="relative flex min-h-0 flex-1 gap-4 overflow-hidden p-4 md:p-5">
-        <aside
-          className={`min-h-0 shrink-0 overflow-hidden rounded-[28px] border border-[var(--bd-1)] bg-[var(--sf-sidebar)] shadow-[var(--sh-panel)] backdrop-blur-xl transition-all duration-300 ${
-            sidebarCollapsed ? "w-0 basis-0 min-w-0 p-0 border-0 opacity-0 pointer-events-none" : "w-[320px] basis-[320px]"
-          }`}
-        >
-          <DocumentLibrary
-            activeDocumentId={upload.documentId}
-            backgroundProcessing={upload.backgroundProcessing}
-            generationDocId={upload.generationDocId}
-            generationProgress={upload.generationProgress}
-            library={upload.library}
-            loading={loading}
-            onAbortGeneration={upload.abortGeneration}
-            onCreateFolder={(name) => upload.createFolder(name)}
-            onDeleteDocument={handleDeleteDocument}
-            onDeleteFolder={handleDeleteFolder}
-            onMoveDocument={upload.moveDocument}
-            onRegenerateDocument={upload.regenerateDocumentExplanations}
-            onSelectDocument={upload.loadDocument}
-            onUpload={upload.handleUpload}
-          />
-        </aside>
+      <div className={`relative flex min-h-0 flex-1 overflow-hidden ${isMobile ? "gap-0 p-0" : "gap-4 p-4 md:p-5"}`}>
+        {/* Sidebar — hidden on mobile */}
+        {!isMobile && (
+          <aside
+            className={`min-h-0 shrink-0 overflow-hidden rounded-[28px] border border-[var(--bd-1)] bg-[var(--sf-sidebar)] shadow-[var(--sh-panel)] backdrop-blur-xl transition-all duration-300 ${
+              sidebarCollapsed ? "w-0 basis-0 min-w-0 p-0 border-0 opacity-0 pointer-events-none" : "w-[320px] basis-[320px]"
+            }`}
+          >
+            <DocumentLibrary
+              activeDocumentId={upload.documentId}
+              backgroundProcessing={upload.backgroundProcessing}
+              generationDocId={upload.generationDocId}
+              generationProgress={upload.generationProgress}
+              library={upload.library}
+              loading={loading}
+              onAbortGeneration={upload.abortGeneration}
+              onCreateFolder={(name) => upload.createFolder(name)}
+              onDeleteDocument={handleDeleteDocument}
+              onDeleteFolder={handleDeleteFolder}
+              onMoveDocument={upload.moveDocument}
+              onRegenerateDocument={upload.regenerateDocumentExplanations}
+              onSelectDocument={upload.loadDocument}
+              onUpload={upload.handleUpload}
+            />
+          </aside>
+        )}
 
-        <section className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
+        <section className={`grid h-full min-h-0 flex-1 ${
+          isMobile
+            ? "grid-rows-[45%_1fr] gap-0"
+            : "grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]"
+        }`}>
             {/* Task 3: Processing animation for first upload */}
             {showProcessingAnimation ? (
               <div className="flex h-full flex-col items-center justify-center rounded-[30px] border border-[var(--bd-1)] bg-[var(--gd-processing)] shadow-[var(--sh-card)]">

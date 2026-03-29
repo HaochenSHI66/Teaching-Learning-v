@@ -333,7 +333,7 @@ def _detect_compact_slide_type(*, extracted_text: str, extract_payload: dict | N
     title_candidates = [str(item).strip() for item in payload.get("title_candidates") or [] if str(item).strip()]
     has_dense_content = any(
         _payload_blocks(payload, key)
-        for key in ("equation_like_blocks", "code_like_blocks", "tables")
+        for key in ("equation_like_blocks", "code_like_blocks", "tables", "figures")
     )
     if has_dense_content:
         return None

@@ -712,3 +712,35 @@ h4 {
   background: rgba(136, 168, 192, 0.12);
   color: #88a8c0;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE OVERRIDES
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Loading screen dark theme ── */
+[data-theme="dark"] .loading-screen-bg {
+  background: linear-gradient(145deg, #0f1724 0%, #0d1420 48%, #0b1018 100%) !important;
+}
+
+@media (max-width: 768px) {
+  /* Remove background grid pattern on mobile for cleaner look */
+  body::before {
+    display: none;
+  }
+
+  /* Mobile slide viewer — edge-to-edge */
+  .mobile-slide-viewer {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    box-shadow: none;
+  }
+
+  /* AI Panel on mobile — no rounded corners at top, full width */
+  .mobile-slide-viewer + section,
+  section:has(> .animate-fade-slide-in) {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+}
