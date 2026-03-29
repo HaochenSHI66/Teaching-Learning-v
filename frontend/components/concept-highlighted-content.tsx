@@ -47,7 +47,7 @@ export function ConceptHighlightedContent({
 
   // If no concepts, just render plain markdown
   if (concepts.length === 0) {
-    return <MarkdownContent content={content} className={className} />;
+    return content ? <MarkdownContent content={content} className={className} /> : null;
   }
 
   // Render markdown first, then overlay concept chips on the rendered text.
@@ -57,18 +57,18 @@ export function ConceptHighlightedContent({
   return (
     <div className={className}>
       {/* Concept chips bar */}
-      <div className="mb-2 flex flex-wrap gap-1 rounded-[12px] border border-[#e8dcc8] bg-[#faf5ec] px-2.5 py-1.5">
-        <span className="mr-1 self-center text-[11px] text-[#9a846a]">本页概念</span>
+      <div className="mb-2 flex flex-wrap gap-1 rounded-[12px] border border-[var(--bd-3)] bg-[var(--sf-2)] px-2.5 py-1.5">
+        <span className="mr-1 self-center text-[11px] text-[var(--tx-5)]">本页概念</span>
         {concepts.map((c) => (
           <span
             key={c.id}
-            className="inline-flex items-center rounded-md border border-[#d9c7ab] bg-[#f0e6d6] px-1.5 py-0.5 text-[11px] text-[#5a4530]"
+            className="inline-flex items-center rounded-md border border-[var(--bd-1)] bg-[var(--sf-3)] px-1.5 py-0.5 text-[11px] text-[var(--tx-3)]"
           >
             <ConceptChip concept={c} matchedText={c.name} onJumpToSlide={onJumpToSlide} />
           </span>
         ))}
       </div>
-      <MarkdownContent content={content} className={className} />
+      {content && <MarkdownContent content={content} className={className} />}
     </div>
   );
 }
