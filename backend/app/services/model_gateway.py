@@ -102,10 +102,22 @@ class ModelGateway:
             "model": self.model,
             "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
             "temperature": float(os.getenv("MODEL_TEMPERATURE", "0.2")),
+            "max_tokens": 4096,
         }
-        if self._is_anthropic:
-            payload["max_tokens"] = 4096
         return self._post_chat_completion(payload)
+
+    def generate_text_json(self, *, prompt: str) -> dict:
+        """Call text model with response_format=json_object and return parsed dict."""
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+            "temperature": float(os.getenv("MODEL_TEMPERATURE", "0.2")),
+            "max_tokens": 4096,
+        }
+        if not self._is_anthropic:
+            payload["response_format"] = {"type": "json_object"}
+        raw = self._post_chat_completion(payload)
+        return json.loads(raw)
 
     def generate_vision_extraction(
         self,

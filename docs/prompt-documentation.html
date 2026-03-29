@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teaching-Learning Prompt 详细说明文档</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface2: #334155;
+            --border: #475569;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent2: #818cf8;
+            --green: #4ade80;
+            --yellow: #fbbf24;
+            --red: #f87171;
+            --orange: #fb923c;
+            --pink: #f472b6;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            padding: 0;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        .header p { color: var(--text-muted); font-size: 1.05rem; }
+        .header .meta { margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+        .toc {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2.5rem;
+        }
+        .toc h2 { font-size: 1.3rem; color: var(--accent); margin-bottom: 1rem; }
+        .toc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 0.6rem;
+        }
+        .toc a {
+            color: var(--text); text-decoration: none; padding: 0.5rem 0.8rem;
+            border-radius: 6px; display: flex; align-items: center; gap: 0.5rem;
+            transition: background 0.2s; font-size: 0.95rem;
+        }
+        .toc a:hover { background: var(--surface2); }
+        .toc .badge, .badge {
+            font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+            font-weight: 600; white-space: nowrap;
+        }
+        .badge-core { background: rgba(56,189,248,0.15); color: var(--accent); }
+        .badge-chat { background: rgba(129,140,248,0.15); color: var(--accent2); }
+        .badge-note { background: rgba(74,222,128,0.15); color: var(--green); }
+        .badge-quiz { background: rgba(251,191,36,0.15); color: var(--yellow); }
+        .badge-engine { background: rgba(248,113,113,0.15); color: var(--red); }
+        .badge-infra { background: rgba(251,146,60,0.15); color: var(--orange); }
+        .badge-change { background: rgba(244,114,182,0.15); color: var(--pink); }
+
+        .arch {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 2rem; margin-bottom: 2.5rem;
+        }
+        .arch h2 { font-size: 1.3rem; color: var(--accent); margin-bottom: 1rem; }
+        .flow-diagram {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+            padding: 1.5rem; background: var(--bg); border-radius: 8px;
+            font-size: 0.9rem; justify-content: center;
+        }
+        .flow-box {
+            padding: 0.6rem 1rem; border-radius: 8px; font-weight: 600;
+            text-align: center; min-width: 120px;
+        }
+        .flow-arrow { color: var(--text-muted); font-size: 1.2rem; }
+        .flow-upload { background: rgba(56,189,248,0.15); color: var(--accent); border: 1px solid rgba(56,189,248,0.3); }
+        .flow-extract { background: rgba(74,222,128,0.15); color: var(--green); border: 1px solid rgba(74,222,128,0.3); }
+        .flow-detect { background: rgba(251,191,36,0.15); color: var(--yellow); border: 1px solid rgba(251,191,36,0.3); }
+        .flow-prompt { background: rgba(129,140,248,0.15); color: var(--accent2); border: 1px solid rgba(129,140,248,0.3); }
+        .flow-llm { background: rgba(248,113,113,0.15); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+        .flow-db { background: rgba(251,146,60,0.15); color: var(--orange); border: 1px solid rgba(251,146,60,0.3); }
+
+        .prompt-section {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; margin-bottom: 2rem; overflow: hidden;
+        }
+        .prompt-header {
+            padding: 1.5rem 2rem; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+        }
+        .prompt-header h2 { font-size: 1.4rem; font-weight: 700; }
+        .prompt-body { padding: 2rem; }
+
+        .info-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1rem; margin-bottom: 1.5rem;
+        }
+        .info-card { background: var(--bg); border-radius: 8px; padding: 1rem; }
+        .info-card .label {
+            font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--text-muted); margin-bottom: 0.3rem;
+        }
+        .info-card .value { font-size: 0.95rem; font-weight: 600; }
+
+        .prompt-block {
+            background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+            padding: 1.5rem; font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+            font-size: 0.85rem; line-height: 1.8; white-space: pre-wrap;
+            word-break: break-word; overflow-x: auto; color: #c9d1d9;
+            margin: 1rem 0; position: relative;
+        }
+        .prompt-block .var {
+            color: var(--accent); background: rgba(56,189,248,0.1);
+            padding: 0.1rem 0.3rem; border-radius: 3px;
+        }
+        .prompt-block .hl {
+            color: var(--pink); background: rgba(244,114,182,0.1);
+            padding: 0.1rem 0.3rem; border-radius: 3px;
+        }
+        .prompt-label {
+            position: absolute; top: 0.5rem; right: 0.8rem; font-size: 0.7rem;
+            color: var(--text-muted); background: var(--surface2);
+            padding: 0.15rem 0.5rem; border-radius: 4px;
+            font-family: -apple-system, sans-serif;
+        }
+
+        .desc { color: var(--text-muted); font-size: 0.95rem; margin: 1rem 0; }
+        .desc strong { color: var(--text); }
+
+        .var-table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+        .var-table th {
+            text-align: left; padding: 0.6rem 1rem; background: var(--bg);
+            color: var(--text-muted); font-weight: 600; font-size: 0.8rem;
+            text-transform: uppercase; letter-spacing: 0.03em;
+        }
+        .var-table td { padding: 0.6rem 1rem; border-top: 1px solid rgba(71,85,105,0.3); }
+        .var-table code {
+            color: var(--accent); background: rgba(56,189,248,0.1);
+            padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.85rem;
+        }
+
+        .flow-detail {
+            background: var(--bg); border-radius: 8px; padding: 1.2rem 1.5rem; margin: 1rem 0;
+        }
+        .flow-detail h4 { color: var(--accent2); font-size: 0.95rem; margin-bottom: 0.5rem; }
+        .flow-detail ol, .flow-detail ul { padding-left: 1.5rem; color: var(--text-muted); }
+        .flow-detail li { margin: 0.3rem 0; }
+        .flow-detail li strong { color: var(--text); }
+
+        .subsection { border-left: 3px solid var(--accent2); padding-left: 1.5rem; margin: 1.5rem 0; }
+        .subsection h3 { font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--text); }
+
+        .keyword-list { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0; }
+        .keyword {
+            background: var(--surface2); padding: 0.2rem 0.6rem; border-radius: 4px;
+            font-size: 0.82rem; color: var(--text-muted);
+        }
+
+        .change-note {
+            background: rgba(244,114,182,0.08); border: 1px solid rgba(244,114,182,0.25);
+            border-radius: 8px; padding: 1rem 1.2rem; margin: 1rem 0;
+            font-size: 0.9rem; color: var(--pink);
+        }
+        .change-note strong { color: var(--pink); }
+        .change-note .old { text-decoration: line-through; opacity: 0.6; color: var(--text-muted); }
+
+        .back-top { text-align: right; margin-top: 1rem; }
+        .back-top a { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; }
+        .back-top a:hover { color: var(--accent); }
+
+        .footer {
+            text-align: center; padding: 2rem; color: var(--text-muted);
+            font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .container { padding: 1rem; }
+            .header { padding: 2rem 1rem; }
+            .header h1 { font-size: 1.6rem; }
+            .toc-grid { grid-template-columns: 1fr; }
+            .info-grid { grid-template-columns: 1fr; }
+            .flow-diagram { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Teaching-Learning Application</h1>
+    <p>Prompt 系统详细说明文档</p>
+    <div class="meta">文档版本 v6 &middot; 生成日期 2026-03-29 &middot; 基于 backend/app/services/ 源码</div>
+</div>
+
+<div class="container">
+
+    <!-- ════════════════ TOC ════════════════ -->
+    <div class="toc" id="toc">
+        <h2>目录</h2>
+        <div class="toc-grid">
+            <a href="#arch"><span class="badge badge-infra">架构</span>系统架构总览 &amp; 调用流程</a>
+            <a href="#slide-prompt"><span class="badge badge-core">核心</span>单模型 Slide Prompt（读图讲解）</a>
+            <a href="#roi-prompt"><span class="badge badge-core">核心</span>ROI 框选区域 Prompt</a>
+            <a href="#vision-extraction"><span class="badge badge-core">双模型</span>Stage 1：视觉提取 Prompt</a>
+            <a href="#text-explanation"><span class="badge badge-core">双模型</span>Stage 2：文本讲解 Prompt</a>
+            <a href="#page-type-detection"><span class="badge badge-engine">引擎</span>页面类型检测逻辑</a>
+            <a href="#example-detection"><span class="badge badge-engine">引擎</span>例题页检测逻辑</a>
+            <a href="#repeat-analysis"><span class="badge badge-engine">引擎</span>重复分析 &amp; 上下文注入</a>
+            <a href="#chat-slide"><span class="badge badge-chat">对话</span>单页对话 System Prompt</a>
+            <a href="#chat-global"><span class="badge badge-chat">对话</span>全局对话 System Prompt</a>
+            <a href="#question-classify"><span class="badge badge-chat">对话</span>问题分类 &amp; 风格映射</a>
+            <a href="#note-prompt"><span class="badge badge-note">笔记</span>复习笔记生成 Prompt</a>
+            <a href="#note-fallback"><span class="badge badge-note">笔记</span>笔记 Fallback（无 LLM 回退）</a>
+            <a href="#quiz-prompt"><span class="badge badge-quiz">测验</span>Quiz 生成逻辑</a>
+            <a href="#glossary"><span class="badge badge-infra">工具</span>术语词汇表 &amp; 双语标注</a>
+            <a href="#sanitize"><span class="badge badge-engine">引擎</span>输出清洗 &amp; 后处理</a>
+            <a href="#gateway"><span class="badge badge-infra">基础设施</span>Model Gateway 调用机制</a>
+        </div>
+    </div>
+
+    <!-- ════════════════ ARCHITECTURE ════════════════ -->
+    <div class="arch" id="arch">
+        <h2>系统架构总览</h2>
+        <p class="desc">PPT 上传后经历以下流水线处理，最终生成逐页讲解、对话、笔记、测验等功能。</p>
+        <div class="flow-diagram">
+            <div class="flow-box flow-upload">上传 PPT</div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="flow-box flow-extract">PyMuPDF 提取文本</div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="flow-box flow-detect">后端预检测<br><small>标题 / 目录 → Compact</small></div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="flow-box flow-prompt">LLM 二次判定<br><small>&lt;!-- page_type --&gt;</small></div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="flow-box flow-llm">按类型分支输出</div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="flow-box flow-db">清洗 &amp; 写入 DB</div>
+        </div>
+
+        <div class="flow-detail" style="margin-top:1.5rem;">
+            <h4>三种 Pipeline 路径</h4>
+            <ol>
+                <li><strong>Compact-Static（无 LLM）</strong>：后端预检测为标题页/目录页时直接本地生成 Markdown</li>
+                <li><strong>Dual Pipeline（双模型）</strong>：视觉模型读图提取 → 文本模型生成讲解（推荐）</li>
+                <li><strong>Single Pipeline（单模型）</strong>：视觉模型直接读图生成讲解（Dual 不可用时回退）</li>
+            </ol>
+        </div>
+
+        <div class="flow-detail">
+            <h4>页面类型判定的双层机制</h4>
+            <ul>
+                <li><strong>第一层：后端规则预检测</strong>（<code>_detect_compact_slide_type()</code>）— 基于词数、块数等硬规则，命中则跳过 LLM</li>
+                <li><strong>第二层：LLM Prompt 内判定</strong>（<code>&lt;!-- page_type: ... --&gt;</code>）— 模型看图后自行判断，结果写入 meta.content_type</li>
+                <li>两层结果冲突时以 LLM 判定为准（LLM 能看到图片，信息更丰富）</li>
+            </ul>
+        </div>
+
+        <div class="flow-detail">
+            <h4>关键源文件</h4>
+            <ul>
+                <li><strong>prompt_templates.py</strong> — 所有 Prompt 模板和 builder 函数</li>
+                <li><strong>explanation_engine.py</strong> — 讲解生成主引擎（页面类型检测、输出清洗、Pipeline 选择）</li>
+                <li><strong>dual_pipeline.py</strong> — 双模型 Pipeline 编排</li>
+                <li><strong>model_gateway.py</strong> — LLM API 调用网关（支持 OpenAI / Anthropic）</li>
+                <li><strong>chat_prompts.py</strong> — 对话 System Prompt 构建</li>
+                <li><strong>chat_engine.py</strong> — 多轮对话引擎</li>
+                <li><strong>note_prompts.py</strong> — 复习笔记 Prompt + Fallback</li>
+                <li><strong>quiz_engine.py</strong> — Quiz 生成与评分</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- ════════════════ 1. SLIDE PROMPT ════════════════ -->
+    <div class="prompt-section" id="slide-prompt">
+        <div class="prompt-header">
+            <span class="badge badge-core">核心 Prompt</span>
+            <h2>单模型 Slide Prompt</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="info-grid">
+                <div class="info-card"><div class="label">模板变量名</div><div class="value">_SLIDE_PROMPT_TEMPLATE</div></div>
+                <div class="info-card"><div class="label">Builder 函数</div><div class="value">build_slide_explanation_prompt()</div></div>
+                <div class="info-card"><div class="label">所属文件</div><div class="value">prompt_templates.py</div></div>
+                <div class="info-card"><div class="label">调用场景</div><div class="value">单视觉模型看图生成讲解</div></div>
+            </div>
+
+            <p class="desc">最核心的 Prompt。视觉模型直接看 PPT 截图后生成逐页讲解。采用<strong>五步式结构</strong>：判断页面类型 → 判断页面角色 → 按视觉阅读顺序 → 解释关系而非复述 → 按类型输出。</p>
+
+            <div class="prompt-block"><span class="prompt-label">PROMPT TEMPLATE</span>你是一个中文大学课程助教。请讲解当前这页PPT。
+
+<span class="hl">第一步：判断页面类型</span>
+先根据当前页内容判断它属于哪种类型，在输出开头用一行标注：
+&lt;!-- page_type: title / toc / intro / content / example / summary --&gt;
+- 标题页（title）：只有课程名、章节名、讲师信息等，几乎无实质内容
+- 目录页（toc）：列出章节大纲、议程、提纲、outline
+- 导入页（intro）：章节开头的引言、背景、动机、问题引入
+- 讲解页（content）：有正文、概念、公式、图表等实质教学内容
+- 例题页（example）：讲解页中包含例题、习题、worked example、solution、求解、解答
+- 总结页（summary）：章节末尾的回顾、要点汇总、take-away
+
+<span class="hl">第二步：判断当前页在本章中的角色</span>
+判断当前页在做什么：引入问题？定义概念？对比方案？推导公式？演示例子？总结回顾？
+这决定你用什么方式讲——引入就设问，定义就划重点，对比就列表，推导就逐步。
+
+<span class="hl">第三步：按视觉阅读顺序</span>
+先讲解当前页上最醒目的视觉元素（大标题、图表、公式、高亮框）。
+然后按阅读顺序讲解其余内容。不要机械按 bullet 顺序平铺。
+
+<span class="hl">第四步：解释关系，不要只是复述</span>
+讲清楚前后知识点的关系：前提是什么、解决什么问题、为什么 A 导致 B。
+不要把 PPT 上的文字换个说法重新写一遍。
+
+<span class="hl">第五步：按类型输出</span>
+
+【标题页】只输出：
+## [当前页原始标题]
+用 1 句话说明这是哪门课/哪个章节的起始页。（60-100 字）
+
+【目录页】只输出：
+## [当前页原始标题]
+按原页顺序列出各条目，不展开解释。（60-100 字）
+
+【导入页】只输出：
+## [当前页原始标题]
+用 1-2 句话说明本章要解决什么问题或引出什么背景。（80-160 字）
+
+【讲解页（无例题）】输出：
+## [当前页原始标题]
+
+### 这页讲什么
+用 1-2 句话直接说清这页的核心。必要时可对最核心的问题句或结论句使用 &lt;mark&gt;...&lt;/mark&gt;
+
+### 逐点讲解
+- 点 1：……
+- 点 2：……
+（按当前页实际内容条数来，不要凑数也不要遗漏）
+
+### 本页关键结论
+- 最该记住的 1-3 条结论
+如确有必要，可在最后补充 1 个 callout（放最后，不要插到正文中间）
+（150-230 字，图表/公式页 220-320 字）
+
+【例题页】输出：
+## [当前页原始标题]
+
+### 这页讲什么
+用 1-2 句话说明这是什么类型的例题、考察什么知识点。
+
+### 题目分析
+列出题目的已知条件和求解目标。
+
+### 解题过程
+按步骤讲解，每步说清用了什么公式/定理、为什么这样做。公式用 KaTeX。
+
+### 本页关键结论
+- 这道题的核心方法和易错点
+（220-320 字）
+
+【总结页】只输出：
+## [当前页原始标题]
+按原页结构列出要点，不重新展开。（80-160 字）
+
+硬性要求：
+1. 只根据当前页可见内容讲解，不脑补看不到的内容。
+2. <span class="hl">优先解释当前页最醒目的信息（大标题、图、表、高亮框），再按阅读顺序展开。</span>
+3. <span class="hl">必要时说明为什么重要；如果一个点本身显而易见，就不要额外展开"重要性"。</span>
+4. 不要加入考试技巧、记忆口诀、题外类比，除非当前页本身很抽象且不用类比讲不清。
+5. 不要输出"知识点摘要""本页概念"这类固定模板块。
+6. 不要重复上一页已经讲过的大段内容；如果和上一页重复，只指出本页新增点。<span class="hl">前序页摘要只用于避免重复，不要显式写出"上一页/前面提到过"，除非当前页本身就在做对比。</span>
+7. 用简单直接的中文，像助教在旁边给学生解释，不要写成营销文案。
+8. <span class="hl">callout 受控开放：确实需要时可在页面最后放 1 个 callout（NOTE / TIP / WARNING），不要插到正文中间。</span>
+9. 必须使用中文，核心术语保留英文括注。
+10. <span class="hl">不要写成报告体（"本页介绍了…""本节讨论了…"），直接讲知识本身。</span>
+11. <span class="hl">不要把 PPT 文字换个说法重新写一遍（paraphrase），要解释为什么、怎么来的、有什么用。</span>
+12. <span class="hl">如果当前页有问题句（设问、反问），必须用 &lt;mark&gt; 高亮并回答它。</span>
+
+<span class="hl">标题规则：</span>
+- ## 标题优先使用当前页 PPT 原始标题（英文也可以）
+- 如果原始标题过短（≤2 词）或过泛（如"Introduction"），再补一个不超过 8 个字的中文主题
+
+术语和格式：
+- 术语用 **加粗**：**中文 (English)**。<span class="hl">首次出现标英文，同页后续可只写中文；跨页首次再补英文</span>
+- 公式用 KaTeX：$...$  $$...$$
+- PPT有分点就保留分点结构，有流程就用箭头 → 描述
+- 不要用反引号 ` 包裹普通文本
+- 不要输出课程号、讲师名、页码
+
+<span class="hl">强调与版式规则（三级层次）：</span>
+- **加粗**：关键术语、对比项、关键机制，每页 4-8 处
+- &lt;mark&gt;...&lt;/mark&gt;：核心问题句、定义、结论，每页最多 2 处
+- Callout：每页最多 1 个，放在最后，只限 NOTE / TIP / WARNING
+
+页码：<span class="var">{page_num}</span>
+相关页码：<span class="var">{related}</span>
+问题：<span class="var">{question}</span>
+提取文本：
+<span class="var">{extracted_text}</span></div>
+
+            <div class="change-note">
+                <strong>v6 变更说明（相比 v5）：</strong><br>
+                1. 页面类型从 4 种扩展到 6 种：新增 <code>intro</code>（导入页）和 <code>summary</code>（总结页）<br>
+                2. Prompt 从两步式重构为五步式：判断类型 → 判断页面角色 → 视觉阅读顺序 → 解释关系 → 按类型输出<br>
+                3. 字数范围调整：intro/title/toc/summary 80-160 字，普通 150-230 字，复杂 220-320 字<br>
+                4. 术语从 <code>&lt;mark&gt;</code> 改为 **加粗**；新增三级强调层次（Bold / mark / Callout）<br>
+                5. 硬性要求 #2 从"按原结构讲"改为"优先解释最醒目信息"<br>
+                6. 硬性要求 #8 从禁止所有 callout 改为"受控开放"（最多 1 个，放最后）<br>
+                7. 新增 #10-#12：禁报告体、禁 paraphrase、问题句必须高亮并回答
+            </div>
+
+            <div class="change-note">
+                <strong>v5 变更说明（相比 v4）：</strong><br>
+                1. 新增两步式结构：先 <code>&lt;!-- page_type --&gt;</code> 判定，再分支输出<br>
+                2. 例题页有专用格式：题目分析 → 解题过程 → 关键结论<br>
+                3. <span class="old">"解释时重点回答：这页在讲什么？每个点是什么意思？为什么这里重要？"</span> → "必要时说明为什么重要；显而易见就不展开"<br>
+                4. <span class="old">"同一术语每次都标英文"</span> → "首次出现标英文，同页后续可只写中文"<br>
+                5. <span class="old">"## [本页主题——用中文写]"</span> → "## [当前页原始标题]" + 标题规则<br>
+                6. 新增"前序页摘要只用于避免重复，不要显式写出'上一页/前面提到过'"
+            </div>
+
+            <table class="var-table">
+                <thead><tr><th>变量</th><th>类型</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td><code>{page_num}</code></td><td>int</td><td>当前页码</td></tr>
+                    <tr><td><code>{related}</code></td><td>str</td><td>相关页码列表，逗号分隔</td></tr>
+                    <tr><td><code>{question}</code></td><td>str</td><td>用户的附加问题（默认为标准讲解请求）</td></tr>
+                    <tr><td><code>{extracted_text}</code></td><td>str</td><td>PyMuPDF 提取文本 + 重复分析上下文（自动追加）</td></tr>
+                </tbody>
+            </table>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 2. ROI PROMPT ════════════════ -->
+    <div class="prompt-section" id="roi-prompt">
+        <div class="prompt-header">
+            <span class="badge badge-core">核心 Prompt</span>
+            <h2>ROI 框选区域 Prompt</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="info-grid">
+                <div class="info-card"><div class="label">模板变量名</div><div class="value">_ROI_PROMPT_TEMPLATE</div></div>
+                <div class="info-card"><div class="label">Builder 函数</div><div class="value">build_roi_explanation_prompt()</div></div>
+                <div class="info-card"><div class="label">调用场景</div><div class="value">学生在 PPT 上框选区域后的局部讲解</div></div>
+            </div>
+
+            <p class="desc">学生在前端框选 PPT 上的某个区域时触发。模型同时收到<strong>完整页截图</strong>和<strong>框选区域裁剪截图</strong>。</p>
+
+            <div class="prompt-block"><span class="prompt-label">PROMPT TEMPLATE</span>学生框选了PPT上的一个区域，请重点讲解框选区域的内容。
+
+规则：
+- 重点讲解框选区域里的内容，这是学生最想理解的部分
+- 可以引用同一页里的其他内容来辅助说明，但不要喧宾夺主
+- 术语格式：中文 (English)，普通圆括号
+- 公式用 KaTeX，写完解释符号
+- 重要结论用 &lt;mark&gt;荧光标注&lt;/mark&gt;，最多 1-2 处
+- 不要编造看不到的内容
+- 不要讲解框选区域以外的无关内容
+- 简洁直接，不要加考试技巧、记忆口诀
+
+格式：
+
+## 框选区域讲解
+
+（直接讲解框选区域的内容）
+
+页码：<span class="var">{page_num}</span>
+问题：<span class="var">{question}</span>
+区域坐标：x=<span class="var">{x:.3f}</span>, y=<span class="var">{y:.3f}</span>, w=<span class="var">{w:.3f}</span>, h=<span class="var">{h:.3f}</span>
+区域像素：<span class="var">{width}</span> x <span class="var">{height}</span>
+提取文本：
+<span class="var">{extracted_text}</span></div>
+
+            <table class="var-table">
+                <thead><tr><th>变量</th><th>类型</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td><code>{page_num}</code></td><td>int</td><td>当前页码</td></tr>
+                    <tr><td><code>{question}</code></td><td>str</td><td>用户问题</td></tr>
+                    <tr><td><code>{x}, {y}, {w}, {h}</code></td><td>float</td><td>框选区域归一化坐标（0~1）</td></tr>
+                    <tr><td><code>{width}, {height}</code></td><td>int</td><td>框选区域像素尺寸</td></tr>
+                    <tr><td><code>{extracted_text}</code></td><td>str</td><td>PyMuPDF 提取文本</td></tr>
+                </tbody>
+            </table>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 3. VISION EXTRACTION ════════════════ -->
+    <div class="prompt-section" id="vision-extraction">
+        <div class="prompt-header">
+            <span class="badge badge-core">双模型 Stage 1</span>
+            <h2>视觉提取 Prompt</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="info-grid">
+                <div class="info-card"><div class="label">模板变量名</div><div class="value">_VISION_EXTRACTION_PROMPT</div></div>
+                <div class="info-card"><div class="label">Builder 函数</div><div class="value">build_vision_extraction_prompt()</div></div>
+                <div class="info-card"><div class="label">调用模型</div><div class="value">VISION_MODEL（视觉模型）</div></div>
+                <div class="info-card"><div class="label">输出上限</div><div class="value">1024 tokens</div></div>
+            </div>
+
+            <p class="desc">双模型 Pipeline 第一阶段。视觉模型<strong>只负责提取，不负责讲解</strong>。提取结果传给第二阶段的文本模型。</p>
+
+            <div class="prompt-block"><span class="prompt-label">PROMPT TEMPLATE</span>从截图中提取所有内容，按阅读顺序输出。只提取，不讲解。
+
+提取：
+1. 标题
+2. 所有文字（按阅读顺序）
+3. 公式（LaTeX 格式）
+4. 图表（类型、内容、关键数据和关系）
+5. 代码
+6. 表格（Markdown 格式）
+
+优先级：公式 > 图表关系 > 表格 > 代码 > 重复正文。
+看不清的标"不确定"。
+
+PyMuPDF 对照：
+<span class="var">{extraction_text}</span></div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 4. TEXT EXPLANATION ════════════════ -->
+    <div class="prompt-section" id="text-explanation">
+        <div class="prompt-header">
+            <span class="badge badge-core">双模型 Stage 2</span>
+            <h2>文本讲解 Prompt</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="info-grid">
+                <div class="info-card"><div class="label">模板变量名</div><div class="value">_TEXT_EXPLANATION_PROMPT</div></div>
+                <div class="info-card"><div class="label">Builder 函数</div><div class="value">build_text_explanation_prompt()</div></div>
+                <div class="info-card"><div class="label">调用模型</div><div class="value">TEXT_MODEL（文本模型）</div></div>
+                <div class="info-card"><div class="label">输出上限</div><div class="value">4096 tokens</div></div>
+            </div>
+
+            <p class="desc">双模型 Pipeline 第二阶段。文本模型收到三方面信息：<strong>PyMuPDF 提取</strong>、<strong>视觉模型提取</strong>、<strong>前序页摘要</strong>。结构与单模型 Prompt 一致（五步式、六种类型），额外增加了信息来源优先级说明。</p>
+
+            <div class="prompt-block"><span class="prompt-label">PROMPT TEMPLATE（与单模型差异部分）</span>…（前半部分与单模型 Slide Prompt 完全一致，包含五步式结构、六种类型分支）…
+
+信息来源（冲突时以视觉模型为准）：
+1. PyMuPDF 提取
+2. 视觉模型提取（补充图表/公式/手写）
+3. <span class="hl">前序页摘要（仅用于判断哪些已讲过以避免重复，不要引用）</span>
+
+页码：<span class="var">{page_num}</span>
+相关页码：<span class="var">{related}</span>
+问题：<span class="var">{question}</span>
+
+PyMuPDF 提取：
+<span class="var">{extraction_text}</span>
+
+视觉模型提取：
+<span class="var">{vision_extraction}</span>
+
+前序页摘要：
+<span class="var">{previous_context}</span></div>
+
+            <div class="change-note">
+                <strong>v6 变更：</strong>Prompt 主体同步升级为五步式、六种页面类型。其余差异部分（信息来源优先级）不变。
+            </div>
+
+            <div class="change-note">
+                <strong>v5 变更：</strong>前序页摘要的说明从<span class="old">"判断哪些已讲过，避免重复"</span>改为"仅用于判断哪些已讲过以避免重复，<strong>不要引用</strong>"，更明确禁止模型在输出中写出"前面提到过"类句式。
+            </div>
+
+            <table class="var-table">
+                <thead><tr><th>变量</th><th>类型</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td><code>{page_num}</code></td><td>int</td><td>当前页码</td></tr>
+                    <tr><td><code>{related}</code></td><td>str</td><td>相关页码</td></tr>
+                    <tr><td><code>{question}</code></td><td>str</td><td>用户附加问题</td></tr>
+                    <tr><td><code>{extraction_text}</code></td><td>str</td><td>PyMuPDF 提取文本 + 重复分析上下文</td></tr>
+                    <tr><td><code>{vision_extraction}</code></td><td>str</td><td>Stage 1 视觉模型的提取结果</td></tr>
+                    <tr><td><code>{previous_context}</code></td><td>str</td><td>前 3 页的摘要（从 DB 查询），格式：<code>第 N 页「标题」(类型): 摘要</code></td></tr>
+                </tbody>
+            </table>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 5. PAGE TYPE DETECTION ════════════════ -->
+    <div class="prompt-section" id="page-type-detection">
+        <div class="prompt-header">
+            <span class="badge badge-engine">引擎逻辑</span>
+            <h2>页面类型检测（双层机制）</h2>
+        </div>
+        <div class="prompt-body">
+            <p class="desc">页面类型通过<strong>两层机制</strong>判定：后端规则预检测 + LLM Prompt 内判定。</p>
+
+            <div class="subsection">
+                <h3>第一层：后端规则预检测 — _detect_compact_slide_type()</h3>
+                <p class="desc">返回 <code>"title"</code> / <code>"toc"</code> / <code>None</code>。命中 title/toc 时<strong>不调用 LLM</strong>，直接本地生成。</p>
+                <div class="flow-detail">
+                    <h4>检测流程</h4>
+                    <ol>
+                        <li><strong>有密集内容？</strong>（公式/代码/表格）→ 返回 <code>None</code></li>
+                        <li><strong>目录关键词命中？</strong> → 返回 <code>"toc"</code></li>
+                        <li><strong>标题页条件</strong>：总词数 ≤ 6、标题行 ≤ 4 词、文本块 ≤ 2、无 bullet、图片 ≤ 1、无标点 → 返回 <code>"title"</code></li>
+                        <li>否则 → <code>None</code>，进入 LLM 讲解流程</li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="subsection">
+                <h3>第二层：LLM Prompt 内判定 — &lt;!-- page_type: ... --&gt;</h3>
+                <p class="desc">当后端未预判为 compact 时，LLM 在 Prompt 指导下自行判定页面类型（6 种：<code>title / toc / intro / content / example / summary</code>），输出在首行以 HTML 注释标注。<code>_PAGE_TYPE_COMMENT_RE</code> 正则匹配所有 6 种类型。</p>
+                <div class="flow-detail">
+                    <h4>后端解析流程（explanation_engine.py）</h4>
+                    <ol>
+                        <li><code>_extract_llm_page_type(markdown)</code> 用正则从 LLM 输出中提取 page_type</li>
+                        <li><code>_strip_disallowed_sections()</code> 清洗时自动移除该注释（不会出现在前端）</li>
+                        <li><code>_canonicalize_slide_explanation()</code> 将 LLM 的 page_type 写入 <code>meta.content_type</code></li>
+                        <li>如果 LLM 判定为 <code>example</code>，强制设置 <code>is_example = True</code></li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="subsection">
+                <h3>目录页关键词</h3>
+                <div class="keyword-list">
+                    <span class="keyword">table of contents</span>
+                    <span class="keyword">目录</span>
+                    <span class="keyword">大纲</span>
+                    <span class="keyword">提纲</span>
+                    <span class="keyword">议程</span>
+                    <span class="keyword">agenda</span>
+                    <span class="keyword">outline</span>
+                    <span class="keyword">roadmap</span>
+                </div>
+            </div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 6. EXAMPLE DETECTION ════════════════ -->
+    <div class="prompt-section" id="example-detection">
+        <div class="prompt-header">
+            <span class="badge badge-engine">引擎逻辑</span>
+            <h2>例题页检测（双层机制）</h2>
+        </div>
+        <div class="prompt-body">
+            <p class="desc">例题页也通过<strong>两层</strong>判定：后端关键词匹配 + LLM page_type 判定。</p>
+
+            <div class="subsection">
+                <h3>后端关键词匹配 — _looks_like_example_page()</h3>
+                <div class="keyword-list">
+                    <span class="keyword">example</span>
+                    <span class="keyword">worked example</span>
+                    <span class="keyword">exercise</span>
+                    <span class="keyword">solution</span>
+                    <span class="keyword">solve</span>
+                    <span class="keyword">problem</span>
+                    <span class="keyword">例题</span>
+                    <span class="keyword">题目</span>
+                    <span class="keyword">解答</span>
+                    <span class="keyword">求解</span>
+                </div>
+                <p class="desc">检索范围：提取文本、用户问题、payload 的 summary 和 title_candidates。</p>
+            </div>
+
+            <div class="subsection">
+                <h3>LLM 判定 — &lt;!-- page_type: example --&gt;</h3>
+                <p class="desc">如果 LLM 输出了 <code>&lt;!-- page_type: example --&gt;</code>，后端强制设置 <code>is_example = True</code>，即使后端关键词未命中。</p>
+            </div>
+
+            <div class="flow-detail">
+                <h4>例题页对讲解输出的影响</h4>
+                <ul>
+                    <li><code>content_type</code> 标记为 <code>"example"</code></li>
+                    <li>解析 LLM 输出中的 <code>### 题目分析</code> 和 <code>### 解题过程</code>（v5 新增）</li>
+                    <li>同时兼容旧格式：<code>### 例题讲解</code> / <code>### 例题完整讲解</code> / <code>### 例题解析</code> / <code>### 习题讲解</code></li>
+                    <li>题目分析 + 解题过程自动合并为 <code>primary_md</code></li>
+                </ul>
+            </div>
+
+            <div class="subsection">
+                <h3>Section 别名表（explanation_engine.py — _HEADING_ALIASES）</h3>
+                <table class="var-table">
+                    <thead><tr><th>标准名</th><th>别名</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>讲解</code></td><td>完整翻译与解释、翻译与解释、内容翻译、这页讲什么、<strong>逐点讲解</strong><sup>v6</sup>、<strong>本页关键结论</strong><sup>v6</sup>…</td></tr>
+                        <tr><td><code>例题讲解</code></td><td>例题完整讲解、例题解析、习题讲解、解题过程</td></tr>
+                        <tr><td><code>题目分析</code></td><td>题目条件、已知条件、问题分析</td></tr>
+                        <tr><td><code>解题过程</code></td><td>解题步骤、求解过程、解法</td></tr>
+                        <tr><td><code>知识点总结</code></td><td>知识点归纳、知识点梳理、要点总结…</td></tr>
+                    </tbody>
+                </table>
+                <div class="change-note">
+                    <strong>v6 变更：</strong><code>_HEADING_ALIASES</code> 新增 <code>逐点讲解</code> 和 <code>本页关键结论</code>，<code>_canonicalize_slide_explanation()</code> 会将这两个 section 合并进 <code>translation_md</code>。
+                </div>
+            </div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 7. REPEAT ANALYSIS ════════════════ -->
+    <div class="prompt-section" id="repeat-analysis">
+        <div class="prompt-header">
+            <span class="badge badge-engine">引擎逻辑</span>
+            <h2>重复分析 &amp; 上下文注入</h2>
+        </div>
+        <div class="prompt-body">
+            <p class="desc">PPT 相邻页常有重复内容。系统通过 <code>repeat_analysis</code> 检测重复并注入 Prompt。</p>
+
+            <div class="prompt-block"><span class="prompt-label">自动追加到 extracted_text 末尾</span>
+重复分析：
+- 最近比较页：3, 4, 5
+- 检测到重复页：4
+- 重复占比：0.35
+- 新增块数量：3
+- 重复块摘要：
+- 当前块 b2 与第 4 页重复：Memory is divided into fixed-size frames...</div>
+
+            <div class="flow-detail">
+                <h4>重复判定条件</h4>
+                <p class="desc"><code>has_repeat_section = True</code> 当且仅当：存在重复页 <strong>且</strong>（重复占比 ≥ 0.30 <strong>或</strong> 重复块数 ≥ 2）</p>
+            </div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 8. CHAT SLIDE ════════════════ -->
+    <div class="prompt-section" id="chat-slide">
+        <div class="prompt-header">
+            <span class="badge badge-chat">对话 Prompt</span>
+            <h2>单页对话 System Prompt</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="info-grid">
+                <div class="info-card"><div class="label">Builder 函数</div><div class="value">build_chat_system_prompt()</div></div>
+                <div class="info-card"><div class="label">所属文件</div><div class="value">chat_prompts.py</div></div>
+                <div class="info-card"><div class="label">消息历史上限</div><div class="value">8 条 / 6000 tokens</div></div>
+            </div>
+
+            <div class="prompt-block"><span class="prompt-label">SYSTEM PROMPT 基础部分</span>你是一个耐心的大学助教，正在和学生一对一辅导。
+根据学生的具体问题简洁作答，不要每次都重复完整讲解。
+如果学生追问细节，直接回答那个细节；如果学生说「展开讲」，才给出更详细的解释。
+回答时使用中文，专业术语保留英文并附中文翻译，例如 Gradient Descent（梯度下降）。
+用 Markdown 格式组织回答，公式用 LaTeX（$...$）。</div>
+
+            <div class="flow-detail">
+                <h4>动态拼接的上下文</h4>
+                <ul>
+                    <li><strong>当前幻灯片提取内容</strong> — <code>slide_context[:1500]</code></li>
+                    <li><strong>已生成的讲解摘要</strong> — <code>explanation_summary[:800]</code></li>
+                    <li><strong>补充上下文</strong> — <code>extra_context</code>（跨页比较数据等）</li>
+                    <li><strong>回答风格提示</strong> — 基于问题分类动态选择</li>
+                </ul>
+            </div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 9. CHAT GLOBAL ════════════════ -->
+    <div class="prompt-section" id="chat-global">
+        <div class="prompt-header">
+            <span class="badge badge-chat">对话 Prompt</span>
+            <h2>全局对话 System Prompt</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="info-grid">
+                <div class="info-card"><div class="label">Builder 函数</div><div class="value">build_global_system_prompt()</div></div>
+                <div class="info-card"><div class="label">调用场景</div><div class="value">学生没有选中具体页码，讨论整套课件</div></div>
+            </div>
+
+            <div class="prompt-block"><span class="prompt-label">SYSTEM PROMPT</span>你是一个耐心的大学助教，正在和学生讨论一整套课件的内容。
+学生没有指定具体页码，请结合整套课件的上下文回答问题。
+如果问题太宽泛，可以反问学生想了解哪个具体话题。
+回答使用中文，专业术语保留英文并附中文翻译。
+
+课件标题：<span class="var">{document_title}</span>
+
+---
+各页摘要：
+<span class="var">{slides_summary}</span></div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 10. QUESTION CLASSIFY ════════════════ -->
+    <div class="prompt-section" id="question-classify">
+        <div class="prompt-header">
+            <span class="badge badge-chat">对话逻辑</span>
+            <h2>问题分类 &amp; 风格映射</h2>
+        </div>
+        <div class="prompt-body">
+            <p class="desc">纯规则匹配，无 LLM 调用。按优先级从上到下匹配，默认为 <code>clarification</code>。</p>
+            <table class="var-table">
+                <thead><tr><th>分类</th><th>触发关键词</th><th>风格指令</th></tr></thead>
+                <tbody>
+                    <tr><td><code>comparison</code></td><td>和第、与第、区别、对比、比较、关系、异同、不同</td><td>分析关联、区别和联系</td></tr>
+                    <tr><td><code>verification</code></td><td>对不对、是不是、对吗、我理解的、correct</td><td>先判断对错，再简要说明原因</td></tr>
+                    <tr><td><code>deep_dive</code></td><td>展开、详细、具体、深入、更多、举个例、elaborate</td><td>详细解释、推导或举例</td></tr>
+                    <tr><td><code>meta</code></td><td>总结、概括、这章、整体、大纲、summarize、overview</td><td>高层概括</td></tr>
+                    <tr><td><code>clarification</code></td><td>什么意思、为什么、怎么理解、不懂、why、what</td><td>简洁精准，不展开无关内容</td></tr>
+                </tbody>
+            </table>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 11. NOTE PROMPT ════════════════ -->
+    <div class="prompt-section" id="note-prompt">
+        <div class="prompt-header">
+            <span class="badge badge-note">笔记 Prompt</span>
+            <h2>复习笔记生成 Prompt</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="info-grid">
+                <div class="info-card"><div class="label">Builder 函数</div><div class="value">build_autogen_notes_prompt()</div></div>
+                <div class="info-card"><div class="label">所属文件</div><div class="value">note_prompts.py</div></div>
+                <div class="info-card"><div class="label">输入</div><div class="value">所有页的 SlideExplanation</div></div>
+                <div class="info-card"><div class="label">定位</div><div class="value">"第二层"——从讲解中提炼笔记</div></div>
+            </div>
+
+            <div class="prompt-block"><span class="prompt-label">PROMPT TEMPLATE</span>你是一个学习笔记整理助手。
+请基于以下逐页讲解内容，整理出一份紧凑的复习笔记。
+
+硬性要求：
+1. 不要重新讲课，只提炼要点。
+2. 每页笔记应比原讲解短得多——讲解是展开解释，笔记是精简提炼。
+3. 如果某页的讲解本身很简短（过渡页、标题页），笔记节也应简短，不要强行补充。
+4. 不要输出 callout（NOTE/TIP/WARNING）、考试技巧、记忆口诀。
+5. 用 &lt;mark&gt;...&lt;/mark&gt; 标注关键定义和核心结论，每页 1-2 处，不要整段高亮。
+6. 必须使用中文，核心术语保留英文括注。
+7. <span class="hl">保持逐页结构不变，每页必须有自己的 ## 节。如果和前页重复，只在本页笔记中简写，并注明'本页主要补充……'，不要把两页合并。</span>
+
+文档名：<span class="var">{filename}</span>
+笔记标题：<span class="var">{title}</span>
+
+输出格式：
+
+# <span class="var">{filename}</span> 笔记本
+
+## 第 N 页 · 标题
+- &lt;mark&gt;核心定义/结论&lt;/mark&gt;
+- 要点 2
+- 要点 3
+- 术语 (English)：一句话解释
+
+（每页 3-6 条 bullet，不要超过 6 条。不需要子标题。）</div>
+
+            <div class="change-note">
+                <strong>v5 变更：</strong>第 7 条从<span class="old">"如果相邻页内容重复，合并或只记新增部分"</span>改为"保持逐页结构不变，每页必须有自己的 ## 节"。<br>
+                <strong>原因：</strong>用户看第 8 页时期望笔记也在第 8 页，合并会破坏页面一一对应关系。
+            </div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 12. NOTE FALLBACK ════════════════ -->
+    <div class="prompt-section" id="note-fallback">
+        <div class="prompt-header">
+            <span class="badge badge-note">笔记逻辑</span>
+            <h2>笔记 Fallback（无 LLM 回退）</h2>
+        </div>
+        <div class="prompt-body">
+            <p class="desc">当 LLM 不可用时，<code>build_notebook_fallback()</code> 用纯规则从讲解文本中提取笔记。v5 重写了提取策略。</p>
+
+            <div class="flow-detail">
+                <h4>v5 提取策略（优先级从高到低）</h4>
+                <ol>
+                    <li><strong>提取 "### 本页关键结论" 中的 bullet</strong>（新增）— 这是讲解中已经最压缩的部分，最多取 2 条</li>
+                    <li><strong>提取 &lt;mark&gt; 高亮</strong> — 讲解中已标注的核心内容，最多补到 3 条</li>
+                    <li><strong>术语句子填充</strong> — 含双语术语模式（中文 (English)）的句子优先</li>
+                    <li><strong>每条经过 _compress_sentence() 压缩</strong>（新增）— 按语义断句取第一子句，目标 ≤60 字</li>
+                </ol>
+            </div>
+
+            <div class="change-note">
+                <strong>v5 变更：</strong><br>
+                旧版只是从讲解中摘句子（_sentence_candidates → 评分 → 截断），本质是"摘抄"。<br>
+                新版优先从"### 本页关键结论"提取（已是最精简内容），并用 <code>_compress_sentence()</code> 按语义分句压缩（在逗号/分号处切分取第一子句），而非硬截断加省略号。
+            </div>
+
+            <div class="subsection">
+                <h3>_compress_sentence() 压缩逻辑</h3>
+                <div class="flow-detail">
+                    <ol>
+                        <li>≤60 字 → 原样返回</li>
+                        <li>尝试在"，即"/"，也就是"/"，因此"/"，所以"/"；"/"，但"处分割，取前半</li>
+                        <li>仍超长 → 在 60 字内找最后一个逗号/句号处切断</li>
+                        <li>都失败 → 硬截断 + "…"</li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="subsection">
+                <h3>Filler 检测模式（部分列举）</h3>
+                <div class="keyword-list">
+                    <span class="keyword">^这页在讲</span>
+                    <span class="keyword">^本页在讲</span>
+                    <span class="keyword">^上一页提到</span>
+                    <span class="keyword">^接下来我们</span>
+                    <span class="keyword">^简单来说</span>
+                    <span class="keyword">^总的来说</span>
+                    <span class="keyword">^需要注意的是</span>
+                    <span class="keyword">^考试技巧</span>
+                    <span class="keyword">^记忆口诀</span>
+                    <span class="keyword">^补充说明</span>
+                    <span class="keyword">结合原讲解</span>
+                    <span class="keyword">参考原始讲解</span>
+                </div>
+            </div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 13. QUIZ ════════════════ -->
+    <div class="prompt-section" id="quiz-prompt">
+        <div class="prompt-header">
+            <span class="badge badge-quiz">测验逻辑</span>
+            <h2>Quiz 生成逻辑</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="info-grid">
+                <div class="info-card"><div class="label">函数</div><div class="value">generate_quiz()</div></div>
+                <div class="info-card"><div class="label">所属文件</div><div class="value">quiz_engine.py</div></div>
+                <div class="info-card"><div class="label">特点</div><div class="value">纯规则生成，不调用 LLM</div></div>
+            </div>
+
+            <div class="prompt-block"><span class="prompt-label">题目模板</span>第 <span class="var">{page_num}</span> 页里，关于"<span class="var">{keyword}</span>"最关键的学习动作是什么？
+
+A. 明确定义并连接上下文
+B. 只记住结论，不关心前提
+C. 跳过符号解释直接套公式
+D. 把本页和无关章节强行关联</div>
+
+            <div class="flow-detail">
+                <h4>关键词提取</h4>
+                <ul>
+                    <li>正则 <code>[a-zA-Z][a-zA-Z0-9_-]{3,}</code> 提取英文 token，去重按出现顺序取前 N 个</li>
+                    <li>不足时用默认词填充：核心定义、推导逻辑、边界条件、应用场景、误区</li>
+                </ul>
+            </div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 14. GLOSSARY ════════════════ -->
+    <div class="prompt-section" id="glossary">
+        <div class="prompt-header">
+            <span class="badge badge-infra">工具</span>
+            <h2>术语词汇表 &amp; 双语标注</h2>
+        </div>
+        <div class="prompt-body">
+            <p class="desc"><code>TERM_GLOSSARY</code> 内置 18 组中英双语术语，覆盖数学和计算机科学领域。</p>
+            <table class="var-table">
+                <thead><tr><th>English</th><th>中文</th><th>English</th><th>中文</th></tr></thead>
+                <tbody>
+                    <tr><td>gradient descent</td><td>梯度下降</td><td>matrix decomposition</td><td>矩阵分解</td></tr>
+                    <tr><td>chain rule</td><td>链式法则</td><td>step size</td><td>步长</td></tr>
+                    <tr><td>linear algebra</td><td>线性代数</td><td>eigenvectors</td><td>特征向量</td></tr>
+                    <tr><td>eigenspace</td><td>特征子空间</td><td>derivative</td><td>导数</td></tr>
+                    <tr><td>gradient</td><td>梯度</td><td>optimization</td><td>优化</td></tr>
+                    <tr><td>convergence</td><td>收敛</td><td>matrix</td><td>矩阵</td></tr>
+                    <tr><td>rank</td><td>秩</td><td>queue</td><td>队列</td></tr>
+                    <tr><td>cache</td><td>缓存</td><td>worker</td><td>工作进程</td></tr>
+                    <tr><td>scheduler</td><td>调度器</td><td>mutex</td><td>互斥锁</td></tr>
+                    <tr><td>deadlock</td><td>死锁</td><td>calculus</td><td>微积分</td></tr>
+                </tbody>
+            </table>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 15. SANITIZE ════════════════ -->
+    <div class="prompt-section" id="sanitize">
+        <div class="prompt-header">
+            <span class="badge badge-engine">引擎逻辑</span>
+            <h2>输出清洗 &amp; 后处理</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="subsection">
+                <h3>sanitize_slide_markdown() 清洗流程</h3>
+                <div class="flow-detail">
+                    <ol>
+                        <li>占位标题替换（"Slide 标题" → 真实标题）</li>
+                        <li>缺失标题补充</li>
+                        <li>删除禁止 section（自测/Quiz）</li>
+                        <li><strong>Callout 保留首个，剥离多余</strong>（v6：<code>_keep_first_callout()</code>，见下方说明）</li>
+                        <li><strong>剥离 <code>&lt;!-- page_type: ... --&gt;</code> 注释</strong>（v5 新增）</li>
+                        <li>AI Filler 过滤（短行 ≤40 字时移除）</li>
+                        <li>课程信息/页面描述过滤</li>
+                        <li>反引号清理、Bold 格式修复、空行压缩</li>
+                    </ol>
+                </div>
+                <div class="change-note">
+                    <strong>v6 变更：</strong>第 4 步从<span class="old">"删除 NOTE callout"（_NOTE_CALLOUT_RE 移除所有 NOTE/TIP/WARNING）</span>改为 <code>_keep_first_callout()</code>：<br>
+                    - 正则名从 <code>_NOTE_CALLOUT_RE</code> 改为 <code>_CALLOUT_RE</code>，匹配 NOTE / TIP / WARNING 三种<br>
+                    - 保留第一个匹配到的 callout，剥离其余多余 callout<br>
+                    - 配合 Prompt 端"受控开放"策略：允许模型输出最多 1 个 callout，后处理兜底确保不超
+                </div>
+            </div>
+
+            <div class="subsection">
+                <h3>_canonicalize_slide_explanation() 结构化规范</h3>
+                <div class="flow-detail">
+                    <ul>
+                        <li><strong>translation_md</strong> — 主讲解内容</li>
+                        <li><strong>primary_md</strong> — 例题讲解（题目分析+解题过程合并）或知识点总结</li>
+                        <li><strong>repeat_md</strong> — 重复部分讲解</li>
+                        <li><strong>summary_md</strong> — 知识点摘要</li>
+                        <li><strong>concepts</strong> — 提取的概念列表</li>
+                    </ul>
+                    <p class="desc">Section 匹配支持：精确匹配 → 归一化匹配 → 别名表 → 子串包含 → difflib fuzzy ratio ≥ 0.7</p>
+                </div>
+            </div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+    <!-- ════════════════ 16. GATEWAY ════════════════ -->
+    <div class="prompt-section" id="gateway">
+        <div class="prompt-header">
+            <span class="badge badge-infra">基础设施</span>
+            <h2>Model Gateway 调用机制</h2>
+        </div>
+        <div class="prompt-body">
+            <div class="info-grid">
+                <div class="info-card"><div class="label">环境变量（单模型）</div><div class="value">API_KEY, BASE_URL, MODEL</div></div>
+                <div class="info-card"><div class="label">环境变量（视觉模型）</div><div class="value">VISION_API_KEY, VISION_BASE_URL, VISION_MODEL</div></div>
+                <div class="info-card"><div class="label">环境变量（文本模型）</div><div class="value">TEXT_API_KEY, TEXT_BASE_URL, TEXT_MODEL</div></div>
+                <div class="info-card"><div class="label">温度</div><div class="value">MODEL_TEMPERATURE (默认 0.2)</div></div>
+            </div>
+
+            <table class="var-table">
+                <thead><tr><th>方法</th><th>说明</th><th>输入</th></tr></thead>
+                <tbody>
+                    <tr><td><code>generate_slide_markdown()</code></td><td>单模型看图讲解</td><td>prompt + 页面截图 + 提取文本</td></tr>
+                    <tr><td><code>generate_roi_markdown()</code></td><td>ROI 框选讲解</td><td>prompt + 完整页截图 + 裁剪截图 + 提取文本</td></tr>
+                    <tr><td><code>generate_vision_extraction()</code></td><td>双模型 Stage 1</td><td>prompt + 页面截图（输出限 1024 tokens）</td></tr>
+                    <tr><td><code>generate_text_markdown()</code></td><td>双模型 Stage 2</td><td>prompt（纯文本，无图）</td></tr>
+                    <tr><td><code>chat_completion()</code></td><td>多轮对话</td><td>messages 数组</td></tr>
+                    <tr><td><code>stream_chat_completion()</code></td><td>流式对话（SSE）</td><td>messages 数组（仅 OpenAI 兼容）</td></tr>
+                </tbody>
+            </table>
+
+            <div class="flow-detail">
+                <h4>协议检测 &amp; 图片处理 &amp; 重试</h4>
+                <ul>
+                    <li><code>model</code> 以 <code>"claude"</code> 开头 → Anthropic Messages API；否则 → OpenAI 兼容 API</li>
+                    <li>图片宽度 >1500px 自动 Lanczos 缩放</li>
+                    <li>超时/连接错误自动重试 2 次，指数退避 1s → 2s</li>
+                    <li>输出自动剥离 <code>```markdown</code> 围栏</li>
+                </ul>
+            </div>
+            <div class="back-top"><a href="#toc">&uarr; 返回目录</a></div>
+        </div>
+    </div>
+
+</div>
+
+<div class="footer">
+    Teaching-Learning Application &middot; Prompt System Documentation v6 &middot; 2026-03-29<br>
+    v6 变更：五步式结构、6 种页面类型、三级强调层次、callout 受控开放、禁报告体/paraphrase、_keep_first_callout
+</div>
+
+</body>
+</html>

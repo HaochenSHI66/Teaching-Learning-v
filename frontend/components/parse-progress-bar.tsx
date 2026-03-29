@@ -26,7 +26,7 @@ export const ParseProgressBar = memo(function ParseProgressBar({ current, total,
     <div className="space-y-1.5">
       {/* Label row */}
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-[11px] font-medium text-[#7a6347]">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--tx-4)]">
           <span
             className="inline-block transition-transform duration-300"
             style={{ transform: `rotate(${isIndeterminate ? frame * 15 : 0}deg)` }}
@@ -37,20 +37,20 @@ export const ParseProgressBar = memo(function ParseProgressBar({ current, total,
             <span className="animate-pulse">准备解析…</span>
           ) : (
             <span>
-              解析中 <span className="tabular-nums font-semibold text-[#5f7a52]">{current}</span>
-              <span className="text-[#a08b72]"> / {total}</span> 页
+              解析中 <span className="tabular-nums font-semibold text-[var(--ac-green-text)]">{current}</span>
+              <span className="text-[var(--tx-6)]"> / {total}</span> 页
             </span>
           )}
         </span>
         {!isIndeterminate && (
-          <span className="tabular-nums text-[11px] font-semibold text-[#8c9d78]">
+          <span className="tabular-nums text-[11px] font-semibold text-[var(--ac-green-text)]">
             {pctDisplay}%
           </span>
         )}
       </div>
 
       {/* Track */}
-      <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-[#ede3cf] shadow-[inset_0_1px_3px_rgba(122,98,66,0.14)]">
+      <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-[var(--sf-4)] shadow-[inset_0_1px_3px_rgba(122,98,66,0.14)]">
         {isIndeterminate ? (
           /* Shimmer worm for indeterminate state */
           <div className="parse-worm absolute inset-y-0 w-2/5 rounded-full bg-gradient-to-r from-[#dbc49a] via-[#c9a86c] to-[#8a9d76]" />
@@ -73,7 +73,7 @@ export const ParseProgressBar = memo(function ParseProgressBar({ current, total,
 
       {/* Filename hint */}
       {filename && (
-        <p className="truncate text-[10px] text-[#9c876e]" title={filename}>
+        <p className="truncate text-[10px] text-[var(--tx-5)]" title={filename}>
           {filename}
         </p>
       )}

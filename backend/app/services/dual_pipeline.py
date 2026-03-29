@@ -15,6 +15,7 @@ from app.services.model_gateway import ModelGateway
 from app.services.prompt_templates import (
     build_vision_extraction_prompt,
     build_text_explanation_prompt,
+    build_text_explanation_json_prompt,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,3 +172,52 @@ class DualModelPipeline:
         )
 
         return explanation
+
+    def generate_json(
+        self,
+        *,
+        slide_image_path: Path,
+        extraction_text: str,
+        page_num: int,
+        question: str,
+        related_pages: Iterable[int],
+        repeat_analysis: dict | None = None,
+        document_id: str = "",
+    ) -> dict | None:
+        """Run two-stage pipeline returning structured JSON, or None on failure."""
+        # Stage 1: Vision extraction (same as Markdown path)
+        vision_prompt = build_vision_extraction_prompt(
+            extraction_text=extraction_text,
+        )
+        logger.info("Dual pipeline JSON stage 1: vision extraction for page %d", page_num)
+        vision_extraction = self.vision_gateway.generate_vision_extraction(
+            prompt=vision_prompt,
+            slide_image_path=slide_image_path,
+        )
+        logger.info("Vision extraction complete: %d chars", len(vision_extraction))
+
+        previous_context = ""
+        if document_id:
+            previous_context = _fetch_previous_context(document_id, page_num)
+
+        # Stage 2: Text model generates JSON
+        text_prompt = build_text_explanation_json_prompt(
+            page_num=page_num,
+            question=question,
+            extraction_text=extraction_text,
+            vision_extraction=vision_extraction,
+            related_pages=related_pages,
+            repeat_analysis=repeat_analysis,
+            previous_context=previous_context,
+        )
+        logger.info("Dual pipeline JSON stage 2: text JSON for page %d", page_num)
+        try:
+            result = self.text_gateway.generate_text_json(prompt=text_prompt)
+            if not isinstance(result, dict) or "items" not in result:
+                logger.warning("JSON output missing 'items' key, falling back")
+                return None
+            logger.info("JSON explanation complete: %d items", len(result.get("items", [])))
+            return result
+        except Exception as exc:
+            logger.warning("JSON generation failed, will fall back to Markdown: %s", exc)
+            return None

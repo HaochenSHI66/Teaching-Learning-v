@@ -351,7 +351,7 @@ export default function Page() {
           />
         </aside>
 
-        <section className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.92fr]">
+        <section className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
             {/* Task 3: Processing animation for first upload */}
             {showProcessingAnimation ? (
               <div className="flex h-full flex-col items-center justify-center rounded-[30px] border border-[var(--bd-1)] bg-[var(--gd-processing)] shadow-[var(--sh-card)]">

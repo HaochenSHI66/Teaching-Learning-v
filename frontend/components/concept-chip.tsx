@@ -49,7 +49,7 @@ export function ConceptChip({ concept, matchedText, onJumpToSlide }: ConceptChip
   return (
     <span ref={chipRef} className="relative inline">
       <span
-        className="cursor-pointer rounded-[4px] bg-[#f0e6d6] px-0.5 py-[1px] text-[#5a4530] transition-all hover:border-b hover:border-[#c49a3a] hover:bg-[#e8dbc5]"
+        className="cursor-pointer rounded-[4px] bg-[var(--sf-3)] px-0.5 py-[1px] text-[var(--tx-3)] transition-all hover:border-b hover:border-[#c49a3a] hover:bg-[var(--sf-5)]"
         onClick={handleToggle}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") handleToggle();
@@ -63,24 +63,24 @@ export function ConceptChip({ concept, matchedText, onJumpToSlide }: ConceptChip
       {open && (
         <div
           ref={popoverRef}
-          className="absolute left-1/2 top-full z-50 mt-1.5 w-64 -translate-x-1/2 rounded-[14px] border border-[#d9c7ab] bg-[#fffaf1] p-3 shadow-[0_8px_24px_rgba(109,85,58,0.18)]"
+          className="absolute left-1/2 top-full z-50 mt-1.5 w-64 -translate-x-1/2 rounded-[14px] border border-[var(--bd-1)] bg-[var(--sf-1)] p-3 shadow-[var(--sh-popup)]"
         >
           {/* Arrow */}
-          <div className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-l border-t border-[#d9c7ab] bg-[#fffaf1]" />
+          <div className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-l border-t border-[var(--bd-1)] bg-[var(--sf-1)]" />
 
-          <p className="text-[13px] font-semibold text-[#3a2c1c]">{concept.name}</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-[#7a6248]">
+          <p className="text-[13px] font-semibold text-[var(--tx-1)]">{concept.name}</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-[var(--tx-4)]">
             {concept.description || "暂无描述"}
           </p>
 
           {/* Slide references */}
           {concept.slide_ids.length > 0 && (
             <div className="mt-2 flex items-center gap-1.5">
-              <span className="text-[11px] text-[#9a846a]">
+              <span className="text-[11px] text-[var(--tx-5)]">
                 出现于 {concept.slide_ids.length} 页
               </span>
               <button
-                className="rounded-md border border-[#d0bfa4] bg-[#f0e5d1] px-2 py-0.5 text-[11px] font-medium text-[#6b5540] transition-colors hover:bg-[#e8d8c0]"
+                className="rounded-md border border-[var(--bd-2)] bg-[var(--sf-4)] px-2 py-0.5 text-[11px] font-medium text-[var(--tx-4)] transition-colors hover:bg-[var(--sf-5)]"
                 onClick={handleJumpToFirst}
                 type="button"
               >
@@ -92,10 +92,10 @@ export function ConceptChip({ concept, matchedText, onJumpToSlide }: ConceptChip
           {/* Flashcard count */}
           {concept.flashcard_count > 0 && (
             <div className="mt-1.5 flex items-center gap-1.5">
-              <span className="text-[11px] text-[#9a846a]">
+              <span className="text-[11px] text-[var(--tx-5)]">
                 {concept.flashcard_count} 张闪卡
               </span>
-              <span className="rounded-md border border-[#c9d5b9] bg-[#eef4e6] px-2 py-0.5 text-[11px] font-medium text-[#5a7248] transition-colors hover:bg-[#ddebd0] cursor-default">
+              <span className="rounded-md border border-[var(--ac-green-border)] bg-[var(--ac-green-bg)] px-2 py-0.5 text-[11px] font-medium text-[var(--ac-green-text)] transition-colors hover:bg-[var(--ac-green-hover)] cursor-default">
                 查看闪卡
               </span>
             </div>

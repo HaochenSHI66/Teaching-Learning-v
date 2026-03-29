@@ -30,18 +30,18 @@
         {{ style_css | safe }}
     </style>
 </head>
-<body class="theme-{{ style_id }}">
+<body class="theme-{{ style_meta.id }}">
 
-    {# ===== COVER ===== #}
+    {# ===== COMPACT HEADER (not a full-page cover) ===== #}
     <div class="cover">
         <div class="cover-inner">
             <h1 class="cover-title">{{ title }}</h1>
             <p class="cover-subtitle">学习笔记</p>
             <div class="cover-meta">
                 <span>{{ export_date }}</span>
-                <span>{{ total_slides }} 页幻灯片</span>
-                <span>{{ total_concepts }} 个概念</span>
-                <span>{{ total_flashcards }} 张闪卡</span>
+                <span>{{ page_count }} 页幻灯片</span>
+                {% if concept_count %}<span>{{ concept_count }} 个概念</span>{% endif %}
+                {% if flashcards | length %}<span>{{ flashcards | length }} 张闪卡</span>{% endif %}
             </div>
         </div>
     </div>
@@ -51,30 +51,36 @@
     <div class="summary-section">
         <h2 class="section-heading">学习摘要</h2>
         <div class="summary-box">
-            {{ study_summary }}
+            {{ study_summary | safe }}
         </div>
     </div>
     {% endif %}
 
     {# ===== TABLE OF CONTENTS ===== #}
+    {% set content_slides = [] %}
+    {% for slide in slides %}
+        {% if slide.explanation or slide.key_points or slide.key_terms %}
+            {% if content_slides.append(slide) %}{% endif %}
+        {% endif %}
+    {% endfor %}
+
+    {% if content_slides %}
     <div class="toc-section">
         <h2 class="section-heading">目录</h2>
         <ul class="toc-list">
-            {% for slide in slides %}
-                {% if slide.has_content %}
-                <li>
-                    <span class="toc-page">P{{ slide.page_num }}</span>
-                    <span>{{ slide.title or '第 ' ~ slide.page_num ~ ' 页' }}</span>
-                </li>
-                {% endif %}
+            {% for slide in content_slides %}
+            <li>
+                <span class="toc-page">P{{ slide.page_num }}</span>
+                <span>{{ slide.title }}</span>
+            </li>
             {% endfor %}
-            {% if include_knowledge_map and concepts %}
+            {% if concepts %}
             <li>
                 <span class="toc-page">附</span>
-                <span>知识图谱</span>
+                <span>知识概念地图</span>
             </li>
             {% endif %}
-            {% if include_flashcards and flashcards %}
+            {% if flashcards %}
             <li>
                 <span class="toc-page">附</span>
                 <span>闪卡复习</span>
@@ -82,93 +88,105 @@
             {% endif %}
         </ul>
     </div>
+    {% endif %}
 
     {# ===== PER-SLIDE SECTIONS ===== #}
     {% for slide in slides %}
-        {% if slide.has_content %}
+        {% if slide.explanation or slide.key_points or slide.key_terms %}
         <div class="slide-section">
             <div class="slide-header">
                 <span class="slide-badge">P{{ slide.page_num }}</span>
-                <h2 class="slide-title">{{ slide.title or '第 ' ~ slide.page_num ~ ' 页' }}</h2>
+                <h2 class="slide-title">{{ slide.title }}</h2>
             </div>
 
-            {% if include_images and slide.image_url %}
-            <div class="slide-image-wrap">
-                <img class="slide-image" src="{{ base_url }}{{ slide.image_url }}" alt="幻灯片 {{ slide.page_num }}">
-            </div>
-            {% endif %}
+            <div class="slide-body">
+                {# ── Left column: notes content ── #}
+                <div class="slide-content">
+                    {% if slide.key_points %}
+                    <div class="key-points">
+                        <h3 class="subsection-heading">要点</h3>
+                        <ul>
+                            {% for point in slide.key_points %}
+                            <li>{{ point }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
 
-            {% if slide.key_points %}
-            <div class="key-points">
-                <h3 class="subsection-heading">要点</h3>
-                <ul>
-                    {% for point in slide.key_points %}
-                    <li>{{ point }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
+                    {% if slide.explanation %}
+                    <div class="explanation-content">
+                        <h3 class="subsection-heading">详细讲解</h3>
+                        <div>{{ slide.explanation | safe }}</div>
+                    </div>
+                    {% endif %}
 
-            {% if include_explanations and slide.explanation_md %}
-            <div class="explanation-content">
-                <h3 class="subsection-heading">详细讲解</h3>
-                <div>{{ slide.explanation_md }}</div>
-            </div>
-            {% endif %}
+                    {% if slide.key_terms %}
+                    <div>
+                        <h3 class="subsection-heading">关键术语</h3>
+                        <div class="terms-grid">
+                            {% for term in slide.key_terms %}
+                            <div class="term-card">
+                                <span class="term-name">{{ term.text or term.name or '' }}</span>
+                                {% if term.description %}
+                                <span class="term-desc">{{ term.description }}</span>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
 
-            {% if include_key_terms and slide.key_terms %}
-            <div class="terms-grid">
-                {% for term in slide.key_terms %}
-                <div class="term-card">
-                    <span class="term-name">{{ term.text or term.name }}</span>
-                    {% if term.description %}
-                    <span class="term-desc">{{ term.description }}</span>
+                    {% if slide.formulas %}
+                    <div>
+                        <h3 class="subsection-heading">公式</h3>
+                        {% for formula in slide.formulas %}
+                        <div class="formula-box">
+                            {{ formula.text or formula.latex or '' }}
+                        </div>
+                        {% endfor %}
+                    </div>
                     {% endif %}
                 </div>
-                {% endfor %}
-            </div>
-            {% endif %}
 
-            {% if slide.formulas %}
-            <div>
-                {% for formula in slide.formulas %}
-                <div class="formula-box">
-                    {{ formula.text or formula.latex }}
+                {# ── Right column: slide thumbnail ── #}
+                {% if slide.image_path %}
+                <div class="slide-image-wrap">
+                    <img class="slide-image" src="{{ base_url }}/storage/{{ document_id }}/{{ slide.image_path }}" alt="幻灯片 {{ slide.page_num }}">
                 </div>
-                {% endfor %}
+                {% endif %}
             </div>
-            {% endif %}
         </div>
         {% endif %}
     {% endfor %}
 
     {# ===== KNOWLEDGE MAP ===== #}
-    {% if include_knowledge_map and concepts %}
+    {% if concepts %}
     <div class="knowledge-section">
-        <h2 class="section-heading">知识图谱</h2>
+        <h2 class="section-heading">知识概念地图</h2>
         {% for importance in [5, 4, 3, 2, 1] %}
             {% set group = concepts | selectattr('importance', 'equalto', importance) | list %}
             {% if group %}
             <div class="importance-group">
                 <div class="importance-label">
                     {% if importance >= 4 %}核心概念{% elif importance == 3 %}重要概念{% else %}补充概念{% endif %}
-                    (重要度 {{ importance }})
+                    · 重要度 {{ importance }}
                 </div>
                 <div class="concept-list">
                     {% for concept in group %}
                     <div class="concept-card">
                         <div class="concept-name">{{ concept.name }}</div>
                         <div class="concept-desc">{{ concept.description }}</div>
+                        {# Find related concepts from relations #}
                         {% set related = [] %}
                         {% for rel in relations %}
-                            {% if rel.source_id == concept.id and rel.target_id in concept_name_map %}
-                                {% if related.append(concept_name_map[rel.target_id] ~ ' (' ~ rel.relation_type ~ ')') %}{% endif %}
-                            {% elif rel.target_id == concept.id and rel.source_id in concept_name_map %}
-                                {% if related.append(concept_name_map[rel.source_id] ~ ' (' ~ rel.relation_type ~ ')') %}{% endif %}
+                            {% if rel.source_id == concept.id %}
+                                {% if related.append(rel.target_name ~ ' (' ~ rel.relation_type ~ ')') %}{% endif %}
+                            {% elif rel.target_id == concept.id %}
+                                {% if related.append(rel.source_name ~ ' (' ~ rel.relation_type ~ ')') %}{% endif %}
                             {% endif %}
                         {% endfor %}
                         {% if related %}
-                        <div class="concept-relations">相关: {{ related | join(', ') }}</div>
+                        <div class="concept-relations">关联: {{ related | join('、') }}</div>
                         {% endif %}
                     </div>
                     {% endfor %}
@@ -180,7 +198,7 @@
     {% endif %}
 
     {# ===== FLASHCARDS ===== #}
-    {% if include_flashcards and flashcards %}
+    {% if flashcards %}
     <div class="flashcard-section">
         <h2 class="section-heading">闪卡复习</h2>
         <div class="flashcard-grid">
@@ -188,11 +206,11 @@
             <div class="flashcard">
                 <div class="fc-front">
                     <span class="fc-label">Q</span>
-                    <div>{{ card.front_md }}</div>
+                    <span>{{ card.front_md | safe }}</span>
                 </div>
                 <div class="fc-back">
                     <span class="fc-label">A</span>
-                    <div>{{ card.back_md }}</div>
+                    <span>{{ card.back_md | safe }}</span>
                 </div>
             </div>
             {% endfor %}
@@ -202,7 +220,7 @@
 
     {# ===== FOOTER ===== #}
     <div class="notes-footer">
-        <p>由 Teaching-Learning 自动生成 | {{ export_date }}</p>
+        <p>由 Learning Studio 自动生成 · {{ export_date }}</p>
     </div>
 
 </body>

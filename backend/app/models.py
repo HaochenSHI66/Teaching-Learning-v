@@ -175,6 +175,7 @@ class Concept(SQLModel, table=True):
     name: str = Field(default="")
     description: str = Field(default="")
     slide_ids: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    importance: int = Field(default=3)
     created_at: datetime = Field(default_factory=_utcnow)
 
 

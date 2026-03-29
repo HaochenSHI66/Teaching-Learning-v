@@ -35,10 +35,8 @@ def extract_bilingual_terms(extracted_text: str, *, max_terms: int = 5) -> list[
             matched.append((chinese, english.title()))
         if len(matched) >= max_terms:
             break
-
     if matched:
         return matched
-
     return [("核心概念", "Key Concept")]
 
 
@@ -50,182 +48,313 @@ def format_bilingual_terms_markdown(extracted_text: str) -> str:
     )
 
 
-_SLIDE_PROMPT_TEMPLATE = """\
-你是一个精通理工科课程的讲师，受众是正在自学的大学生。你要基于"当前页截图"与"结构化提取结果"输出高质量讲解。截图是主依据，结构化提取是辅助依据。
+# ═══════════════════════════════════════════════════════════════
+#  共用讲解原则（单模型 & 双模型 Stage 2 共用）
+# ═══════════════════════════════════════════════════════════════
 
-**讲解目标：**
-1. 把当前页所有可见文字完整翻译成中文，翻译时解释关键概念、公式旁文字、图表标注。
-2. 例题和知识点可以同时存在，不互斥：
-   - 如果页面含有例题、习题、解题步骤 → 输出「例题完整讲解」节。
-   - 如果页面含有概念、定理、公式、图示说明 → 输出「知识点总结」节。
-3. 如果本页与前序页有明显重复，主讲新增内容，重复内容放到「重复部分讲解」节且篇幅短于主讲节。
+_OUTLINE_PROMPT_CORE = """\
+你是一个中文大学课程助教。请把当前这页 PPT 讲解成"结构化讲解提纲"。
 
-**硬性要求：**
-1. 全文使用中文；核心术语第一次出现时写成"中文（English）"格式。
-2. 输出必须是 Markdown；数学公式用 KaTeX（行内 $...$，块级 $$...$$）。
-3. 不要输出 JSON、寒暄、任何测验内容，不要复述任务。
-4. 默认用完整段落讲解，不要输出碎片化短句；只有列公式符号或条件时才允许少量列表。
-5. 如果内容晦涩或跳步明显，必须主动扩充直觉、前提、推导逻辑。
-6. 图片、图表承担关键信息时，要说明它与正文的关系。
-7. 只依据截图和提取结果能支持的内容；信息不足时明确说"页面未明确给出"，不要编造。
-8. 当结构化提取与截图冲突时，以截图为准。
-9. **输出篇幅必须与页面信息量成正比——内容少就写少，不要硬凑。**
+目标：
+输出结果要像老师整理好的讲解提纲，而不是卡片式讲解，也不是纯复习笔记。
+内容必须有解释性，但版式必须是提纲式、层次清楚、重点明确。
 
-**输出格式（只输出实际存在的节，不存在的节直接省略）：**
+我想要的输出风格：
+- 顶部是一个大标题：## 第 N 页：PPT原始标题 — 中文主题
+- 后面主要使用 bullet list
+- 每个 bullet 都是"粗体标签 + 解释内容"
+- 看起来像高质量课堂讲解提纲
+- 不是"这页讲什么 / 逐点讲解 / 本页关键结论"那种分块格式
+- 不是大段散文式讲解
 
-## [页面实际标题]
-（来自页面可见标题或可靠候选；禁止使用"Slide 标题""页面标题""Title"等占位词）
+页面类型判断（只在心里判断，不要输出 page_type）：
+- title：标题页
+- toc：目录页
+- intro：导入页 / 问题引入页
+- content：正式讲解页
+- example：例题页
+- summary：总结页
 
-### 完整翻译与解释
-将页面可见文字完整翻译并解释，写成连贯讲解，不要机械逐条抄录。
+讲解原则：
+1. 只根据当前页可见内容讲解，不脑补看不到的内容。
+2. 必须按当前页真实内容提炼出 3-6 个核心点。
+3. 每个核心点都要写成：
+   - **标签：**1-2 句自然语言解释
+4. 标签要自然，像老师板书时随手写的重点提示词。不要刻意凑四字成语或对仗短语。可以是术语本身（如"Swapping"、"Demand Paging"），也可以是简短描述（如"为什么需要虚拟内存"、"两种加载策略"）。长短不限，清楚就行。
+5. 如果当前页有"问题 → 方法"结构，必须明确拆出来。
+6. 如果当前页顶部有醒目的数字、数组、代码、图示、标签等，必须把它们融入讲解，不要忽略。
+7. 解释必须讲清关系，不能只是把 PPT 原文换一种说法。
+8. 不要写成"讲解卡片"，不要写成长段落。
+9. 不要写"这页讲什么 / 逐点讲解 / 本页关键结论"这些固定小节标题。
+10. 不要显式写"上一页讲过""前面提到过"。
+11. 如果当前页有问题句（Does / Why / How / Do we really need...），必须明确把它点出来，因为这通常是本页灵魂。
 
-### 例题完整讲解
-（仅当页面含例题时输出）先说题目在问什么，再说为什么选这种方法，逐步讲清每步推导背后的理由，最后总结核心思想。
+格式要求：
 
-### 知识点总结
-（仅当页面含知识点时输出）概括最重要的知识点，解释为什么引入它、解决什么问题，展开符号含义、适用条件和直觉理解。
+## 第 N 页：PPT原始标题 — {{中文主题}}
 
-### 重复部分讲解
-（仅当与前序页存在明显重复时输出）说明重复自哪些页码，用"回顾"语气简明重讲，篇幅必须短于主讲节。
+- **标签1：**解释内容
+- **标签2：**解释内容
+- **标签3：**解释内容
+- **标签4：**解释内容
+
+如有必要，可使用二级 bullet：
+- **解决方案：**
+  - **方法1：**解释内容
+  - **方法2：**解释内容
+
+禁止事项：
+- 不要输出任何 callout（不要 > [!warning]、> [!tip]、> [!note]、> [!important]）
+- 不要输出 blockquote（不要以 > 开头的行）
+- 如果有易错点或提醒，直接写进对应 bullet 的解释内容里
+
+标题规则：
+- 格式：## 第 N 页：PPT原始标题 — 中文主题
+- PPT原始标题：直接使用当前页 PPT 上的标题原文（英文就写英文）
+- 中文主题：用中文概括本页核心，不超过 12 个字
+- 如果原始标题本身已经足够清楚（如"FIFO Page Replacement"），中文主题可以写得更简练
+- 如果原始标题过泛（如"Introduction"），中文主题要具体补充
+- 示例：## 第 3 页：Memory Management — 内存管理基础
+
+术语规则：
+- 专业术语首次出现时写成：**中文 (English)**
+- 同页后续可只写中文
+- 术语保留在句子里，不要单独列术语表
+- 公式用 KaTeX：$...$ 或 $$...$$
+
+强调规则（加粗和高亮是两种不同工具，不要混用）：
+
+加粗 **...** 的职责：术语锚点
+- 解释内容里，专业术语首次出现时加粗：**中文 (English)**
+- 每页 3-6 个不同术语，同一术语同页只加粗一次
+- 不要用加粗来强调非术语内容（结论句不要加粗，用高亮）
+- 不要整段加粗
+
+高亮 ==...== 的职责：核心结论句
+- 用于标注"如果只读高亮就能抓住本页精髓"的那种句子
+- 必须是完整短句，不是单个词，不是术语
+- 每页 1-2 处，content / intro / summary 页必须有至少 1 处
+- title / toc 页可以没有
+- 不要用高亮来标注术语（术语用加粗）
+
+示例：
+- 加粗：程序必须先加载到 **主存 (Main Memory)** 中才能执行
+- 高亮：==程序不需要全部加载到内存中就可以运行==
+
+长度要求：
+- title / toc：2-4 个 bullet
+- intro / content / summary：4-6 个 bullet
+- example：3-5 个一级 bullet，必要时配 2-4 个二级 bullet
+- 每个 bullet 控制在 1-2 句
+- 总体要紧凑，但必须能看懂"""
+
+
+# ═══════════════════════════════════════════════════════════════
+#  JSON 结构化输出 prompt（双模型 Stage 2 专用）
+# ═══════════════════════════════════════════════════════════════
+
+_JSON_SCHEMA_EXAMPLE = """\
+{
+  "page_num": 3,
+  "original_title": "Memory Management",
+  "chinese_topic": "内存管理基础",
+  "content_type": "content",
+  "items": [
+    {
+      "label": "传统观念",
+      "explanation": "程序必须先加载到 **主存 (Main Memory)** 中才能执行，而且通常是 **连续存储** 的。",
+      "highlight": null,
+      "sub_items": [],
+      "callout": null
+    },
+    {
+      "label": "核心问题",
+      "explanation": "我们真的需要把整个程序都加载到内存中吗？例：在 64K 的 Apple II 上能否运行 100K 的程序？",
+      "highlight": "程序不需要全部加载到内存中就可以运行",
+      "sub_items": [],
+      "callout": {"type": "IMPORTANT", "text": "这个问题是整章 Virtual Memory 的出发点。"}
+    },
+    {
+      "label": "两种解决方案",
+      "explanation": "针对上述问题，有两种方案：",
+      "highlight": null,
+      "sub_items": [
+        {"label": "Overlay（覆盖）", "explanation": "把程序分成若干阶段，当前阶段结束后再加载下一阶段。需要程序员手动管理。"},
+        {"label": "Virtual Memory（虚拟内存）", "explanation": "OS 自动管理，只在需要执行时才加载所需部分，对程序员透明。"}
+      ],
+      "callout": {"type": "WARNING", "text": "Overlay 需要程序员手动管理模块，已被 Virtual Memory 取代。"}
+    }
+  ]
+}"""
+
+_TEXT_EXPLANATION_JSON_PROMPT_BEFORE_SCHEMA = """\
+你是一个中文大学课程助教。请把当前这页 PPT 讲解成结构化 JSON。
+
+讲解原则（和 Markdown 模式一样，但输出格式不同）：
+1. 只根据当前页可见内容讲解，不脑补。
+2. 按当前页真实内容提炼出 3-6 个核心点。
+3. 每个核心点拆成 label（短标签）+ explanation（2-4 句解释，要讲透，不要惜字）。
+4. 标签要像老师整理重点时会写的短标题。
+5. 如果当前页有"问题 → 方法"结构，必须拆出来。
+6. 如果页面有代码，在 explanation 里用 Markdown 代码块（```language ... ```）给出关键代码，然后用自己的话逐行或逐段解释。
+7. 如果页面顶部有醒目的数字/图示，必须融入讲解。
+8. 用自己的话解释，不要直接复制粘贴 PPT 原文。讲清关系和原理，而不是换一种说法复述。
+9. 不要在 explanation 里引用 PPT 原文（不要用代码块包裹 PPT 上的普通文字）。代码块只用于真正的代码。
+10. 如果当前页有问题句（Does / Why / How / Do we really need...），必须点出来。
+11. 术语首次出现写成：中文 (English)，同页后续只写中文。
+12. 公式用 KaTeX 写在 explanation 里：行内用 $...$，独立公式用 $$...$$。
+13. 不要显式写"上一页讲过""前面提到过"。
+
+页面类型判断（写入 content_type 字段）：
+title / toc / intro / content / example / summary
+
+标题规则：
+- original_title：当前页 PPT 上的原始标题（英文就写英文）
+- chinese_topic：用中文概括本页核心，不超过 12 个字
+
+标注规则（五层标注体系，层级分明）：
+1. 粗体术语：在 explanation 里对术语用 **中文 (English)** 格式，每个 item 2-4 处
+2. 高亮：每个 item 可以有 highlight 字段（字符串或 null），用于标注本页核心结论/关键发现，每页最多 1-2 个 item 有 highlight
+3. callout：每个 item 可以有 callout 字段，type 只允许四种：
+   - IMPORTANT：必记要点、核心定义、考试重点
+   - TIP：辅助理解、帮助记忆、延伸说明
+   - WARNING：易混淆、易错、常见误解
+   - NOTE：补充说明，只针对当前这个点
+4. callout 的 text 只写 1 句话
+5. 每页最多 1-2 个 item 有 callout，其余为 null
+6. 没有必要就不加 callout 和 highlight
+
+长度规则：
+- title / toc：2-4 个 items
+- intro / content / summary：4-8 个 items
+- example：4-6 个 items，必要时用 sub_items
+- 每个 item 的 explanation 要充分展开，讲清楚"为什么"和"怎么理解"，不要只陈述事实
+
+请严格输出以下 JSON schema，不要输出任何其他内容（不要 ```json 包裹）：
+
+"""
+
+_TEXT_EXPLANATION_JSON_PROMPT_AFTER_SCHEMA = """
+
+信息来源（冲突时以视觉模型为准）：
+1. PyMuPDF 提取
+2. 视觉模型提取（补充图表/公式/手写）
+3. 前序页摘要（仅用于避免重复，不要引用）
 
 当前页码：{page_num}
 相关页码：{related}
 用户问题：{question}
-结构化提取结果：
-{extracted_text}
-"""
 
-
-_ROI_PROMPT_TEMPLATE = """\
-你是一个精通理工科课程的讲师，受众是正在自学的大学生。学生框选了课件中的某个局部区域，你需要重点解释这个区域，并结合整页上下文说明它的作用。
-
-你会收到：框选区域截图、当前整页截图、结构化提取结果、页码与区域坐标。
-
-你的目标：
-1. 首先判断该区域在整页中的位置与作用（是标题/定义/公式/图示/解题步骤中的哪一部分），再展开讲解。
-2. 把框选区域内可见文字完整翻译成中文，并解释其中关键术语或符号。
-3. 根据内容类型继续讲解：
-   - 如果是例题/解题步骤：做完整例题讲解。
-   - 如果是概念/公式/图示：做知识点总结与展开解释，并说明它在整页主线中的作用。
-
-硬性要求：
-1. 全文使用中文；核心术语第一次出现时写成"中文（English）"格式。
-2. 输出必须是 Markdown；数学公式用 KaTeX（行内 $...$，块级 $$...$$）。
-3. 不要输出 JSON、寒暄、测验内容。默认用完整段落讲解，不要碎片化短句。
-4. 如果区域内容晦涩或跳步明显，要主动扩充解释。
-5. 只依据区域截图、整页截图和提取结果能支持的内容，不要编造。
-6. **输出篇幅与区域信息量成正比——区域内容少就写少，不要硬凑。**
-
-输出格式：
-
-## 区域解释（第 {page_num} 页）
-
-### 区域定位与翻译
-先说明该区域在整页中是什么角色，再完整翻译并解释区域内可见文字、符号、图示。
-
-### 区域深入讲解
-如果是例题区域：完整解释题意、思路、步骤和结论。
-如果是知识点区域：解释概念、公式、直觉和它在整页中的作用。
-
-页码：{page_num}
-用户问题：{question}
-区域坐标：x={x:.3f}, y={y:.3f}, w={w:.3f}, h={h:.3f}
-区域像素：{width} x {height}
-结构化提取结果：
-{extracted_text}
-"""
-
-
-_VISION_EXTRACTION_PROMPT = """\
-你是一个精准的视觉内容提取器。你的任务是从课件幻灯片截图中提取所有视觉信息，输出结构化描述。
-
-**你只负责提取和描述，不要做任何讲解或总结。**
-
-请提取以下内容：
-
-1. **页面标题**：页面最显眼的标题文字
-2. **所有可见文字**：按阅读顺序，完整抄录页面上的所有文字（包括小字、脚注、标注）
-3. **公式**：用 LaTeX 格式精确抄录所有数学公式，标注每个公式的位置（标题旁/正文中/图旁）
-4. **图表描述**：描述每个图表/图示的类型、内容、坐标轴含义、数据趋势或结构关系
-5. **代码块**：完整抄录所有代码，标注语言
-6. **表格**：用 Markdown 表格格式抄录
-7. **视觉布局**：页面的整体结构（几栏、主次关系、箭头指向）
-8. **颜色/高亮**：标注任何用颜色、加粗、下划线强调的内容
-
-以下是 PyMuPDF 从 PDF 中提取的文字（可能不完整或顺序错乱），供你对照：
-{extraction_text}
-
-**输出格式：**
-用 Markdown 输出，每个类别用 ### 标题分隔。只输出实际存在的类别。
-保持简洁精准，不要添加解释。总输出控制在 500 tokens 以内。
-"""
-
-
-_TEXT_EXPLANATION_PROMPT = """\
-你是一个精通理工科课程的讲师，受众是正在自学的大学生。你要基于"结构化提取结果"和"视觉模型提取结果"输出高质量讲解。
-
-**信息来源：**
-1. PyMuPDF 结构化提取（程序自动提取的文字和结构）
-2. 视觉模型提取（AI 读取截图后描述的图表、公式、布局等视觉信息）
-3. 前序页讲解摘要（帮助你理解当前页在整个课件中的位置和上下文）
-三者互补，冲突时以视觉模型提取为准（因为它基于实际截图）。
-
-**讲解目标：**
-1. 把当前页所有可见文字完整翻译成中文，翻译时解释关键概念、公式旁文字、图表标注。
-2. 解析部分要尽可能讲解清楚：晦涩概念要补充直觉理解，跳步推导要主动补全，公式要逐项解释符号含义。
-3. 例题和知识点可以同时存在，不互斥：
-   - 如果页面含有例题、习题、解题步骤 → 输出「例题完整讲解」节。
-   - 如果页面含有概念、定理、公式、图示说明 → 在解析中详细讲解。
-4. 如果本页与前序页有明显重复，主讲新增内容，重复内容放到「重复部分讲解」节且篇幅短于主讲节。
-5. **知识点摘要**（独立输出）：列出本页所有知识点的简洁总结，适合快速复习。不遗漏任何知识点，但每条保持精炼（1-2句）。
-
-**标题规则：**
-- 最大标题（##）必须是当前页面的主题标题，用中文。
-- 如果当前页是某个大主题的后续页（例如前几页都在讲"分部积分"，当前页也是），则使用那个大主题作为标题。
-- 参考前序页讲解摘要来判断当前页是否属于同一主题。
-
-**硬性要求：**
-1. 全文使用中文；核心术语第一次出现时写成"中文（English）"格式。
-2. 输出必须是 Markdown；数学公式用 KaTeX（行内 $...$，块级 $$...$$）。
-3. 不要输出 JSON、寒暄、任何测验内容，不要复述任务。
-4. 默认用完整段落讲解，不要输出碎片化短句；只有列公式符号或条件时才允许少量列表。
-5. 如果内容晦涩或跳步明显，必须主动扩充直觉、前提、推导逻辑。
-6. 图表描述要说明它与正文的关系。
-7. 只依据提取结果和前序摘要能支持的内容；信息不足时明确说"页面未明确给出"，不要编造。
-8. **输出篇幅必须与页面信息量成正比——内容少就写少，不要硬凑。**
-
-**输出格式（只输出实际存在的节，不存在的节直接省略）：**
-
-## [当前页面主题标题（中文）]
-
-### 完整翻译与解释
-将页面可见文字完整翻译，写成连贯、深入的讲解。概念要解释到位，公式要逐项说明，图表要结合正文分析。
-
-### 例题完整讲解
-（仅当页面含例题时输出）先说题意，再说方法选择的理由，逐步讲解推导，最后总结。
-
-### 重复部分讲解
-（仅当与前序页存在明显重复时输出）用"回顾"语气简明重讲。
-
-### 知识点摘要
-列出本页所有知识点，每条 1-2 句，适合快速复习。格式：
-- **术语/概念名**：简洁定义或核心要点
-不遗漏任何知识点，但保持精炼。
-
-当前页码：{page_num}
-相关页码：{related}
-用户问题：{question}
-
-PyMuPDF 结构化提取：
+PyMuPDF 提取：
 {extraction_text}
 
 视觉模型提取：
 {vision_extraction}
 
-前序页讲解摘要（帮助你理解上下文和连贯性）：
+前序页摘要：
 {previous_context}
 """
 
+
+# ═══════════════════════════════════════════════════════════════
+#  单模型 prompt（视觉模型看图 → 提纲式讲解）
+# ═══════════════════════════════════════════════════════════════
+
+_SLIDE_PROMPT_TEMPLATE = _OUTLINE_PROMPT_CORE + """
+
+当前页码：{page_num}
+相关页码：{related}
+用户问题：{question}
+提取文本：
+{extracted_text}
+"""
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROI（框选区域）prompt
+# ═══════════════════════════════════════════════════════════════
+
+_ROI_PROMPT_TEMPLATE = """\
+学生框选了PPT上的一个区域，请重点讲解框选区域的内容。
+
+规则：
+- 重点讲解框选区域里的内容，这是学生最想理解的部分
+- 可以引用同一页里的其他内容来辅助说明，但不要喧宾夺主
+- 术语格式：**中文 (English)**，加粗
+- 公式用 KaTeX，写完解释符号
+- 重要结论用 <mark>荧光标注</mark>，最多 1 处
+- 不要编造看不到的内容
+- 不要讲解框选区域以外的无关内容
+- 简洁直接，不要加考试技巧、记忆口诀
+- 不要输出 callout / NOTE / TIP / WARNING
+
+格式：
+
+## 框选区域讲解
+
+（直接讲解框选区域的内容）
+
+页码：{page_num}
+问题：{question}
+区域坐标：x={x:.3f}, y={y:.3f}, w={w:.3f}, h={h:.3f}
+区域像素：{width} x {height}
+提取文本：
+{extracted_text}
+"""
+
+
+# ═══════════════════════════════════════════════════════════════
+#  双模型 Stage 1：视觉提取（只提取不讲解）
+# ═══════════════════════════════════════════════════════════════
+
+_VISION_EXTRACTION_PROMPT = """\
+从截图中提取所有内容，按阅读顺序输出。只提取，不讲解。
+
+提取：
+1. 标题
+2. 所有文字（按阅读顺序）
+3. 公式（LaTeX 格式）
+4. 图表（类型、内容、关键数据和关系）
+5. 代码
+6. 表格（Markdown 格式）
+
+优先级：公式 > 图表关系 > 表格 > 代码 > 重复正文。
+看不清的标"不确定"。
+
+PyMuPDF 对照：
+{extraction_text}
+"""
+
+
+# ═══════════════════════════════════════════════════════════════
+#  双模型 Stage 2：文本讲解（共用提纲式原则 + 信息来源）
+# ═══════════════════════════════════════════════════════════════
+
+_TEXT_EXPLANATION_PROMPT = _OUTLINE_PROMPT_CORE + """
+
+信息来源（冲突时以视觉模型为准）：
+1. PyMuPDF 提取
+2. 视觉模型提取（补充图表/公式/手写）
+3. 前序页摘要（仅用于判断哪些已讲过以避免重复，不要引用）
+
+当前页码：{page_num}
+相关页码：{related}
+用户问题：{question}
+
+PyMuPDF 提取：
+{extraction_text}
+
+视觉模型提取：
+{vision_extraction}
+
+前序页摘要：
+{previous_context}
+"""
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Builder 函数
+# ═══════════════════════════════════════════════════════════════
 
 def build_vision_extraction_prompt(*, extraction_text: str) -> str:
     return _VISION_EXTRACTION_PROMPT.format(
@@ -272,8 +401,55 @@ def build_text_explanation_prompt(
             + repeat_context
         ),
         vision_extraction=vision_extraction or "（视觉模型未返回结果）",
-        previous_context=previous_context or "（这是文档的起始部分，没有前序页）",
+        previous_context=previous_context or "（文档起始，无前序页）",
     )
+
+
+def build_text_explanation_json_prompt(
+    *,
+    page_num: int,
+    question: str,
+    extraction_text: str,
+    vision_extraction: str,
+    related_pages: Iterable[int],
+    repeat_analysis: dict | None = None,
+    previous_context: str = "",
+) -> str:
+    """Build the JSON-output variant of the Stage 2 prompt."""
+    related = ", ".join(str(page) for page in sorted(set(related_pages)))
+    repeat_analysis = repeat_analysis or {}
+    window_pages = ", ".join(str(page) for page in repeat_analysis.get("window_pages") or [])
+    repeat_pages = ", ".join(str(page) for page in repeat_analysis.get("repeat_pages") or [])
+    repeated_ratio = float(repeat_analysis.get("repeated_ratio") or 0.0)
+    repeated_blocks = repeat_analysis.get("repeated_blocks") or []
+    new_block_ids = repeat_analysis.get("new_block_ids") or []
+    repeated_excerpt_lines = []
+    for item in repeated_blocks[:5]:
+        repeated_excerpt_lines.append(
+            f"- 当前块 {item.get('current_block_id')} 与第 {item.get('source_page_num')} 页重复：{item.get('current_excerpt')}"
+        )
+    repeat_context = (
+        f"\n重复分析：\n"
+        f"- 最近比较页：{window_pages or '无'}\n"
+        f"- 检测到重复页：{repeat_pages or '无'}\n"
+        f"- 重复占比：{repeated_ratio:.2f}\n"
+        f"- 新增块数量：{len(new_block_ids)}\n"
+        f"- 重复块摘要：\n" + ("\n".join(repeated_excerpt_lines) if repeated_excerpt_lines else "- 无明显重复块")
+    )
+    # Build prompt in parts: before-schema is plain text (no format vars),
+    # schema example has raw JSON braces, after-schema has {variables}.
+    after = _TEXT_EXPLANATION_JSON_PROMPT_AFTER_SCHEMA.format(
+        page_num=page_num,
+        related=related,
+        question=question,
+        extraction_text=(
+            (extraction_text or "（无稳定提取文本）")
+            + repeat_context
+        ),
+        vision_extraction=vision_extraction or "（视觉模型未返回结果）",
+        previous_context=previous_context or "（文档起始，无前序页）",
+    )
+    return _TEXT_EXPLANATION_JSON_PROMPT_BEFORE_SCHEMA + _JSON_SCHEMA_EXAMPLE + after
 
 
 def build_slide_explanation_prompt(
@@ -309,7 +485,7 @@ def build_slide_explanation_prompt(
         related=related,
         question=question,
         extracted_text=(
-            (extracted_text or "（无稳定提取文本，请优先依据页面截图讲解，并在不确定时明确说明信息不足）")
+            (extracted_text or "（无稳定提取文本，请依据截图讲解）")
             + repeat_context
         ),
     )
@@ -334,5 +510,5 @@ def build_roi_explanation_prompt(
         h=h,
         width=width,
         height=height,
-        extracted_text=extracted_text or "（无稳定提取文本，请优先依据区域截图与整页截图讲解，并在不确定时明确说明信息不足）",
+        extracted_text=extracted_text or "（无提取文本，请依据截图讲解）",
     )

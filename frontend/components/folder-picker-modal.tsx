@@ -124,16 +124,16 @@ export function FolderPickerModal({
       aria-modal="true"
       aria-label={mode === "upload" ? "选择上传目标文件夹" : "选择移动目标文件夹"}
     >
-      <div className="w-[320px] rounded-[24px] border border-[#e0d1bc] bg-[#fffaf2] shadow-[0_24px_60px_rgba(94,72,46,0.22)]">
+      <div className="w-[320px] rounded-[24px] border border-[var(--bd-2)] bg-[var(--sf-1)] shadow-[0_24px_60px_rgba(94,72,46,0.22)]">
         {/* Header */}
-        <div className="border-b border-[#ecdec8] px-5 py-4">
+        <div className="border-b border-[var(--bd-3)] px-5 py-4">
           <div className="flex min-w-0 items-center gap-2">
             <span className="shrink-0 text-base">📄</span>
-            <p className="truncate text-sm font-semibold text-[#3f3125]" title={filename}>
+            <p className="truncate text-sm font-semibold text-[var(--tx-1)]" title={filename}>
               {filename}
             </p>
           </div>
-          <p className="mt-1 text-xs text-[#8c765f]">选择归属文件夹</p>
+          <p className="mt-1 text-xs text-[var(--tx-5)]">选择归属文件夹</p>
         </div>
 
         {/* Folder list */}
@@ -144,8 +144,8 @@ export function FolderPickerModal({
               type="button"
               className={`flex w-full items-center gap-2.5 rounded-[14px] px-3 py-2 text-left text-sm transition ${
                 selectedFolderId === item.id
-                  ? "bg-[#f2e7d2] text-[#463829]"
-                  : "text-[#5f4a33] hover:bg-[#fdf3e4]"
+                  ? "bg-[var(--sf-4)] text-[var(--tx-2)]"
+                  : "text-[var(--tx-3)] hover:bg-[var(--sf-2)]"
               }`}
               onClick={() => setSelectedFolderId(item.id)}
             >
@@ -162,13 +162,13 @@ export function FolderPickerModal({
           ))}
 
           {/* Divider before uncategorized was last, now show new folder row */}
-          <div className="my-1 border-t border-[#ecdec8]" />
+          <div className="my-1 border-t border-[var(--bd-3)]" />
 
           {newFolderOpen ? (
-            <div className="flex items-center gap-2 rounded-[14px] bg-[#fdf3e4] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-[14px] bg-[var(--sf-2)] px-3 py-2">
               <input
                 ref={newFolderInputRef}
-                className="min-w-0 flex-1 bg-transparent text-sm text-[#3f3125] outline-none placeholder:text-[#b09a7e]"
+                className="min-w-0 flex-1 bg-transparent text-sm text-[var(--tx-1)] outline-none placeholder:text-[var(--tx-6)]"
                 placeholder="新文件夹名称"
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
@@ -188,7 +188,7 @@ export function FolderPickerModal({
               </button>
               <button
                 type="button"
-                className="shrink-0 text-[11px] text-[#8c765f] hover:text-[#5f4a33]"
+                className="shrink-0 text-[11px] text-[var(--tx-5)] hover:text-[var(--tx-3)]"
                 onClick={() => { setNewFolderOpen(false); setNewFolderName(""); }}
               >
                 取消
@@ -197,7 +197,7 @@ export function FolderPickerModal({
           ) : (
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-[14px] px-3 py-2 text-left text-sm text-[#8c765f] transition hover:bg-[#fdf3e4] hover:text-[#5f4a33]"
+              className="flex w-full items-center gap-2 rounded-[14px] px-3 py-2 text-left text-sm text-[var(--tx-5)] transition hover:bg-[var(--sf-2)] hover:text-[var(--tx-3)]"
               onClick={() => setNewFolderOpen(true)}
             >
               <span className="text-base leading-none">+</span>
@@ -207,10 +207,10 @@ export function FolderPickerModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-[#ecdec8] px-5 py-3">
+        <div className="flex items-center justify-end gap-2 border-t border-[var(--bd-3)] px-5 py-3">
           <button
             type="button"
-            className="rounded-full border border-[#dcc9af] bg-[#fffaf2] px-4 py-2 text-sm text-[#7a6655] transition hover:border-[#c4a97a] hover:bg-[#f5ede0]"
+            className="rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] px-4 py-2 text-sm text-[var(--tx-4)] transition hover:border-[#c4a97a] hover:bg-[var(--sf-4)]"
             onClick={onClose}
           >
             跳过

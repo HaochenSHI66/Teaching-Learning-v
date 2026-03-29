@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import markdown as _md
 from jinja2 import Environment, FileSystemLoader
 from sqlmodel import Session, select
 
@@ -60,24 +61,35 @@ VALID_STYLES: set[str] = {s["id"] for s in STYLE_META}
 # ---------------------------------------------------------------------------
 
 SUMMARY_PROMPT = """\
-You are a concise study-note summariser.
-Given the following slide titles and key terms from a presentation,
-write a 3-5 sentence study summary in the SAME language as the source material.
-Focus on the main themes, learning objectives, and how concepts connect.
+根据以下课件页面标题和关键术语，写一段学习总结（中文）。
 
-Slide titles:
+要求：
+1. 用 3-4 句话概括本节课的核心主题
+2. 点明最重要的 2-3 个概念之间的关系
+3. 最后一句给出复习建议（重点看什么、什么容易混淆）
+4. 总字数 100-180 字
+5. 直接输出段落，不要标题、序号、bullet
+
+页面标题：
 {titles}
 
-Key terms:
-{terms}
-
-Write only the summary paragraph, no headings or bullet points."""
+关键术语：
+{terms}"""
 
 # ---------------------------------------------------------------------------
 # Template directory
 # ---------------------------------------------------------------------------
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
+
+_MD_EXTENSIONS = ["tables", "fenced_code", "nl2br", "sane_lists"]
+
+
+def _md_to_html(text: str) -> str:
+    """Convert a Markdown string to HTML. Returns empty string for empty input."""
+    if not text or not text.strip():
+        return ""
+    return _md.markdown(text, extensions=_MD_EXTENSIONS)
 
 
 # ---------------------------------------------------------------------------
@@ -247,15 +259,15 @@ def gather_export_data(
             slide_dict["formulas"] = []
             slide_dict["key_points"] = []
 
-        # Explanation
+        # Explanation (convert MD → HTML for template)
         exp = explanations_map.get(slide.id)
-        slide_dict["explanation"] = exp.markdown if exp else ""
+        slide_dict["explanation"] = _md_to_html(exp.markdown) if exp else ""
         slide_dict["explanation_meta"] = exp.meta if exp else {}
 
         slides_data.append(slide_dict)
 
     # -- Study summary (single LLM call) -----------------------------------
-    study_summary = _generate_study_summary(all_titles, all_key_terms)
+    study_summary = _md_to_html(_generate_study_summary(all_titles, all_key_terms))
 
     # -- Concepts data for template ----------------------------------------
     concept_id_map = {c.id: c for c in concepts}
@@ -285,8 +297,8 @@ def gather_export_data(
         {
             "id": fc.id,
             "slide_id": fc.slide_id,
-            "front_md": fc.front_md,
-            "back_md": fc.back_md,
+            "front_md": _md_to_html(fc.front_md),
+            "back_md": _md_to_html(fc.back_md),
             "page_num": slide_by_id[fc.slide_id].page_num if fc.slide_id in slide_by_id else 0,
         }
         for fc in flashcards
@@ -313,8 +325,11 @@ def gather_export_data(
 def render_notes_html(
     data: dict[str, Any],
     style: str = "modern-minimal",
+    base_url: str = "",
 ) -> str:
     """Load the Jinja2 template, inject the chosen style CSS, and render HTML."""
+    from datetime import date as _date
+
     if style not in VALID_STYLES:
         style = "modern-minimal"
 
@@ -337,6 +352,8 @@ def render_notes_html(
         **data,
         style_css=style_css,
         style_meta=style_meta,
+        export_date=_date.today().isoformat(),
+        base_url=base_url,
     )
     return html
 

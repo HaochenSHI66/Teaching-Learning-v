@@ -16,7 +16,7 @@ const FILTER_OPTIONS: {
   {
     tag: null,
     label: "全部",
-    activeClass: "border-[#c9a97a] bg-[#5d4a39] text-[#fffaf2]",
+    activeClass: "border-[#c9a97a] bg-[#5d4a39] text-[var(--tx-inv)]",
   },
   {
     tag: "important",
@@ -72,14 +72,14 @@ export function BookmarkFilter({
             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] font-medium transition-colors ${
               isActive
                 ? opt.activeClass
-                : "border-[#e0d0bb] bg-[#fffdf8] text-[#826f5c] hover:bg-[#f8f2e8]"
+                : "border-[var(--bd-2)] bg-[var(--sf-1)] text-[var(--tx-5)] hover:bg-[var(--sf-2)]"
             }`}
           >
             {opt.label}
             {showCount && count > 0 && (
               <span
                 className={`text-[11px] ${
-                  isActive ? "opacity-80" : "text-[#b09a87]"
+                  isActive ? "opacity-80" : "text-[var(--tx-6)]"
                 }`}
               >
                 {count}

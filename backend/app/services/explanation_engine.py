@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import difflib
+import logging
 from pathlib import Path
 import re
 
 from app.models import Slide
 from app.services.dual_pipeline import DualModelPipeline
+from app.services.json_renderer import build_meta_from_json, render_explanation_json
 from app.services.model_gateway import ModelGateway
 from app.services.prompt_templates import (
     build_roi_explanation_prompt,
@@ -13,6 +16,9 @@ from app.services.prompt_templates import (
 )
 
 CURRENT_EXPLANATION_VERSION = 4
+_PAGE_TYPE_COMMENT_RE = re.compile(
+    r"<!--\s*page_type:\s*(title|toc|intro|content|example|summary)\s*-->",
+)
 _PLACEHOLDER_HEADING_RE = re.compile(
     r"^##\s*(?:Slide 标题|\[页面实际标题\]|Slide Title|Title)\s*$",
     flags=re.MULTILINE,
@@ -20,20 +26,20 @@ _PLACEHOLDER_HEADING_RE = re.compile(
 _DISALLOWED_SECTION_RE = re.compile(
     r"(?ms)^###\s*(?:1分钟自测|Quick Check|自测|Quiz)\b.*?(?=^##\s|^###\s|\Z)"
 )
-_NOTE_CALLOUT_RE = re.compile(r"(?ms)^>\s*\[!NOTE\]\s*\n(?:^>.*\n?)*")
+_CALLOUT_RE = re.compile(r"(?msi)^>\s*\[!(?:NOTE|TIP|WARNING|IMPORTANT)\]\s*\n(?:^>.*\n?)*")
 _SECTION_RE = re.compile(r"^###\s+.+$", flags=re.MULTILINE)
 _TOC_KEYWORDS = (
-    "agenda",
-    "outline",
-    "contents",
-    "content",
-    "roadmap",
-    "overview",
     "table of contents",
     "目录",
     "大纲",
     "提纲",
     "议程",
+    "agenda",
+    "outline",
+    "roadmap",
+    "topics",
+    "contents",
+    "overview",
 )
 
 
@@ -47,10 +53,10 @@ def explanation_meta_is_current(meta: dict | None) -> bool:
     render_mode = meta.get("render_mode")
     if render_mode == "compact-static":
         return bool(meta.get("content_type") and meta.get("title"))
-    if render_mode != "repeat-aware":
-        return False
-    sections = meta.get("sections") or {}
-    return bool(sections.get("translation_md") and sections.get("primary_md"))
+    if render_mode in ("repeat-aware", "outline", "outline-json"):
+        sections = meta.get("sections") or {}
+        return bool(sections.get("translation_md"))
+    return False
 
 
 def _best_title(*, slide: Slide, extracted_text: str, extract_payload: dict | None) -> str:
@@ -72,10 +78,96 @@ def _best_title(*, slide: Slide, extracted_text: str, extract_payload: dict | No
     return f"Slide {slide.page_num}"
 
 
+def _fix_bold_spacing(markdown: str) -> str:
+    """Fix bold markdown issues from LLM output so ReactMarkdown renders correctly.
+
+    1. `** text**` → `**text**`  (space after opening **)
+    2. `**text**：` → `**text** ：` (colon stuck to closing ** breaks rendering)
+    3. `**text**中文` → `**text** 中文` (CJK stuck to closing **)
+    """
+    # Fix opening ** followed by space
+    cleaned = re.sub(r'\*\*\s+([^*]+?)\*\*', r'**\1**', markdown)
+    # Fix closing ** followed by ANY non-space character (colon, CJK, digits, etc.)
+    # Insert a space so markdown parser can correctly close the bold
+    cleaned = re.sub(r'\*\*([^*]+)\*\*(?=\S)', r'**\1** ', cleaned)
+    return cleaned
+
+
+def _strip_ai_filler(markdown: str) -> str:
+    """Remove common AI filler lines that add no knowledge.
+
+    Only strip lines that are short meta-commentary (≤40 chars after prefix).
+    Longer lines likely carry real domain content even if they start with a
+    filler prefix, e.g. "本页内容涉及TCP协议的三次握手过程".
+    """
+    _FILLER_PREFIXES = (
+        "本页主要介绍",
+        "本页内容",
+        "本页是",
+        "这页幻灯片",
+        "这一页主要",
+        "本页标题为",
+        "页面标题为",
+        "页面标题是",
+        "本页没有",
+        "本页内容没有",
+    )
+    lines = markdown.split("\n")
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip pure meta-commentary lines — but only if short enough to be
+        # filler.  Lines longer than 40 chars after the prefix likely carry
+        # real information (e.g. "本页内容涉及TCP协议的三次握手过程").
+        is_filler = False
+        for p in _FILLER_PREFIXES:
+            if stripped.startswith(p):
+                remainder = stripped[len(p):].strip("，。：:,. ")
+                if len(remainder) <= 40:
+                    is_filler = True
+                break
+        if is_filler:
+            continue
+        # Strip course info lines (handles **bold** wrapped keywords too)
+        if re.match(r"^[-\s*]*(?:页码|课程编号|课件|学期|讲师|授课|幻灯片编号)", stripped):
+            continue
+        # Strip "页面顶部/底部蓝色横幅标明了..." type lines
+        if re.match(r"^.*?(?:页面顶部|页面底部|页面上方|页面下方|蓝色横幅|页眉|页脚).*?(?:标明|标注|显示|标识|包含)", stripped):
+            continue
+        # Strip slide number references like "1 / 25（表示本课程课件共 25 页..."
+        if re.match(r"^[-\s*]*(?:页码标识|Slide \d)", stripped):
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
+
+def _strip_backtick_code(markdown: str) -> str:
+    """Remove inline backtick wrapping (` ... `) but keep the content."""
+    # Remove inline code backticks but preserve content
+    # Don't touch code blocks (``` ... ```)
+    return re.sub(r'(?<!`)`([^`\n]+?)`(?!`)', r'\1', markdown)
+
+
+def _extract_llm_page_type(markdown: str) -> str | None:
+    """Extract page_type from LLM output comment like <!-- page_type: example -->."""
+    match = _PAGE_TYPE_COMMENT_RE.search(markdown)
+    return match.group(1) if match else None
+
+
+def _strip_all_callouts(markdown: str) -> str:
+    """Strip all Obsidian-style callout blocks."""
+    return _CALLOUT_RE.sub("", markdown)
+
+
 def _strip_disallowed_sections(markdown: str) -> str:
     cleaned = _DISALLOWED_SECTION_RE.sub("", markdown)
-    cleaned = _NOTE_CALLOUT_RE.sub("", cleaned)
+    cleaned = _strip_all_callouts(cleaned)
+    # Strip the page_type comment line from final output
+    cleaned = _PAGE_TYPE_COMMENT_RE.sub("", cleaned)
+    cleaned = _strip_ai_filler(cleaned)
+    cleaned = _strip_backtick_code(cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = _fix_bold_spacing(cleaned)
     return cleaned.strip()
 
 
@@ -213,16 +305,23 @@ def _normalized_lines(extract_payload: dict | None) -> list[str]:
 
 
 def _looks_like_toc_page(*, extracted_text: str, extract_payload: dict | None) -> bool:
+    """Check if page is a TOC — only match keywords in title/summary, not body text."""
     payload = extract_payload or {}
-    summary_and_titles = " ".join(
+    # Only check title candidates and summary, NOT the full extracted text
+    title_and_summary = " ".join(
         [
             str(payload.get("summary") or ""),
             " ".join(str(item) for item in payload.get("title_candidates") or []),
-            extracted_text,
         ]
     ).lower()
-    has_keyword = any(keyword in summary_and_titles for keyword in _TOC_KEYWORDS)
-    return has_keyword
+    has_keyword = any(keyword in title_and_summary for keyword in _TOC_KEYWORDS)
+    if not has_keyword:
+        return False
+    # Even if title matches, pages with substantial content are not TOC
+    word_count = len(extracted_text.split())
+    if word_count > 30:
+        return False
+    return True
 
 
 def _detect_compact_slide_type(*, extracted_text: str, extract_payload: dict | None) -> str | None:
@@ -299,6 +398,60 @@ def _split_sections(markdown: str) -> dict[str, str]:
     return sections
 
 
+_HEADING_ALIASES = {
+    "讲解": ["完整翻译与解释", "翻译与解释", "完整翻译", "翻译解释", "内容翻译", "讲解内容", "内容讲解", "这页讲什么"],
+    "逐点讲解": ["逐条讲解", "详细讲解", "分点讲解"],
+    "本页关键结论": ["关键结论", "核心结论", "本页结论", "结论"],
+    "例题讲解": ["例题完整讲解", "例题解析", "习题讲解", "解题过程"],
+    "题目分析": ["题目条件", "已知条件", "问题分析"],
+    "解题过程": ["解题步骤", "求解过程", "解法"],
+    "知识点总结": ["知识点归纳", "知识点梳理", "核心知识点", "知识总结", "要点总结"],
+    "知识点摘要": ["知识摘要", "摘要", "要点摘要", "快速复习"],
+    "重复部分讲解": ["重复内容", "重复讲解", "回顾"],
+}
+
+
+def _fuzzy_section_get(sections: dict[str, str], target: str) -> str | None:
+    """Find a section by fuzzy heading match. Returns content or None."""
+    # Strip ### prefix for comparison
+    clean_target = target.lstrip("# ").strip()
+
+    # Try exact match first
+    if target in sections:
+        return sections[target]
+
+    # Try normalized match (strip whitespace, ignore trailing punctuation)
+    for key, value in sections.items():
+        clean_key = key.lstrip("# ").strip().rstrip("：:。.")
+        if clean_key == clean_target or clean_key == clean_target.rstrip("：:。."):
+            return value
+
+    # Try alias match before fuzzy fallback
+    aliases = _HEADING_ALIASES.get(clean_target, [])
+    for key, value in sections.items():
+        clean_key = key.lstrip("# ").strip().rstrip("：:。.")
+        if clean_key in aliases:
+            return value
+
+    # Try containment (target is substring of key, or key of target)
+    for key, value in sections.items():
+        clean_key = key.lstrip("# ").strip()
+        if clean_target in clean_key or clean_key in clean_target:
+            return value
+
+    # Try fuzzy ratio
+    best_match = None
+    best_ratio = 0.0
+    for key, value in sections.items():
+        clean_key = key.lstrip("# ").strip()
+        ratio = difflib.SequenceMatcher(None, clean_target, clean_key).ratio()
+        if ratio > best_ratio and ratio >= 0.7:
+            best_ratio = ratio
+            best_match = value
+
+    return best_match
+
+
 def _build_repeat_summary(extract_payload: dict | None) -> dict:
     repeat_analysis = (extract_payload or {}).get("repeat_analysis") or {}
     repeat_pages = [int(page) for page in repeat_analysis.get("repeat_pages") or []]
@@ -317,33 +470,15 @@ def _build_repeat_summary(extract_payload: dict | None) -> dict:
     }
 
 
-def _build_intro_meta(*, related_pages: list[int], repeat_summary: dict) -> str:
-    citations = ", ".join(str(page) for page in sorted(set(related_pages))) or "无"
-    lines = [f"**引用页码**：{citations}"]
-    if repeat_summary["has_repeat_section"]:
-        repeat_pages = ", ".join(str(page) for page in repeat_summary["repeat_pages"])
-        percent = int(round(float(repeat_summary["repeated_ratio"]) * 100))
-        lines.append(f"**重复占比**：{percent}%")
-        lines.append(f"**重复来源**：第 {repeat_pages} 页")
-    else:
-        lines.append("**内容性质**：本页以新增或独立内容为主。")
-    return "\n".join(lines)
-
-
 def _build_translation_fallback(*, summary: str, extracted_text: str, terms: str) -> str:
-    body = (
-        "当前这份讲解是离线回退版本，只依据页面中稳定提取到的文字信息生成。"
-        "如果原页里还有图示、表格、手写标注或公式细节没有被提取到，这里不会擅自补写，"
-        "而是只把目前能确认的内容讲清楚。"
-    )
-    extracted_excerpt = " ".join(extracted_text.split())[:220]
-    addition = f"当前页可稳定识别的内容主要包括：{extracted_excerpt}。" if extracted_excerpt else ""
+    if not extracted_text.strip():
+        return "### 讲解\n\n本页解析生成失败，请点击「生成解析」重试。"
+    excerpt = " ".join(extracted_text.split())[:600]
     return (
-        "### 完整翻译与解释\n\n"
-        f"{body} 本页可稳定识别的关键信息主要围绕 <mark>{summary}</mark> 展开。"
-        f"{addition} 最值得先抓住的术语包括 {terms}。"
-        "阅读这一页时，应先把标题、正文和图示旁注连起来理解，不要把页面上的英文关键词当作孤立标签去背。"
-    ).strip()
+        f"### 讲解\n\n"
+        f"**注意：本页为文本回退版本，建议重新生成以获得完整讲解。**\n\n"
+        f"页面提取到的主要内容：\n\n{excerpt}"
+    )
 
 
 def _build_primary_fallback(
@@ -353,69 +488,27 @@ def _build_primary_fallback(
     extracted_text: str,
     question: str,
 ) -> tuple[str, str]:
-    if is_example:
-        extra = (
-            "本页和前面页面有明显重复，因此主讲部分只强调这次相对前文新增的步骤、条件变化或结论变化。"
-            if repeat_summary["has_repeat_section"]
-            else "本页内容以当前题目本身为主，应先把题意、条件和目标说清楚。"
-        )
-        return (
-            "example",
-            (
-                "### 例题完整讲解\n\n"
-                "从提取结果判断，这一页更像例题或示例页。理解时应先明确题目给定了什么、要求你求什么，"
-                "再判断页面选择的解题方法为什么适用。"
-                f"{extra}"
-                "真正重要的不是把步骤机械抄下来，而是看清每一步是在利用什么前提、为什么能从上一步走到下一步。"
-            ).strip(),
-        )
-
-    summary = _summary_from_text(extracted_text, question)
-    extra = (
-        "由于本页和前序页存在明显重复，主讲部分应优先盯住本页相对前文新增、补充或深化的知识点。"
-        if repeat_summary["has_repeat_section"]
-        else "这页主要应围绕当前页自身的定义、关系和图示来理解。"
+    # No more template boilerplate — just return empty and let the
+    # translation/main content section carry the explanation.
+    content_type = "example" if is_example else (
+        "transition" if len(extracted_text.split()) < 8 else "concept"
     )
-    content_type = "transition" if len(extracted_text.split()) < 8 else "concept"
-    return (
-        content_type,
-        (
-            "### 知识点总结\n\n"
-            "从提取结果判断，这一页更像知识点说明页。真正需要掌握的，不只是表面上的术语翻译，"
-            "而是这些概念为什么被引入、它们之间如何连接，以及页面里的公式、图示或定义分别承担什么角色。"
-            f"{extra}"
-            f"当前页可直接确认的主线可概括为：<mark>{summary}</mark>。"
-        ).strip(),
-    )
+    return (content_type, "")
 
 
-def _build_repeat_fallback(*, extract_payload: dict | None) -> str:
-    repeat_analysis = (extract_payload or {}).get("repeat_analysis") or {}
-    repeated_blocks = repeat_analysis.get("repeated_blocks") or []
-    repeat_pages = [int(page) for page in repeat_analysis.get("repeat_pages") or []]
-    if not repeat_pages:
-        return ""
+def _extract_outline_title(cleaned: str) -> str | None:
+    """Extract title from outline format: '## 第 N 页：主题' → '主题'."""
+    match = re.search(r"^##\s*第\s*\d+\s*页[：:]\s*(.+)$", cleaned, flags=re.MULTILINE)
+    if match:
+        return match.group(1).strip()
+    return None
 
-    unique_lines: list[str] = []
-    seen: set[str] = set()
-    for item in repeated_blocks:
-        excerpt = str(item.get("current_excerpt") or "").strip()
-        if not excerpt or excerpt in seen:
-            continue
-        unique_lines.append(excerpt)
-        seen.add(excerpt)
-        if len(unique_lines) >= 3:
-            break
 
-    repeat_pages_label = "、".join(f"第 {page} 页" for page in repeat_pages)
-    body = (
-        f"这一部分与前面的 {repeat_pages_label} 有明显重复，可以把它看作对前文核心内容的回顾。"
-        "复习时重点重新确认这些重复内容的定义、条件和它在整套推导中的位置，"
-        "不必把整页重新从头背一遍。"
-    )
-    if unique_lines:
-        body += " 当前重复出现的核心内容包括：" + "；".join(unique_lines) + "。"
-    return f"### 重复部分讲解\n\n{body}".strip()
+def _is_outline_format(cleaned: str) -> bool:
+    """Check if LLM output is in the new outline format (no ### subsections)."""
+    has_outline_title = bool(re.search(r"^##\s*第\s*\d+\s*页[：:]", cleaned, flags=re.MULTILINE))
+    has_subsections = bool(re.search(r"^###\s+", cleaned, flags=re.MULTILINE))
+    return has_outline_title or not has_subsections
 
 
 def _canonicalize_slide_explanation(
@@ -427,6 +520,9 @@ def _canonicalize_slide_explanation(
     related_pages: list[int],
     question: str,
 ) -> tuple[str, dict]:
+    # Extract LLM's page_type judgment before sanitization strips it
+    llm_page_type = _extract_llm_page_type(markdown)
+
     cleaned = sanitize_slide_markdown(
         slide=slide,
         markdown=markdown,
@@ -435,18 +531,91 @@ def _canonicalize_slide_explanation(
     )
     title = _best_title(slide=slide, extracted_text=extracted_text, extract_payload=extract_payload)
     repeat_summary = _build_repeat_summary(extract_payload)
-    sections = _split_sections(cleaned)
-    translation_md = sections.get("### 完整翻译与解释")
-    example_md = sections.get("### 例题完整讲解")
-    concept_md = sections.get("### 知识点总结")
-    summary_md = sections.get("### 知识点摘要")
-    repeat_md = sections.get("### 重复部分讲解")
 
     is_example = _looks_like_example_page(
         extracted_text=extracted_text,
         question=question,
         extract_payload=extract_payload,
     )
+    if llm_page_type == "example":
+        is_example = True
+
+    # ── New outline format: no ### subsections, just ## title + bullets ──
+    if _is_outline_format(cleaned):
+        outline_title = _extract_outline_title(cleaned)
+        if outline_title:
+            title = outline_title
+
+        # Strip the ## heading line, keep the rest as body
+        lines = cleaned.split("\n")
+        body_lines = [l for l in lines if not re.match(r"^##\s+", l)]
+        body_md = "\n".join(body_lines).strip()
+
+        if not body_md:
+            body_md = _build_translation_fallback(
+                summary=_summary_from_text(extracted_text, question),
+                extracted_text=extracted_text,
+                terms=_terms_sentence(extracted_text),
+            )
+
+        content_type = (
+            "example" if is_example
+            else llm_page_type if llm_page_type in ("title", "toc", "intro", "summary")
+            else "concept"
+        )
+
+        canonical_markdown = f"## 第 {slide.page_num} 页：{title}\n\n{body_md}"
+
+        meta = {
+            "render_mode": "outline",
+            "content_type": content_type,
+            "title": title,
+            "repeat_summary": repeat_summary,
+            "sections": {
+                "translation_md": body_md,
+                "primary_md": "",
+                "repeat_md": "",
+                "summary_md": "",
+            },
+            "concepts": [],
+        }
+        return canonical_markdown, meta
+
+    # ── Legacy card format: ### subsections (backward compat) ──
+    sections = _split_sections(cleaned)
+    translation_md = _fuzzy_section_get(sections, "### 讲解")
+    detail_md = _fuzzy_section_get(sections, "### 逐点讲解")
+    conclusion_md = _fuzzy_section_get(sections, "### 本页关键结论")
+    if translation_md and (detail_md or conclusion_md):
+        parts = [translation_md.strip()]
+        if detail_md:
+            parts.append(detail_md.strip())
+        if conclusion_md:
+            parts.append(conclusion_md.strip())
+        translation_md = "\n\n".join(parts)
+    elif not translation_md and (detail_md or conclusion_md):
+        parts = []
+        if detail_md:
+            parts.append(detail_md.strip())
+        if conclusion_md:
+            parts.append(conclusion_md.strip())
+        translation_md = "\n\n".join(parts)
+    example_md = (
+        _fuzzy_section_get(sections, "### 例题讲解")
+        or _fuzzy_section_get(sections, "### 例题完整讲解")
+        or _fuzzy_section_get(sections, "### 解题过程")
+    )
+    concept_md = _fuzzy_section_get(sections, "### 知识点总结")
+    summary_md = _fuzzy_section_get(sections, "### 知识点摘要")
+    concepts_md = _fuzzy_section_get(sections, "### 本页概念")
+    repeat_md = _fuzzy_section_get(sections, "### 重复部分讲解")
+    problem_analysis_md = _fuzzy_section_get(sections, "### 题目分析")
+
+    if not translation_md and not example_md and not concept_md and len(cleaned) > 20:
+        lines = cleaned.split("\n")
+        body_lines = [l for l in lines if not l.startswith("## ")]
+        translation_md = "\n".join(body_lines).strip()
+
     terms = _terms_sentence(extracted_text)
     summary = _summary_from_text(extracted_text, question)
 
@@ -457,12 +626,23 @@ def _canonicalize_slide_explanation(
             terms=terms,
         )
 
-    if example_md:
+    if problem_analysis_md and example_md:
+        example_md = problem_analysis_md.strip() + "\n\n" + example_md.strip()
+    elif problem_analysis_md and not example_md:
+        example_md = problem_analysis_md
+
+    if example_md or (llm_page_type == "example" and is_example):
         content_type = "example"
-        primary_md = example_md
+        primary_md = example_md or ""
     elif concept_md:
         content_type = "concept"
         primary_md = concept_md
+    elif llm_page_type in ("title", "toc", "intro", "summary"):
+        content_type = llm_page_type
+        primary_md = ""
+    elif translation_md and len(translation_md) > 100:
+        content_type = "concept"
+        primary_md = ""
     else:
         content_type, primary_md = _build_primary_fallback(
             is_example=is_example,
@@ -471,22 +651,30 @@ def _canonicalize_slide_explanation(
             question=question,
         )
 
-    if repeat_summary["has_repeat_section"] and not repeat_md:
-        repeat_md = _build_repeat_fallback(extract_payload=extract_payload)
-
     canonical_parts = [
         f"## {title}",
         "",
-        _build_intro_meta(related_pages=related_pages, repeat_summary=repeat_summary),
-        "",
         translation_md.strip(),
-        "",
-        primary_md.strip(),
     ]
+    if primary_md and primary_md.strip():
+        canonical_parts.extend(["", primary_md.strip()])
     if repeat_md:
         canonical_parts.extend(["", repeat_md.strip()])
 
     canonical_markdown = "\n".join(part for part in canonical_parts if part is not None).strip()
+    extracted_concepts = []
+    if concepts_md:
+        for line in concepts_md.split("\n"):
+            line = line.strip().lstrip("-•* ")
+            if "|" in line and not line.startswith("#"):
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) >= 3 and parts[0] and parts[1]:
+                    extracted_concepts.append({
+                        "name_en": parts[0],
+                        "name_zh": parts[1],
+                        "description": parts[2] if len(parts) > 2 else "",
+                    })
+
     meta = {
         "render_mode": "repeat-aware",
         "content_type": content_type,
@@ -498,6 +686,7 @@ def _canonicalize_slide_explanation(
             "repeat_md": repeat_md.strip() if repeat_md else "",
             "summary_md": summary_md.strip() if summary_md else "",
         },
+        "concepts": extracted_concepts,
     }
     return canonical_markdown, meta
 
@@ -540,7 +729,7 @@ def _template_roi_explanation(
     )
     section_title = "例题完整讲解" if is_example else "区域知识点总结"
     explanation = (
-        "当前为离线回退讲解，只依据区域对应的稳定提取文本做保守说明。"
+        "当前为文本回退讲解，只依据区域对应的稳定提取文本做保守说明。"
         "如果框选里真正关键的信息来自图像细节、颜色、箭头或公式排版，而这些内容没有被稳定提取到，"
         "那这份解释只能先给出一个可靠下限，不会伪造更具体的结论。"
     )
@@ -606,12 +795,14 @@ def generate_slide_explanation(
     )
 
     degraded = False
+    logger = logging.getLogger(__name__)
+
     if slide_image_path:
-        # Try dual pipeline first (vision + text models)
         dual = DualModelPipeline()
         if dual.is_configured():
+            # JSON pipeline (primary — structured output)
             try:
-                answer = dual.generate(
+                json_data = dual.generate_json(
                     slide_image_path=slide_image_path,
                     extraction_text=prompt_extraction_text,
                     page_num=slide.page_num,
@@ -620,41 +811,23 @@ def generate_slide_explanation(
                     repeat_analysis=(extract_payload or {}).get("repeat_analysis"),
                     document_id=slide.document_id,
                 )
-                canonical_markdown, meta = _canonicalize_slide_explanation(
-                    slide=slide,
-                    markdown=answer,
-                    extracted_text=extracted_text,
-                    extract_payload=extract_payload,
-                    related_pages=related_pages,
-                    question=question,
-                )
-                meta["pipeline"] = "dual"
-                return canonical_markdown, follow_ups, degraded, meta
-            except Exception:
-                pass  # Fall through to single-model
+                if json_data and isinstance(json_data, dict) and json_data.get("items"):
+                    canonical_markdown = render_explanation_json(json_data)
+                    meta = build_meta_from_json(json_data)
+                    meta["pipeline"] = "dual-json"
+                    return canonical_markdown, follow_ups, degraded, meta
+                else:
+                    logger.error("JSON pipeline returned empty/invalid data for page %d", slide.page_num)
+            except Exception as exc:
+                logger.error("JSON pipeline failed for page %d: %s", slide.page_num, exc)
 
-        # Fallback: single vision model
-        live_gateway = gateway or ModelGateway()
-        if live_gateway.is_configured():
-            try:
-                answer = live_gateway.generate_slide_markdown(
-                    prompt=prompt_contract,
-                    slide_image_path=slide_image_path,
-                    extraction_text=prompt_extraction_text,
-                )
-                canonical_markdown, meta = _canonicalize_slide_explanation(
-                    slide=slide,
-                    markdown=answer,
-                    extracted_text=extracted_text,
-                    extract_payload=extract_payload,
-                    related_pages=related_pages,
-                    question=question,
-                )
-                meta["pipeline"] = "single"
-                return canonical_markdown, follow_ups, degraded, meta
-            except Exception:
-                degraded = True
+            # If JSON failed, raise — no Markdown fallback
+            raise RuntimeError(
+                f"JSON pipeline failed for page {slide.page_num}. "
+                "Markdown fallback is disabled."
+            )
 
+    # No image path — template fallback only (compact slides already handled above)
     answer, meta = _template_slide_explanation(
         slide=slide,
         question=question,
@@ -697,7 +870,8 @@ def generate_roi_explanation(
                 extraction_text=prompt_extraction_text,
             )
             return sanitize_roi_markdown(answer), degraded
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).warning("ROI pipeline failed, falling back to template: %s", exc)
             degraded = True
 
     answer = _template_roi_explanation(

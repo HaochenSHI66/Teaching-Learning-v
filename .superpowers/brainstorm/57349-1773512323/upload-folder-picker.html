@@ -1,0 +1,115 @@
+<h2>上传时选文件夹 — 交互方式</h2>
+<p class="subtitle">文件选好后，怎么让用户指定文件夹？</p>
+
+<div class="cards">
+
+  <!-- Option A: Modal -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f0ebe0;padding:16px;border-bottom:1px solid #e8ddd0;min-height:180px;display:flex;align-items:center;justify-content:center;">
+      <!-- Modal mockup -->
+      <div style="background:#fff;border-radius:14px;box-shadow:0 8px 30px rgba(100,80,50,0.18);padding:16px;width:220px;">
+        <div style="font-size:12px;font-weight:700;color:#3d3020;margin-bottom:4px;">📄 线性代数复习.pdf</div>
+        <div style="font-size:10px;color:#9a8060;margin-bottom:12px;">选择归属文件夹</div>
+        <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:8px;background:#f0e8d8;border:1.5px solid #c9a870;">
+            <span style="font-size:11px;">📁</span>
+            <span style="font-size:11px;color:#5a4a35;font-weight:600;">期末复习</span>
+            <span style="margin-left:auto;font-size:10px;background:#d4c4a0;color:#5a4030;padding:1px 5px;border-radius:4px;">选中</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:8px;background:#faf6ef;">
+            <span style="font-size:11px;">📁</span>
+            <span style="font-size:11px;color:#5a4a35;">英语课件</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:8px;background:#faf6ef;">
+            <span style="font-size:11px;">📁</span>
+            <span style="font-size:11px;color:#5a4a35;">物理实验</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:8px;background:#faf6ef;">
+            <span style="font-size:11px;color:#9a8060;">+ 新建文件夹…</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <div style="flex:1;padding:5px;border-radius:8px;border:1px solid #d8cbb8;text-align:center;font-size:10px;color:#8c765f;">跳过</div>
+          <div style="flex:1;padding:5px;border-radius:8px;background:#c9a560;text-align:center;font-size:10px;color:#fff;font-weight:600;">确认上传</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — 弹出选文件夹对话框</h3>
+      <p>文件选好后立刻弹出小 modal，列出所有文件夹选一个，也可以"跳过"（进未归类）。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>流程最清晰</li><li>强迫用户归类</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>多一步操作</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B: Inline in sidebar -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f0ebe0;padding:12px;border-bottom:1px solid #e8ddd0;min-height:180px;">
+      <div style="font-size:11px;color:#8c765f;font-weight:600;margin-bottom:8px;">B — 侧栏内嵌选择</div>
+      <!-- Sidebar with inline picker -->
+      <div style="background:#fff;border-radius:10px;border:1px solid #e0d4c0;overflow:hidden;">
+        <!-- Upload zone highlighted -->
+        <div style="background:linear-gradient(135deg,#fff8ec,#f2e7d2);border-bottom:1px solid #e0d4c0;padding:8px 10px;">
+          <div style="font-size:10px;color:#8c6840;font-weight:600;margin-bottom:6px;">📄 线性代数复习.pdf 已选择</div>
+          <div style="font-size:10px;color:#8c765f;margin-bottom:4px;">上传到：</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <div style="padding:2px 8px;border-radius:12px;background:#c9a560;font-size:10px;color:#fff;font-weight:600;">期末复习 ✓</div>
+            <div style="padding:2px 8px;border-radius:12px;background:#f0e8d8;font-size:10px;color:#7a6655;">英语课件</div>
+            <div style="padding:2px 8px;border-radius:12px;background:#f0e8d8;font-size:10px;color:#7a6655;">物理</div>
+            <div style="padding:2px 8px;border-radius:12px;background:#f0e8d8;font-size:10px;color:#7a6655;">未归类</div>
+          </div>
+          <div style="margin-top:6px;padding:4px 10px;background:#c9a560;border-radius:8px;text-align:center;font-size:10px;color:#fff;font-weight:600;">开始上传</div>
+        </div>
+        <!-- Folder list below -->
+        <div style="padding:6px 8px;">
+          <div style="font-size:10px;color:#b09070;padding:2px 4px;">▾ 期末复习 (3)</div>
+          <div style="font-size:10px;color:#b09070;padding:2px 4px;">▸ 英语课件 (5)</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — 侧栏内嵌选择</h3>
+      <p>选了文件后，上传区展开，显示文件夹 chip 供快速选择，不离开侧栏。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>不打断主区域</li><li>快速点击 chip</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>文件夹很多时 chip 挤</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C: Right-click / drag already there, add folder default -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f0ebe0;padding:12px;border-bottom:1px solid #e8ddd0;min-height:180px;">
+      <div style="font-size:11px;color:#8c765f;font-weight:600;margin-bottom:8px;">C — 上传按钮带下拉</div>
+      <div style="display:flex;gap:0;width:100%;border-radius:10px;overflow:hidden;border:1.5px solid #c9a560;margin-bottom:8px;">
+        <div style="flex:1;padding:7px 10px;background:#c9a560;font-size:11px;color:#fff;font-weight:600;">📤 上传文件</div>
+        <div style="width:1px;background:#b08840;"></div>
+        <div style="padding:7px 10px;background:#c9a560;font-size:11px;color:#fff;">▾</div>
+      </div>
+      <!-- Dropdown -->
+      <div style="background:#fff;border-radius:8px;border:1px solid #e0d4c0;padding:6px;">
+        <div style="font-size:10px;color:#9a8060;padding:2px 6px;margin-bottom:3px;">上传到文件夹：</div>
+        <div style="display:flex;align-items:center;gap:4px;padding:4px 6px;border-radius:6px;background:#f0e8d8;">
+          <span style="font-size:10px;">📁</span><span style="font-size:10px;color:#5a4a35;font-weight:600;">期末复习</span><span style="margin-left:auto;font-size:10px;color:#9a8060;">✓</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;padding:4px 6px;border-radius:6px;">
+          <span style="font-size:10px;">📁</span><span style="font-size:10px;color:#5a4a35;">英语课件</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;padding:4px 6px;border-radius:6px;">
+          <span style="font-size:10px;color:#9a8060;">📂 未归类</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — 上传按钮 + 文件夹下拉</h3>
+      <p>上传按钮右侧有个 ▾，点开先选文件夹再选文件。默认记住上次选择的文件夹。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>操作最紧凑</li><li>记住上次文件夹省事</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>容易忽略（直接点上传就进未归类）</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>

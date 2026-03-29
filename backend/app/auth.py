@@ -4,12 +4,20 @@ import os
 import secrets
 import warnings
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 import jwt
+from dotenv import load_dotenv
 from fastapi import HTTPException, Request, status
 from sqlmodel import Session
 
 from app.models import User
+
+# Load .env before reading JWT_SECRET so it's available at import time
+for _env in [Path(__file__).resolve().parents[1] / ".env", Path.cwd() / ".env"]:
+    if _env.exists():
+        load_dotenv(_env, override=False)
+        break
 
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 if not JWT_SECRET:

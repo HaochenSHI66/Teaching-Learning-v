@@ -7,8 +7,8 @@ body.theme-modern-minimal {
 }
 
 .cover {
-    page-break-after: always;
-    min-height: 90vh;
+    
+    
     display: flex;
     align-items: center;
     justify-content: center;
@@ -75,7 +75,7 @@ body.theme-modern-minimal {
     box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 
-.toc-section { page-break-after: always; }
+.toc-section {  }
 .toc-list { list-style: none; padding: 0; }
 .toc-list li {
     padding: 0.5em 0.8em;
@@ -108,6 +108,10 @@ body.theme-modern-minimal {
     box-shadow: 0 2px 6px rgba(0,0,0,0.04);
 }
 .slide-header { display: flex; align-items: center; gap: 0.7em; margin-bottom: 0.8em; }
+.slide-body { display: flex; gap: 1.2em; align-items: flex-start; }
+.slide-content { flex: 1; min-width: 0; }
+.slide-image-wrap { flex-shrink: 0; width: 35%; position: sticky; top: 1em; }
+.slide-image { width: 100%; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 .slide-badge {
     background: linear-gradient(135deg, #319795, #2c7a7b);
     color: #fff;
@@ -117,8 +121,6 @@ body.theme-modern-minimal {
     font-weight: 700;
 }
 .slide-title { font-size: 1.2em; font-weight: 700; color: #1a202c; }
-.slide-image-wrap { margin: 1em 0; text-align: center; }
-.slide-image { max-height: 300px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 
 .key-points ul { padding-left: 1.4em; }
 .key-points li { margin-bottom: 0.35em; line-height: 1.7; }

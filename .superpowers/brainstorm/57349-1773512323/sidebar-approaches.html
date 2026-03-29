@@ -1,0 +1,161 @@
+<h2>文件管理侧栏 — 3 种重设计方案</h2>
+<p class="subtitle">现状：每个文件是大卡片，文件多了滚动费力。选一个你最感兴趣的方向。</p>
+
+<div class="cards">
+
+  <!-- Option A -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#faf8f4;padding:12px;border-bottom:1px solid #e8ddd0;">
+      <div style="font-size:11px;color:#8c765f;font-weight:600;margin-bottom:8px;letter-spacing:0.05em;">A — 紧凑文件树</div>
+      <!-- Folder 1 -->
+      <div style="display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:6px;background:#f0e8d8;margin-bottom:2px;">
+        <span style="font-size:10px;">▾</span>
+        <span style="font-size:11px;color:#5a4a35;font-weight:600;">📁 期末复习</span>
+        <span style="margin-left:auto;font-size:10px;color:#9a8060;">3</span>
+      </div>
+      <div style="padding-left:18px;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;background:#fff9f0;margin-bottom:1px;">
+          <span style="font-size:10px;">📄</span>
+          <span style="font-size:11px;color:#5a4a35;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">高等数学第三章.pdf</span>
+          <span style="font-size:10px;color:#a0896e;">42p</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;margin-bottom:1px;">
+          <span style="font-size:10px;">📄</span>
+          <span style="font-size:11px;color:#5a4a35;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">线性代数复习要点.pdf</span>
+          <span style="font-size:10px;color:#a0896e;">18p</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;margin-bottom:1px;">
+          <span style="font-size:10px;">📄</span>
+          <span style="font-size:11px;color:#5a4a35;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">概率论笔记.pdf</span>
+          <span style="font-size:10px;color:#a0896e;">25p</span>
+        </div>
+      </div>
+      <!-- Folder 2 -->
+      <div style="display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:6px;background:#f0e8d8;margin-bottom:2px;">
+        <span style="font-size:10px;">▾</span>
+        <span style="font-size:11px;color:#5a4a35;font-weight:600;">📁 英语课件</span>
+        <span style="margin-left:auto;font-size:10px;color:#9a8060;">5</span>
+      </div>
+      <div style="padding-left:18px;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;margin-bottom:1px;">
+          <span style="font-size:10px;">📄</span>
+          <span style="font-size:11px;color:#5a4a35;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Unit 4 Grammar.pdf</span>
+          <span style="font-size:10px;color:#a0896e;">8p</span>
+        </div>
+        <div style="padding:2px 6px;font-size:10px;color:#b09070;">+4 更多...</div>
+      </div>
+      <!-- Uncategorized -->
+      <div style="display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:6px;margin-bottom:2px;">
+        <span style="font-size:10px;">▸</span>
+        <span style="font-size:11px;color:#8c765f;">未归类</span>
+        <span style="margin-left:auto;font-size:10px;color:#9a8060;">2</span>
+      </div>
+      <!-- Upload -->
+      <div style="margin-top:8px;border:1.5px dashed #c9b090;border-radius:8px;padding:6px;text-align:center;font-size:10px;color:#9a8060;">+ 上传文件</div>
+    </div>
+    <div class="card-body">
+      <h3>紧凑文件树</h3>
+      <p>类似 VS Code 侧栏。每行极小，文件夹可折叠，10+ 个文件也不怕。上传时弹出选文件夹的对话框。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>密度最高，最多文件</li><li>折叠操作直觉</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>风格与现有 UI 差异大</li><li>拖拽体验弱</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#faf8f4;padding:12px;border-bottom:1px solid #e8ddd0;">
+      <div style="font-size:11px;color:#8c765f;font-weight:600;margin-bottom:8px;letter-spacing:0.05em;">B — 文件夹 Tab + 列表</div>
+      <!-- Folder tabs -->
+      <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;">
+        <div style="padding:3px 10px;border-radius:20px;background:#e8ddd0;font-size:10px;color:#5a4a35;font-weight:600;">📁 期末复习 <span style="color:#9a8060;">3</span></div>
+        <div style="padding:3px 10px;border-radius:20px;background:#f5f0e8;border:1px solid #d8cbb8;font-size:10px;color:#8c765f;">📁 英语课件 <span style="color:#9a8060;">5</span></div>
+        <div style="padding:3px 10px;border-radius:20px;background:#f5f0e8;border:1px solid #d8cbb8;font-size:10px;color:#8c765f;">📁 物理实验</div>
+        <div style="padding:3px 10px;border-radius:20px;background:#f5f0e8;border:1px solid #d8cbb8;font-size:10px;color:#8c765f;">+ 新建</div>
+      </div>
+      <!-- File list for selected folder -->
+      <div style="background:#fff;border-radius:8px;border:1px solid #e0d4c0;overflow:hidden;">
+        <div style="display:flex;align-items:center;padding:5px 8px;border-bottom:1px solid #ede4d4;gap:6px;">
+          <span style="font-size:10px;">📄</span>
+          <span style="font-size:11px;color:#5a4a35;flex:1;">高等数学第三章.pdf</span>
+          <span style="font-size:10px;background:#e8efe0;color:#607253;padding:1px 5px;border-radius:4px;">42p</span>
+        </div>
+        <div style="display:flex;align-items:center;padding:5px 8px;border-bottom:1px solid #ede4d4;gap:6px;">
+          <span style="font-size:10px;">📄</span>
+          <span style="font-size:11px;color:#5a4a35;flex:1;">线性代数复习要点.pdf</span>
+          <span style="font-size:10px;background:#e8efe0;color:#607253;padding:1px 5px;border-radius:4px;">18p</span>
+        </div>
+        <div style="display:flex;align-items:center;padding:5px 8px;gap:6px;">
+          <span style="font-size:10px;">📄</span>
+          <span style="font-size:11px;color:#5a4a35;flex:1;">概率论笔记.pdf</span>
+          <span style="font-size:10px;background:#e8efe0;color:#607253;padding:1px 5px;border-radius:4px;">25p</span>
+        </div>
+      </div>
+      <div style="margin-top:8px;border:1.5px dashed #c9b090;border-radius:8px;padding:6px;text-align:center;font-size:10px;color:#9a8060;">+ 上传到当前文件夹</div>
+    </div>
+    <div class="card-body">
+      <h3>文件夹 Tab + 文件列表</h3>
+      <p>顶部是文件夹 Tab，点击切换。当前文件夹的文件以紧凑列表展示。上传时自动归入当前 Tab 的文件夹。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>文件夹切换一键</li><li>和现有圆角风格融合好</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>看不到所有文件夹同时</li><li>文件夹多了 Tab 会挤</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#faf8f4;padding:12px;border-bottom:1px solid #e8ddd0;">
+      <div style="font-size:11px;color:#8c765f;font-weight:600;margin-bottom:8px;letter-spacing:0.05em;">C — 保留现有结构 + 收缩卡片</div>
+      <!-- Compact folder sections -->
+      <div style="margin-bottom:4px;">
+        <div style="display:flex;align-items:center;padding:4px 8px;border-radius:8px;background:#f0e8d8;margin-bottom:2px;">
+          <span style="font-size:10px;margin-right:4px;">▾</span>
+          <span style="font-size:11px;color:#5a4a35;font-weight:600;">📁 期末复习</span>
+          <span style="margin-left:auto;font-size:10px;color:#9a8060;">3 个文件</span>
+        </div>
+        <div style="padding:2px 4px;">
+          <div style="display:flex;align-items:center;padding:3px 8px;border-radius:6px;border:1px solid #e0d4c0;background:#fff;margin-bottom:2px;gap:6px;">
+            <span style="font-size:10px;">📄</span>
+            <span style="font-size:11px;color:#5a4a35;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">高等数学第三章.pdf</span>
+            <span style="font-size:10px;color:#9a8060;">42p ✓</span>
+            <span style="font-size:10px;color:#c9a070;cursor:pointer;">⋯</span>
+          </div>
+          <div style="display:flex;align-items:center;padding:3px 8px;border-radius:6px;border:1px solid #e0d4c0;background:#fff;margin-bottom:2px;gap:6px;">
+            <span style="font-size:10px;">📄</span>
+            <span style="font-size:11px;color:#5a4a35;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">线性代数复习要点.pdf</span>
+            <span style="font-size:10px;color:#9a8060;">18p ✓</span>
+            <span style="font-size:10px;color:#c9a070;cursor:pointer;">⋯</span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:4px;">
+        <div style="display:flex;align-items:center;padding:4px 8px;border-radius:8px;background:#f0e8d8;margin-bottom:2px;">
+          <span style="font-size:10px;margin-right:4px;">▸</span>
+          <span style="font-size:11px;color:#5a4a35;font-weight:600;">📁 英语课件</span>
+          <span style="margin-left:auto;font-size:10px;color:#9a8060;">5 个文件</span>
+        </div>
+      </div>
+      <div style="margin-bottom:4px;">
+        <div style="display:flex;align-items:center;padding:4px 8px;border-radius:6px;">
+          <span style="font-size:10px;margin-right:4px;">▾</span>
+          <span style="font-size:11px;color:#8c765f;">未归类</span>
+          <span style="margin-left:auto;font-size:10px;color:#9a8060;">2 个</span>
+        </div>
+      </div>
+      <div style="margin-top:6px;border:1.5px dashed #c9b090;border-radius:8px;padding:6px;text-align:center;font-size:10px;color:#9a8060;">+ 上传文件</div>
+    </div>
+    <div class="card-body">
+      <h3>现有结构 + 精简卡片</h3>
+      <p>保留折叠文件夹的结构，把每个文件的大卡片换成 1 行紧凑行。操作菜单（⋯）展开删除/移动。风格改动最小。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优点</h4><ul><li>改动最少，风险低</li><li>拖拽逻辑可以保留</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>密度提升有限</li><li>没有彻底解决文件夹多的问题</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px;">💡 上传时弹出"选择文件夹"对话框这个功能，3 个方案都可以做。这里主要选侧栏布局方向。</p>

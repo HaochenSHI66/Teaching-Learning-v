@@ -1,11 +1,20 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import mermaid from "mermaid";
+
+// Initialize mermaid once
+mermaid.initialize({
+  startOnLoad: false,
+  theme: "neutral",
+  fontFamily: "inherit",
+  securityLevel: "loose",
+});
 
 type MarkdownContentProps = {
   content: string;
@@ -15,12 +24,10 @@ type MarkdownContentProps = {
 
 function stripCodeFence(markdown: string): string {
   const stripped = markdown.replace(/^```[a-zA-Z]*\n/, "").replace(/\n```$/, "");
-  // Only return stripped version if it actually removed an outer fence
   if (stripped.length < markdown.length) return stripped.trim();
   return markdown;
 }
 
-/** Convert [[concept]] wiki-links to <concept-link> custom elements for rendering. */
 function convertWikiLinks(markdown: string): string {
   return markdown.replace(/\[\[([^\]]+)\]\]/g, '<concept-link data-concept="$1">$1</concept-link>');
 }
@@ -50,6 +57,38 @@ function flattenText(node: ReactNode): string {
   return "";
 }
 
+/** Renders a mermaid code block as an SVG diagram. */
+function MermaidBlock({ code }: { code: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
+    let cancelled = false;
+
+    mermaid.render(id, code.trim()).then(({ svg }) => {
+      if (!cancelled && containerRef.current) {
+        containerRef.current.innerHTML = svg;
+      }
+    }).catch(() => {
+      // If mermaid fails to render, show the raw code
+      if (!cancelled && containerRef.current) {
+        containerRef.current.textContent = code;
+        containerRef.current.className = "whitespace-pre-wrap text-sm text-[var(--tx-4)] bg-[var(--sf-3)] rounded-xl p-4";
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [code]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="my-3 flex justify-center overflow-x-auto rounded-xl border border-[var(--bd-2)] bg-[var(--sf-1)] p-4"
+    />
+  );
+}
+
 export function MarkdownContent({ content, className = "", onConceptClick }: MarkdownContentProps) {
   return (
     <div className={`markdown-body prose prose-base max-w-none ${className}`}>
@@ -64,6 +103,20 @@ export function MarkdownContent({ content, className = "", onConceptClick }: Mar
 
             return <blockquote className={`callout ${tone}`}>{children}</blockquote>;
           },
+          // Render mermaid code blocks as diagrams
+          code: ({ className: codeClassName, children, ...rest }) => {
+            const match = /language-mermaid/.exec(codeClassName || "");
+            if (match) {
+              return <MermaidBlock code={String(children).replace(/\n$/, "")} />;
+            }
+            return <code className={codeClassName} {...rest}>{children}</code>;
+          },
+          // Render fenced code blocks - check for mermaid
+          pre: ({ children, ...rest }) => {
+            // If the child is a mermaid code block, MermaidBlock handles it
+            // Otherwise render normally
+            return <pre {...rest}>{children}</pre>;
+          },
           // Render [[concept]] wiki-links as clickable pills
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ...({
@@ -71,7 +124,7 @@ export function MarkdownContent({ content, className = "", onConceptClick }: Mar
               const concept = (props["data-concept"] ?? props.children) as string;
               return (
                 <span
-                  className="inline-flex cursor-pointer items-center rounded-md border border-[#c9d5b9] bg-[#eef4e6] px-1.5 py-0.5 text-[0.85em] font-medium text-[#5a7248] transition-colors hover:bg-[#ddebd0]"
+                  className="inline-flex cursor-pointer items-center rounded-md border border-[var(--ac-green-border)] bg-[var(--ac-green-bg)] px-1.5 py-0.5 text-[0.85em] font-medium text-[var(--ac-green-text)] transition-colors hover:bg-[var(--ac-green-hover)]"
                   onClick={() => onConceptClick?.(String(concept))}
                   role="button"
                   tabIndex={0}

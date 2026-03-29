@@ -37,7 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         this.props.fallback ?? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 rounded-[24px] border border-[#d9c2b6] bg-[#f8ebe4] p-8 text-[#7a4d41] shadow-[0_16px_36px_rgba(122,98,66,0.08)]">
+          <div className="flex h-full flex-col items-center justify-center gap-4 rounded-[24px] border border-[var(--error-border)] bg-[var(--error-bg)] p-8 text-[var(--error-text)] shadow-[var(--sh-sm)]">
             {/* Decorative broken-page icon */}
             <svg aria-hidden="true" className="h-14 w-14 opacity-70" viewBox="0 0 56 56" fill="none">
               <rect x="8" y="4" width="32" height="44" rx="5" fill="#f5dcd4" stroke="#c98b7b" strokeWidth="1.5"/>
@@ -49,8 +49,8 @@ export class ErrorBoundary extends Component<Props, State> {
               <circle cx="43" cy="47" r="1.2" fill="#c98b7b"/>
             </svg>
             <div className="text-center">
-              <p className="font-semibold text-[#6b3f36]">页面渲染出错</p>
-              <p className="mt-1 max-w-[220px] text-sm leading-5 text-[#9a5e4e]">
+              <p className="font-semibold text-[var(--error-heading)]">页面渲染出错</p>
+              <p className="mt-1 max-w-[220px] text-sm leading-5 text-[var(--ac-red-text)]">
                 {this.state.message || "发生未知错误，请尝试重新加载。"}
               </p>
             </div>

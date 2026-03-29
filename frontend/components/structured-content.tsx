@@ -15,8 +15,20 @@ function InlineMarkdown({ text }: { text: string }) {
   return (
     <ReactMarkdown
       components={{
-        // Unwrap <p> tags so content renders inline
-        p: ({ children }) => <>{children}</>,
+        // Unwrap <p> for inline flow, but keep block display for display-math
+        p: ({ children, ...props }) => {
+          // Check if children contain a katex-display element ($$...$$)
+          const childArray = Array.isArray(children) ? children : [children];
+          const hasDisplayMath = childArray.some(
+            (child) =>
+              child && typeof child === "object" && "props" in child &&
+              (child as { props?: { className?: string } }).props?.className?.includes("katex-display")
+          );
+          if (hasDisplayMath) {
+            return <div className="my-2" {...props}>{children}</div>;
+          }
+          return <>{children}</>;
+        },
       }}
       rehypePlugins={[rehypeKatex]}
       remarkPlugins={[remarkGfm, remarkMath]}
@@ -97,11 +109,11 @@ function ExplanationItemCard({
 
   return (
     <div
-      className="rounded-xl border border-[var(--bd-1)] bg-[var(--sf-1)] px-3.5 py-2.5"
+      className="overflow-hidden rounded-xl border border-[var(--bd-1)] bg-[var(--sf-1)] px-3.5 py-2.5"
       style={{ borderLeftWidth: "4px", borderLeftColor: borderColor }}
     >
       {/* Label + explanation — markdown-body for code/math styling */}
-      <div className="markdown-body text-[14px] leading-relaxed text-[var(--tx-3)]">
+      <div className="markdown-body text-[14px] leading-relaxed text-[var(--tx-3)] [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:bg-[var(--sf-3)] [&_pre]:text-[var(--tx-2)]">
         {item.label && (
           <strong className="text-[var(--tx-1)]">{item.label}：</strong>
         )}
@@ -110,7 +122,7 @@ function ExplanationItemCard({
 
       {/* Sub-items */}
       {item.sub_items?.length > 0 && (
-        <ul className="markdown-body mt-1.5 space-y-1 pl-4">
+        <ul className="markdown-body mt-1.5 space-y-1 pl-4 [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:bg-[var(--sf-3)] [&_pre]:text-[var(--tx-2)]">
           {item.sub_items.map((sub, i) => (
             <li key={i} className="list-disc text-[13px] leading-relaxed text-[var(--tx-3)]">
               {sub.label && (

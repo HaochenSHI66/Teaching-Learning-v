@@ -386,7 +386,15 @@ def _upsert_slide_explanation(
     extracted_text: str,
     extract_payload: dict | None = None,
 ) -> tuple[SlideExplanation, bool]:
-    explanation = session.exec(select(SlideExplanation).where(SlideExplanation.slide_id == slide.id)).first()
+    # Find existing explanation for this slide — take latest, delete duplicates
+    all_explanations = session.exec(
+        select(SlideExplanation)
+        .where(SlideExplanation.slide_id == slide.id)
+        .order_by(SlideExplanation.generated_at.desc())
+    ).all()
+    explanation = all_explanations[0] if all_explanations else None
+    for stale in all_explanations[1:]:
+        session.delete(stale)
     document = session.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -718,12 +726,18 @@ def list_document_explanations(
     if document.status != "ready":
         raise HTTPException(status_code=409, detail="Document explanations are not ready")
 
-    explanations = session.exec(
+    all_explanations = session.exec(
         select(SlideExplanation)
         .where(SlideExplanation.document_id == document_id)
-        .order_by(SlideExplanation.page_num)
+        .order_by(SlideExplanation.page_num, SlideExplanation.generated_at.desc())
     ).all()
-    explanations = [item for item in explanations if _explanation_is_current(item)]
+    # Deduplicate: keep only the latest per slide_id
+    seen_slides: dict[str, SlideExplanation] = {}
+    for item in all_explanations:
+        if item.slide_id not in seen_slides:
+            seen_slides[item.slide_id] = item
+    explanations = [item for item in seen_slides.values() if _explanation_is_current(item)]
+    explanations.sort(key=lambda x: x.page_num)
 
     return DocumentExplanationsResponse(
         document_id=document_id,

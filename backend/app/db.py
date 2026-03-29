@@ -101,6 +101,9 @@ _SQLITE_COLUMN_BACKFILLS: dict[str, dict[str, str]] = {
     "flashcard": {
         "concept_id": "TEXT",
     },
+    "concept": {
+        "importance": "INTEGER NOT NULL DEFAULT 3",
+    },
     "slideexplanation": {
         "version": "INTEGER NOT NULL DEFAULT 1",
         "meta": "JSON NOT NULL DEFAULT '{}'",

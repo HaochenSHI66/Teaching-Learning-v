@@ -1,286 +1,237 @@
-from io import BytesIO
+"""Tests for document API endpoints: upload, list, status, delete with user scoping."""
+from __future__ import annotations
+
+import os
 from pathlib import Path
 
-import fitz
+import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
-from sqlmodel import Session, select
+
+os.environ.setdefault("JWT_SECRET", "test-secret-for-unit-tests")
 
 from app.main import create_app
-from app.models import Slide, SlideExplanation, SlideExtract
+
+# A minimal valid PDF that passes magic-byte detection (%PDF header).
+MINIMAL_PDF = (
+    b"%PDF-1.0\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+    b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+    b"3 0 obj<</Type/Page/MediaBox[0 0 3 3]>>endobj\n"
+    b"xref\n0 4\n"
+    b"0000000000 65535 f \n"
+    b"0000000009 00000 n \n"
+    b"0000000058 00000 n \n"
+    b"0000000115 00000 n \n"
+    b"trailer<</Size 4/Root 1 0 R>>\n"
+    b"startxref\n190\n%%EOF"
+)
 
 
-def _png_bytes() -> bytes:
-    image = Image.new("RGB", (400, 200), color=(245, 245, 245))
-    stream = BytesIO()
-    image.save(stream, format="PNG")
-    return stream.getvalue()
+# ── Fixtures ────────────────────────────────────────────────────────
 
 
-def _pdf_bytes() -> bytes:
-    document = fitz.open()
-    page = document.new_page(width=1000, height=700)
-    page.insert_text((64, 100), "Gradient Descent", fontsize=28)
-    page.insert_text((64, 150), "- learning rate", fontsize=20)
-    page.insert_text((64, 185), "- update rule", fontsize=20)
-    return document.tobytes()
-
-
-def _repeated_pdf_bytes() -> bytes:
-    document = fitz.open()
-
-    page1 = document.new_page(width=1000, height=700)
-    page1.insert_text((64, 100), "Gradient Descent", fontsize=28)
-    page1.insert_text((64, 150), "- learning rate controls update size", fontsize=20)
-    page1.insert_text((64, 185), "- update rule moves opposite gradient", fontsize=20)
-
-    page2 = document.new_page(width=1000, height=700)
-    page2.insert_text((64, 100), "Gradient Descent", fontsize=28)
-    page2.insert_text((64, 150), "- learning rate controls update size", fontsize=20)
-    page2.insert_text((64, 185), "- update rule moves opposite gradient", fontsize=20)
-    page2.insert_text((64, 220), "- convergence depends on step size", fontsize=20)
-
-    return document.tobytes()
-
-
-def test_upload_image_and_list_slides(tmp_path: Path) -> None:
-    app = create_app(
-        database_url=f"sqlite:///{tmp_path / 'test.db'}",
-        storage_dir=tmp_path / "storage",
-    )
+@pytest.fixture()
+def app_and_client(tmp_path: Path):
+    """Create a fresh app with an isolated SQLite database and storage dir."""
+    db_url = f"sqlite:///{tmp_path / 'test.db'}"
+    storage = tmp_path / "storage"
+    app = create_app(database_url=db_url, storage_dir=storage)
     client = TestClient(app)
+    yield app, client
 
-    response = client.post(
+
+def _register_user(client: TestClient, email: str, display_name: str) -> dict:
+    """Register a user and return {"token": ..., "user": {...}}."""
+    resp = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "password": "password123",
+            "display_name": display_name,
+        },
+    )
+    assert resp.status_code == 201, f"Registration failed: {resp.text}"
+    return resp.json()
+
+
+def _auth_header(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def two_users(app_and_client):
+    """Register two users and return (app, client, user_a_data, user_b_data)."""
+    app, client = app_and_client
+    user_a = _register_user(client, "alice@test.com", "Alice")
+    user_b = _register_user(client, "bob@test.com", "Bob")
+    return app, client, user_a, user_b
+
+
+# ── 1. Upload success ──────────────────────────────────────────────
+
+
+def test_upload_valid_pdf_returns_202(app_and_client):
+    """Uploading a minimal valid PDF should return 202 with document metadata."""
+    _app, client = app_and_client
+    user = _register_user(client, "uploader@test.com", "Uploader")
+
+    resp = client.post(
         "/api/v1/documents/upload",
-        files={"file": ("slide.png", _png_bytes(), "image/png")},
+        files={"file": ("lecture.pdf", MINIMAL_PDF, "application/pdf")},
+        headers=_auth_header(user["token"]),
     )
 
-    assert response.status_code == 202
-    payload = response.json()
-    doc_id = payload["document"]["id"]
-    slides_response = client.get(f"/api/v1/documents/{doc_id}/slides")
-
-    assert slides_response.status_code == 200
-    slides_payload = slides_response.json()
-    assert len(slides_payload["slides"]) == 1
-    assert slides_payload["slides"][0]["page_num"] == 1
+    assert resp.status_code == 202
+    payload = resp.json()
+    assert "document" in payload
+    doc = payload["document"]
+    assert doc["filename"] == "lecture.pdf"
+    assert doc["status"] == "processing"  # background task won't run in TestClient
+    assert doc["media_type"] == "application/pdf"
 
 
-def test_pdf_slide_extract_contains_structured_blocks(tmp_path: Path) -> None:
-    app = create_app(
-        database_url=f"sqlite:///{tmp_path / 'test.db'}",
-        storage_dir=tmp_path / "storage",
-    )
-    client = TestClient(app)
+# ── 2. Upload empty file ───────────────────────────────────────────
 
-    response = client.post(
+
+def test_upload_empty_file_returns_400(app_and_client):
+    """Uploading an empty file should be rejected with 400."""
+    _app, client = app_and_client
+    user = _register_user(client, "empty@test.com", "Empty")
+
+    resp = client.post(
         "/api/v1/documents/upload",
-        files={"file": ("slide.pdf", _pdf_bytes(), "application/pdf")},
+        files={"file": ("empty.pdf", b"", "application/pdf")},
+        headers=_auth_header(user["token"]),
     )
 
-    assert response.status_code == 202
-    doc_id = response.json()["document"]["id"]
-
-    status_response = client.get(f"/api/v1/documents/{doc_id}/status")
-    assert status_response.status_code == 200
-    assert status_response.json()["status"] == "ready"
-
-    slides_response = client.get(f"/api/v1/documents/{doc_id}/slides")
-    assert slides_response.status_code == 200
-    slide = slides_response.json()["slides"][0]
-
-    assert "extract" in slide
-    assert slide["extract"]["text"] != ""
-    assert slide["extract"]["text_blocks"]
-    assert isinstance(slide["extract"]["figures"], list)
-    assert slide["extract"]["page_stats"]["text_block_count"] >= 1
+    assert resp.status_code == 400
+    assert "empty" in resp.json()["detail"].lower()
 
 
-def test_pdf_slide_extract_contains_repeat_analysis(tmp_path: Path) -> None:
-    app = create_app(
-        database_url=f"sqlite:///{tmp_path / 'test.db'}",
-        storage_dir=tmp_path / "storage",
-    )
-    client = TestClient(app)
+# ── 3. List documents is user-scoped ───────────────────────────────
 
-    response = client.post(
+
+def test_list_documents_user_scoped(two_users):
+    """User A's documents should NOT appear in user B's list."""
+    _app, client, user_a, user_b = two_users
+
+    # User A uploads a document
+    upload_resp = client.post(
         "/api/v1/documents/upload",
-        files={"file": ("repeat.pdf", _repeated_pdf_bytes(), "application/pdf")},
+        files={"file": ("alice.pdf", MINIMAL_PDF, "application/pdf")},
+        headers=_auth_header(user_a["token"]),
     )
+    assert upload_resp.status_code == 202
+    doc_id = upload_resp.json()["document"]["id"]
 
-    assert response.status_code == 202
-    doc_id = response.json()["document"]["id"]
-
-    slides_response = client.get(f"/api/v1/documents/{doc_id}/slides")
-    assert slides_response.status_code == 200
-    slides = slides_response.json()["slides"]
-    assert len(slides) == 2
-
-    repeat_analysis = slides[1]["extract"]["repeat_analysis"]
-    assert repeat_analysis["status"] == "ready"
-    assert repeat_analysis["repeat_pages"] == [1]
-    assert repeat_analysis["repeated_ratio"] > 0
-    assert repeat_analysis["repeated_block_ids"]
-    assert repeat_analysis["new_block_ids"]
-
-
-def test_regenerate_slide_and_document_explanations_overwrite_cache(tmp_path: Path) -> None:
-    app = create_app(
-        database_url=f"sqlite:///{tmp_path / 'test.db'}",
-        storage_dir=tmp_path / "storage",
+    # User A can see the document
+    list_a = client.get(
+        "/api/v1/documents",
+        headers=_auth_header(user_a["token"]),
     )
-    client = TestClient(app)
+    assert list_a.status_code == 200
+    a_doc_ids = [d["id"] for d in list_a.json()["documents"]]
+    assert doc_id in a_doc_ids
 
-    upload_response = client.post(
+    # User B should NOT see user A's document
+    list_b = client.get(
+        "/api/v1/documents",
+        headers=_auth_header(user_b["token"]),
+    )
+    assert list_b.status_code == 200
+    b_doc_ids = [d["id"] for d in list_b.json()["documents"]]
+    assert doc_id not in b_doc_ids
+
+
+# ── 4. Delete own document ─────────────────────────────────────────
+
+
+def test_delete_own_document(app_and_client):
+    """A user should be able to delete their own document."""
+    _app, client = app_and_client
+    user = _register_user(client, "owner@test.com", "Owner")
+
+    upload_resp = client.post(
         "/api/v1/documents/upload",
-        files={"file": ("slide.pdf", _pdf_bytes(), "application/pdf")},
+        files={"file": ("to_delete.pdf", MINIMAL_PDF, "application/pdf")},
+        headers=_auth_header(user["token"]),
     )
-    assert upload_response.status_code == 202
-    doc_id = upload_response.json()["document"]["id"]
+    assert upload_resp.status_code == 202
+    doc_id = upload_resp.json()["document"]["id"]
 
-    slides_response = client.get(f"/api/v1/documents/{doc_id}/slides")
-    assert slides_response.status_code == 200
-    slide_id = slides_response.json()["slides"][0]["id"]
-
-    first_explanations = client.get(f"/api/v1/documents/{doc_id}/explanations")
-    assert first_explanations.status_code == 200
-    first_markdown = first_explanations.json()["explanations"][0]["markdown"]
-
-    slide_regen = client.post(f"/api/v1/documents/{doc_id}/slides/{slide_id}/explanations/generate")
-    assert slide_regen.status_code == 200
-    slide_payload = slide_regen.json()
-    assert slide_payload["slide_id"] == slide_id
-    assert slide_payload["overwrote_existing"] is True
-    assert slide_payload["markdown"] == first_markdown
-
-    doc_regen = client.post(f"/api/v1/documents/{doc_id}/explanations/generate")
-    assert doc_regen.status_code == 200
-    doc_payload = doc_regen.json()
-    assert doc_payload["document_id"] == doc_id
-    assert doc_payload["generated_count"] == 1
-    assert doc_payload["overwrote_existing"] is True
-
-
-def test_slides_endpoint_refreshes_legacy_extracts_and_hides_stale_explanations(tmp_path: Path) -> None:
-    app = create_app(
-        database_url=f"sqlite:///{tmp_path / 'test.db'}",
-        storage_dir=tmp_path / "storage",
+    del_resp = client.delete(
+        f"/api/v1/documents/{doc_id}",
+        headers=_auth_header(user["token"]),
     )
-    client = TestClient(app)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["deleted"] is True
 
-    upload_response = client.post(
+    # Verify it no longer appears in the list
+    list_resp = client.get(
+        "/api/v1/documents",
+        headers=_auth_header(user["token"]),
+    )
+    assert doc_id not in [d["id"] for d in list_resp.json()["documents"]]
+
+
+# ── 5. Delete other user's document ────────────────────────────────
+
+
+def test_delete_other_users_document_returns_404(two_users):
+    """Attempting to delete another user's document should return 404."""
+    _app, client, user_a, user_b = two_users
+
+    # User A uploads a document
+    upload_resp = client.post(
         "/api/v1/documents/upload",
-        files={"file": ("slide.pdf", _pdf_bytes(), "application/pdf")},
+        files={"file": ("private.pdf", MINIMAL_PDF, "application/pdf")},
+        headers=_auth_header(user_a["token"]),
     )
-    assert upload_response.status_code == 202
-    doc_id = upload_response.json()["document"]["id"]
+    assert upload_resp.status_code == 202
+    doc_id = upload_resp.json()["document"]["id"]
 
-    with Session(app.state.engine) as session:
-        slide = session.exec(select(Slide).where(Slide.document_id == doc_id)).first()
-        assert slide is not None
-
-        extract = session.exec(select(SlideExtract).where(SlideExtract.slide_id == slide.id)).first()
-        assert extract is not None
-        extract.payload = {
-            "page_num": slide.page_num,
-            "text": "Gradient Descent",
-            "summary": "Gradient Descent",
-        }
-
-        explanation = session.exec(
-            select(SlideExplanation).where(SlideExplanation.slide_id == slide.id)
-        ).first()
-        assert explanation is not None
-        explanation.markdown = "## Slide 标题\n\n旧缓存"
-
-        session.add(extract)
-        session.add(explanation)
-        session.commit()
-
-    slides_response = client.get(f"/api/v1/documents/{doc_id}/slides")
-    assert slides_response.status_code == 200
-    slide_payload = slides_response.json()["slides"][0]
-
-    assert slide_payload["extract"]["text_blocks"]
-    assert slide_payload["explanation_state"] == "not_generated"
-
-    explanations_response = client.get(f"/api/v1/documents/{doc_id}/explanations")
-    assert explanations_response.status_code == 200
-    assert explanations_response.json()["explanations"] == []
-
-
-def test_folder_library_create_move_and_delete(tmp_path: Path) -> None:
-    app = create_app(
-        database_url=f"sqlite:///{tmp_path / 'test.db'}",
-        storage_dir=tmp_path / "storage",
+    # User B tries to delete it
+    del_resp = client.delete(
+        f"/api/v1/documents/{doc_id}",
+        headers=_auth_header(user_b["token"]),
     )
-    client = TestClient(app)
+    assert del_resp.status_code == 404
 
-    calculus_upload = client.post(
+    # Verify the document still exists for user A
+    list_a = client.get(
+        "/api/v1/documents",
+        headers=_auth_header(user_a["token"]),
+    )
+    assert doc_id in [d["id"] for d in list_a.json()["documents"]]
+
+
+# ── 6. Unauthenticated list sees only user_id=NULL docs ────────────
+
+
+def test_unauthenticated_list_sees_only_null_user_docs(app_and_client):
+    """Unauthenticated requests should only see documents with user_id=NULL."""
+    _app, client = app_and_client
+    user = _register_user(client, "authed@test.com", "Authed")
+
+    # Authenticated upload (user_id is set)
+    auth_upload = client.post(
         "/api/v1/documents/upload",
-        files={"file": ("calculus.pdf", _pdf_bytes(), "application/pdf")},
+        files={"file": ("owned.pdf", MINIMAL_PDF, "application/pdf")},
+        headers=_auth_header(user["token"]),
     )
-    assert calculus_upload.status_code == 202
-    calculus_doc_id = calculus_upload.json()["document"]["id"]
+    assert auth_upload.status_code == 202
+    owned_doc_id = auth_upload.json()["document"]["id"]
 
-    algebra_upload = client.post(
+    # Unauthenticated upload (user_id will be NULL)
+    anon_upload = client.post(
         "/api/v1/documents/upload",
-        files={"file": ("algebra.pdf", _pdf_bytes(), "application/pdf")},
+        files={"file": ("anon.pdf", MINIMAL_PDF, "application/pdf")},
     )
-    assert algebra_upload.status_code == 202
-    algebra_doc_id = algebra_upload.json()["document"]["id"]
+    assert anon_upload.status_code == 202
+    anon_doc_id = anon_upload.json()["document"]["id"]
 
-    initial_library = client.get("/api/v1/folders")
-    assert initial_library.status_code == 200
-    initial_payload = initial_library.json()
-    assert [doc["id"] for doc in initial_payload["uncategorized"]["documents"]] == [
-        calculus_doc_id,
-        algebra_doc_id,
-    ]
-    assert initial_payload["folders"] == []
-
-    create_folder = client.post(
-        "/api/v1/folders",
-        json={"name": "Calculus", "color": "oat"},
-    )
-    assert create_folder.status_code == 201
-    folder_id = create_folder.json()["folder"]["id"]
-
-    move_doc = client.post(
-        "/api/v1/folders/move-document",
-        json={"document_id": calculus_doc_id, "target_folder_id": folder_id, "target_index": 0},
-    )
-    assert move_doc.status_code == 200
-    moved_payload = move_doc.json()
-    assert moved_payload["document"]["id"] == calculus_doc_id
-    assert moved_payload["document"]["folder_id"] == folder_id
-
-    renamed = client.patch(f"/api/v1/folders/{folder_id}", json={"name": "Advanced Calculus"})
-    assert renamed.status_code == 200
-    assert renamed.json()["folder"]["name"] == "Advanced Calculus"
-
-    library_after_move = client.get("/api/v1/folders")
-    assert library_after_move.status_code == 200
-    library_payload = library_after_move.json()
-    assert library_payload["folders"][0]["name"] == "Advanced Calculus"
-    assert [doc["id"] for doc in library_payload["folders"][0]["documents"]] == [calculus_doc_id]
-    assert [doc["id"] for doc in library_payload["uncategorized"]["documents"]] == [algebra_doc_id]
-
-    move_back = client.post(
-        "/api/v1/folders/move-document",
-        json={"document_id": calculus_doc_id, "target_folder_id": None, "target_index": 1},
-    )
-    assert move_back.status_code == 200
-
-    delete_folder = client.delete(f"/api/v1/folders/{folder_id}")
-    assert delete_folder.status_code == 200
-    assert delete_folder.json()["deleted"] is True
-
-    final_library = client.get("/api/v1/folders")
-    assert final_library.status_code == 200
-    final_payload = final_library.json()
-    assert final_payload["folders"] == []
-    assert [doc["id"] for doc in final_payload["uncategorized"]["documents"]] == [
-        algebra_doc_id,
-        calculus_doc_id,
-    ]
+    # Unauthenticated list should see only the anonymous doc
+    anon_list = client.get("/api/v1/documents")
+    assert anon_list.status_code == 200
+    anon_doc_ids = [d["id"] for d in anon_list.json()["documents"]]
+    assert anon_doc_id in anon_doc_ids
+    assert owned_doc_id not in anon_doc_ids

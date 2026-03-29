@@ -7,11 +7,11 @@ body.theme-clean-academic {
 }
 
 .cover {
-    page-break-after: always;
+    
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 90vh;
+    
     border-bottom: 4px double #1a365d;
 }
 .cover-inner { text-align: center; }
@@ -60,7 +60,7 @@ body.theme-clean-academic {
     color: #4a5568;
 }
 
-.toc-section { page-break-after: always; }
+.toc-section {  }
 .toc-list {
     list-style: none;
     padding: 0;
@@ -88,6 +88,10 @@ body.theme-clean-academic {
     border-bottom: 1px solid #e2e8f0;
 }
 .slide-header { display: flex; align-items: center; gap: 0.7em; margin-bottom: 0.8em; }
+.slide-body { display: flex; gap: 1.4em; align-items: flex-start; }
+.slide-content { flex: 1; min-width: 0; }
+.slide-image-wrap { flex-shrink: 0; width: 33%; position: sticky; top: 1em; }
+.slide-image { width: 100%; border: 1px solid #e2e8f0; border-radius: 4px; }
 .slide-badge {
     background: #1a365d;
     color: #fff;
@@ -97,8 +101,6 @@ body.theme-clean-academic {
     font-weight: 700;
 }
 .slide-title { font-size: 1.25em; color: #1a365d; }
-.slide-image-wrap { margin: 1em 0; text-align: center; }
-.slide-image { max-height: 320px; border: 1px solid #e2e8f0; }
 
 .key-points ul { padding-left: 1.5em; }
 .key-points li { margin-bottom: 0.35em; }

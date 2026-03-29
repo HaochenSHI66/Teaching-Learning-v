@@ -7,8 +7,8 @@ body.theme-warm-notebook {
 }
 
 .cover {
-    page-break-after: always;
-    min-height: 90vh;
+    
+    
     display: flex;
     align-items: center;
     justify-content: center;
@@ -74,7 +74,7 @@ body.theme-warm-notebook {
 }
 .summary-box::before { content: "\1F4AC "; font-size: 1.2em; }
 
-.toc-section { page-break-after: always; }
+.toc-section {  }
 .toc-list { list-style: none; padding: 0; }
 .toc-list li {
     padding: 0.45em 0;
@@ -103,6 +103,10 @@ body.theme-warm-notebook {
     margin-bottom: 1.5em;
 }
 .slide-header { display: flex; align-items: center; gap: 0.7em; margin-bottom: 0.7em; }
+.slide-body { display: flex; gap: 1.2em; align-items: flex-start; }
+.slide-content { flex: 1; min-width: 0; }
+.slide-image-wrap { flex-shrink: 0; width: 35%; position: sticky; top: 1em; }
+.slide-image { width: 100%; border: 2px solid #efebe9; border-radius: 12px; box-shadow: 0 3px 10px rgba(93,64,55,0.08); }
 .slide-badge {
     background: #ff8f00;
     color: #fff;
@@ -112,14 +116,6 @@ body.theme-warm-notebook {
     font-weight: 700;
 }
 .slide-title { font-size: 1.2em; font-weight: 700; color: #5d4037; }
-.slide-image-wrap { margin: 0.8em 0; text-align: center; }
-.slide-image {
-    max-height: 300px;
-    border-radius: 12px;
-    border: 2px dashed #d7ccc8;
-    padding: 4px;
-    background: #fff;
-}
 
 .key-points ul { padding-left: 1.2em; list-style: none; }
 .key-points li { margin-bottom: 0.35em; line-height: 1.75; }

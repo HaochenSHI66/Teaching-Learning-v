@@ -125,7 +125,7 @@ export function SlideBookmarks({
   }
 
   return (
-    <div className="inline-flex items-center gap-1 rounded-full border border-[#e0d0bb] bg-[#fffdf8] px-1.5 py-1 shadow-sm">
+    <div className="inline-flex items-center gap-1 rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] px-1.5 py-1 shadow-sm">
       {TAG_CONFIG.map((cfg) => {
         const active = bookmarks.some(
           (b) => b.slide_id === slideId && b.tag === cfg.tag,
@@ -143,8 +143,8 @@ export function SlideBookmarks({
             onClick={() => handleToggle(cfg.tag)}
             className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
               active
-                ? "bg-[#f5ece0]"
-                : "hover:bg-[#f8f2e8]"
+                ? "bg-[var(--sf-3)]"
+                : "hover:bg-[var(--sf-2)]"
             } ${isLoading ? "animate-pulse opacity-60" : ""}`}
           >
             {cfg.icon(active, cfg.activeColor)}
