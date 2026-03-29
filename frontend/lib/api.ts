@@ -147,6 +147,17 @@ export type DocumentLibrary = {
   };
 };
 
+export type ExplanationItem = {
+  label: string;
+  explanation: string;
+  highlight: string | null;
+  sub_items: { label: string; explanation: string }[];
+  callout: {
+    type: "IMPORTANT" | "TIP" | "WARNING" | "NOTE";
+    text: string;
+  } | null;
+};
+
 export type SlideExplanation = {
   slide_id: string;
   page_num: number;
@@ -166,6 +177,7 @@ export type SlideExplanation = {
       repeat_md?: string;
       summary_md?: string;
     };
+    structured_items?: ExplanationItem[];
   } | null;
 };
 
