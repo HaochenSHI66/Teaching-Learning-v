@@ -1,19 +1,13 @@
 <div align="center">
 
-# 📖 幻灯片研习台
+# [**learn.shc66.com**](https://learn.shc66.com)
 
-### AI 驱动的 PPT 分屏学习助手
+### 📖 幻灯片研习台 — AI 驱动的 PPT 分屏学习助手
 
 **上传课件 → AI 自动逐页讲解 → 像有个私人助教**
 
-<br/>
-
-[**👉 立即使用 learn.shc66.com**](https://learn.shc66.com)
-
-<br/>
-
 [![在线状态](https://img.shields.io/badge/状态-在线-brightgreen?style=for-the-badge)](https://learn.shc66.com)
-[![免费使用](https://img.shields.io/badge/费用-免费-blue?style=for-the-badge)]()
+[![免费使用](https://img.shields.io/badge/费用-免费-blue?style=for-the-badge)](https://learn.shc66.com)
 
 <!-- 主界面截图 -->
 <!-- ![主界面](docs/screenshots/main.png) -->
