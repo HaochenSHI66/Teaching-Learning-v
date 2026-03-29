@@ -6,6 +6,7 @@ import { ConceptHighlightedContent } from "@/components/concept-highlighted-cont
 import { KnowledgeGraphPanel } from "@/components/knowledge-graph";
 import { MarkdownContent } from "@/components/markdown-content";
 import { SelectionPopup } from "@/components/selection-popup";
+import { StructuredContent } from "@/components/structured-content";
 import type { ChatMessage } from "@/hooks/useChat";
 import type { BatchProgress, GenerationProgress } from "@/hooks/useSlideGeneration";
 import { getAssetUrl, type SlideExplanation, type SlideExtract } from "@/lib/api";
@@ -306,9 +307,38 @@ export function AIPanel({
             )}
 
             <div ref={explanationRef} className="min-h-0 flex-1 overflow-auto p-3" data-note-source="explanation-content">
-              {hasStructuredExplanation ? (
+              {/* Branch 1: structured JSON items available */}
+              {hasStructuredExplanation && explanationMeta?.structured_items?.length ? (
                 <div className="space-y-3">
-                  {/* Unified explanation: translation_md is the main content */}
+                  {/* Concept chips bar — reuse ConceptHighlightedContent's pattern */}
+                  <ConceptHighlightedContent
+                    content=""
+                    documentId={documentId}
+                    slideId={currentSlideId}
+                    onJumpToSlide={onJumpToSlide}
+                  />
+                  <StructuredContent
+                    items={explanationMeta.structured_items}
+                    title={explanationMeta.title}
+                    contentType={explanationMeta.content_type}
+                  />
+                  {explanationMeta?.sections.repeat_md ? (
+                    <details className="overflow-hidden rounded-[18px] border border-[var(--bd-1)] bg-[var(--sf-2)]">
+                      <summary className="cursor-pointer list-none px-3 py-2 text-[13px] font-medium text-[var(--tx-4)]">
+                        重复部分讲解
+                        <span className="ml-2 text-[12px] font-normal text-[var(--tx-5)]">
+                          来自第 {repeatSummary?.repeat_pages?.join(", ") || "前序"} 页
+                        </span>
+                      </summary>
+                      <div className="border-t border-[var(--sf-4)] px-3 py-3">
+                        <MarkdownContent content={explanationMeta.sections.repeat_md} />
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+              ) : hasStructuredExplanation ? (
+                /* Branch 2: structured meta with translation_md but no JSON items */
+                <div className="space-y-3">
                   <ConceptHighlightedContent
                     content={[
                       explanationMeta?.sections.translation_md ?? "",
@@ -333,6 +363,7 @@ export function AIPanel({
                   ) : null}
                 </div>
               ) : explanation ? (
+                /* Branch 3: plain markdown only */
                 <ConceptHighlightedContent
                   content={explanation}
                   documentId={documentId}
@@ -340,6 +371,7 @@ export function AIPanel({
                   onJumpToSlide={onJumpToSlide}
                 />
               ) : (
+                /* Branch 4: not generated */
                 <div className="space-y-3">
                   {batchProgress?.isRunning ? (
                     <div className="flex flex-col items-center gap-2 py-6 text-center">
