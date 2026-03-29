@@ -100,8 +100,8 @@ function ExplanationItemCard({
       className="rounded-xl border border-[var(--bd-1)] bg-[var(--sf-1)] px-3.5 py-2.5"
       style={{ borderLeftWidth: "4px", borderLeftColor: borderColor }}
     >
-      {/* Label + explanation */}
-      <div className="text-[14px] leading-relaxed text-[var(--tx-3)]">
+      {/* Label + explanation — markdown-body for code/math styling */}
+      <div className="markdown-body text-[14px] leading-relaxed text-[var(--tx-3)]">
         {item.label && (
           <strong className="text-[var(--tx-1)]">{item.label}：</strong>
         )}
@@ -110,7 +110,7 @@ function ExplanationItemCard({
 
       {/* Sub-items */}
       {item.sub_items?.length > 0 && (
-        <ul className="mt-1.5 space-y-1 pl-4">
+        <ul className="markdown-body mt-1.5 space-y-1 pl-4">
           {item.sub_items.map((sub, i) => (
             <li key={i} className="list-disc text-[13px] leading-relaxed text-[var(--tx-3)]">
               {sub.label && (
