@@ -25,6 +25,7 @@ from app.api.quizzes import router as quizzes_router
 from app.api.review import router as review_router
 from app.api.sessions import router as sessions_router
 from app.api.slide_notes import router as slide_notes_router
+from app.api.admin import router as admin_router
 from app.api.usage import router as usage_router
 from app.db import create_db_engine, ensure_storage, get_database_url, init_db
 
@@ -61,15 +62,6 @@ def create_app(
     app.state.engine = engine
     app.state.storage_dir = resolved_storage.resolve()
 
-    cors_origins_env = os.getenv("CORS_ORIGINS", "")
-    allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
-    if not allow_origins:
-        import warnings
-        warnings.warn(
-            "CORS_ORIGINS is not set! Defaulting to localhost origins only.",
-            stacklevel=2,
-        )
-        allow_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
     # Starlette applies middleware in reverse add order — last added = outermost.
     # RequestLoggingMiddleware must be added first so CORSMiddleware wraps it
     # and injects CORS headers on all responses, including errors.
@@ -77,10 +69,10 @@ def create_app(
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=allow_origins,
+        allow_origins=["*"],
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Accept"],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     app.include_router(account_router)
@@ -100,6 +92,7 @@ def create_app(
     app.include_router(flashcards_router)
     app.include_router(knowledge_graph_router)
     app.include_router(usage_router)
+    app.include_router(admin_router)
 
     init_db(engine)
 
@@ -116,6 +109,14 @@ def create_app(
         return {"status": "ok" if db_ok else "degraded", "db": "connected" if db_ok else "disconnected"}
 
     app.mount("/storage", StaticFiles(directory=app.state.storage_dir), name="storage")
+
+    # Cache static files (slide images) for 7 days
+    @app.middleware("http")
+    async def add_cache_headers(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/storage/"):
+            response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+        return response
 
     return app
 
