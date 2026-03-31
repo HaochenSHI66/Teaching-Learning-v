@@ -24,7 +24,6 @@
 | `backend/app/main.py` | Modify | Register sync_router |
 | `backend/tests/test_sync.py` | Create | Tests for manifest + version bumping |
 | `frontend/lib/DocumentCacheManager.ts` | Create | Cache manager class (memory + IDB + subscribe) |
-| `frontend/lib/DocumentCacheManager.test.ts` | Create | Unit tests for cache manager |
 | `frontend/hooks/useDocumentCache.ts` | Create | React bridge via useSyncExternalStore |
 | `frontend/hooks/usePreload.ts` | Create | Manifest sync + background preload |
 | `frontend/hooks/useDocumentActions.ts` | Create | Upload, delete, generate, move |
@@ -133,7 +132,7 @@ Add `bump_content_version(session, document_id)` call in these locations:
 
 2. `_process_document_background()` — after line ~228 (after slides committed):
 ```python
-    bump_content_version(engine_session, document_id)
+    bump_content_version(session, document_id)
 ```
 
 3. `regenerate_document_explanations()` — after each slide commit inside the loop (after line ~929):
@@ -1009,31 +1008,80 @@ git commit -m "feat(frontend): rewrite useUpload as thin coordinator, delete loc
 
 ## Task 11: Integration testing
 
+Testing uses the tools already in the repo: **backend pytest** for API/model tests, **Playwright** for browser-level cache/sync tests. No new test runner needed.
+
 **Files:**
-- Update: `tests/test_local_cache.py` → `tests/test_cache_sync.py`
+- Modify: `backend/tests/test_sync.py` (already created in Tasks 1-3, add more cases)
+- Rewrite: `tests/test_local_cache.py` → `tests/test_cache_sync.py` (Playwright-based)
 
-- [ ] **Step 1: Write integration tests covering the 6 required test cases from spec**
+- [ ] **Step 1: Backend tests (pytest) — add version bump + manifest cases**
 
-1. **Schema version upgrade**: Mock changed schema version in manifest, verify all docs re-synced
-2. **Document deletion**: Remove doc from manifest, verify deleted from IDB
-3. **Bootstrap not re-fetched**: Login, verify first doc (with content_version from bootstrap) is NOT in sync batch
-4. **Multi-account isolation**: Create two managers with different userIds, verify no data leakage
-5. **Explanation generation sync**: Call manager.updateExplanation(), verify memory + IDB + version all updated
-6. **Error resilience**: Simulate IDB failure, verify memory still works
+Add to `backend/tests/test_sync.py`:
 
-Also test the edge case from review: **error path should not overwrite existing explanation** — pass `explanation: null` with `slideState: "error"` and verify existing explanation content is preserved.
+```python
+def test_content_version_bumps_on_explanation_generate(client, auth_headers, sample_document_id):
+    """Generate explanation → document.content_version should increase."""
+    # Get initial version
+    resp = client.get("/api/v1/sync/manifest", headers=auth_headers)
+    v_before = resp.json()["documents"][sample_document_id]["version"]
+    # Generate explanation for first slide
+    # ... (trigger generation)
+    # Check version bumped
+    resp = client.get("/api/v1/sync/manifest", headers=auth_headers)
+    v_after = resp.json()["documents"][sample_document_id]["version"]
+    assert v_after > v_before
 
-- [ ] **Step 2: Run all tests**
+def test_manifest_excludes_deleted_documents(client, auth_headers, sample_document_id):
+    """After deleting a document, manifest should not include it."""
+    client.delete(f"/api/v1/documents/{sample_document_id}", headers=auth_headers)
+    resp = client.get("/api/v1/sync/manifest", headers=auth_headers)
+    assert sample_document_id not in resp.json()["documents"]
 
-Run: `cd frontend && npx jest` (or `npx vitest`)
-And: `cd backend && python -m pytest tests/ -v`
+def test_manifest_includes_schema_versions(client, auth_headers):
+    """Manifest schema block should match current global constants."""
+    resp = client.get("/api/v1/sync/manifest", headers=auth_headers)
+    schema = resp.json()["schema"]
+    from app.services.explanation_engine import CURRENT_EXPLANATION_VERSION
+    from app.services.slide_processor import CURRENT_EXTRACT_SCHEMA_VERSION
+    assert schema["explanation_version"] == CURRENT_EXPLANATION_VERSION
+    assert schema["extract_version"] == CURRENT_EXTRACT_SCHEMA_VERSION
+
+def test_cache_batch_includes_content_version(client, auth_headers, sample_document_id):
+    """Cache-batch response should include content_version for each document."""
+    resp = client.get(f"/api/v1/documents/cache-batch?document_id={sample_document_id}", headers=auth_headers)
+    assert resp.status_code == 200
+    doc = resp.json()["documents"][0]
+    assert "content_version" in doc
+    assert isinstance(doc["content_version"], int)
+```
+
+- [ ] **Step 2: Run backend tests**
+
+Run: `cd backend && python -m pytest tests/test_sync.py -v`
 Expected: ALL PASS
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Playwright tests — cache sync lifecycle**
+
+Rewrite `tests/test_cache_sync.py` (Playwright-based, same pattern as existing `tests/test_local_cache.py`):
+
+Test cases (run in browser via Playwright `page.evaluate()`):
+
+1. **DocumentCacheManager.set() persists to IDB**: Create manager, set() a doc, read from IDB, verify match
+2. **DocumentCacheManager.delete() removes from IDB**: Set doc, delete(), verify gone from IDB
+3. **diffManifest removes stale local docs**: Set 3 docs locally, call diffManifest with only 2 in manifest, verify third is removed
+4. **diffManifest detects version change**: Set doc with version=1, manifest has version=2, verify it's in `updated` list
+5. **Schema change marks all as updated**: Set schema locally, call diffManifest with different schema versions, verify ALL docs in `updated`
+6. **updateExplanation preserves existing on error path**: Set doc with explanation, call updateExplanation with `explanation: null, slideState: "error"`, verify original explanation preserved
+7. **Multi-user isolation**: Create manager for "user-A", set data, create manager for "user-B", verify user-B cannot see user-A data
+
+Run: `python tests/test_cache_sync.py` (uses Playwright like the existing test)
+Expected: ALL PASS
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add -A
-git commit -m "test: integration tests for cache sync refactor"
+git add backend/tests/test_sync.py tests/test_cache_sync.py
+git commit -m "test: backend + browser integration tests for cache sync"
 ```
 
 ---
