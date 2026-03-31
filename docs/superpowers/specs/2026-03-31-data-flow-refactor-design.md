@@ -161,7 +161,16 @@ class DocumentCacheManager {
 
   // ── Write (updates memory + IndexedDB + notifies) ──
   async set(docId: string, data: DocumentData): Promise<void>
-  async updateExplanation(docId: string, slideId: string, explanation: SlideExplanation): Promise<void>
+
+  // Atomic single-slide update after explanation generation.
+  // Updates explanation list + slide's explanation_state + version in one shot.
+  async updateExplanation(docId: string, params: {
+    slideId: string;
+    explanation: SlideExplanation;
+    slideState: "ready" | "error";
+    contentVersion: number;  // from API response
+  }): Promise<void>
+
   async delete(docId: string): Promise<void>
 
   // ── Sync ──
@@ -190,7 +199,7 @@ class DocumentCacheManager {
 - `get()` is **purely synchronous**, reads only from memory. Returns `undefined` if not hydrated.
 - `hydrate()` / `hydrateAll()` is the **async load path**: IndexedDB → memory. Called explicitly during startup, never implicitly by `get()`.
 - `useSyncExternalStore` calls `get()` in its snapshot function (synchronous). The hook calls `hydrate()` in a `useEffect` to populate memory.
-- `set()` is the **single write path**: sorts explanations by page_num, updates memory, writes to IndexedDB (with try/catch + console.error), notifies listeners.
+- **Two write paths, both atomic**: `set()` for bulk/sync writes, `updateExplanation()` for single-slide mutations. Both update memory → IndexedDB → notify in one shot. `updateExplanation()` atomically merges the explanation, flips the slide's `explanation_state`, and sets the `content_version`. No caller should ever need two sequential manager calls to complete a mutation.
 - `delete()` removes from memory + IndexedDB + notifies with `"delete"` event.
 - `diffManifest()` handles the three-way comparison: updated / removed / unchanged. Removed docs are deleted immediately from local cache.
 
@@ -244,11 +253,26 @@ Contains: `handleUpload`, `deleteDocument`, `loadDocument`, `regenerateDocumentE
 When explanation is generated:
 ```typescript
 const result = await generateSlideExplanation(docId, slideId);
-// API response includes new content_version
-await manager.updateExplanation(docId, slideId, result);
-// If API returned content_version, update it:
-await manager.setVersion(docId, result.content_version);
-// Done. Memory + IndexedDB + React all updated via single path.
+// Single atomic call: updates explanation + slide state + version + IDB + React
+await manager.updateExplanation(docId, {
+  slideId,
+  explanation: result,
+  slideState: "ready",
+  contentVersion: result.content_version,
+});
+// Done. No second call needed.
+```
+
+On generation failure:
+```typescript
+catch (err) {
+  await manager.updateExplanation(docId, {
+    slideId,
+    explanation: existingOrEmpty,
+    slideState: "error",
+    contentVersion: currentVersion,  // unchanged
+  });
+}
 ```
 
 When document is deleted:
