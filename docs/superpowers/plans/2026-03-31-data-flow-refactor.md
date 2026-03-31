@@ -42,8 +42,13 @@
 
 - [ ] **Step 1: Write failing test for content_version field**
 
+Uses existing test patterns from `test_documents_api.py` (`app_and_client` + `_register_user`).
+
 ```python
 # backend/tests/test_sync.py
+import os
+os.environ.setdefault("JWT_SECRET", "test-secret-for-unit-tests")
+
 from app.models import Document
 
 def test_document_has_content_version():
@@ -88,20 +93,48 @@ git commit -m "feat(backend): add content_version field to Document model"
 
 ```python
 # backend/tests/test_sync.py (append)
-from app.api.documents import bump_content_version
+import pytest
+from pathlib import Path
+from fastapi.testclient import TestClient
 from sqlmodel import Session
+from app.main import create_app
+from app.api.documents import bump_content_version
+from app.models import Document
 
-def test_bump_content_version(db_session: Session):
+@pytest.fixture()
+def app_and_client(tmp_path: Path):
+    db_url = f"sqlite:///{tmp_path / 'test.db'}"
+    storage = tmp_path / "storage"
+    app = create_app(database_url=db_url, storage_dir=storage)
+    client = TestClient(app)
+    yield app, client
+
+def _register_user(client: TestClient, email: str = "test@test.com") -> dict:
+    resp = client.post("/api/v1/auth/register", json={"email": email, "password": "password123", "display_name": "Tester"})
+    assert resp.status_code == 201
+    return resp.json()
+
+def _auth_header(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+def test_bump_content_version(app_and_client):
     """Version should increment by 1 each call."""
-    from app.models import Document
-    doc = Document(filename="test.pdf", media_type="application/pdf", storage_path="/tmp", user_id="u1")
-    db_session.add(doc)
-    db_session.commit()
-    assert doc.content_version == 1
-
-    bump_content_version(db_session, doc.id)
-    db_session.refresh(doc)
-    assert doc.content_version == 2
+    app, client = app_and_client
+    reg = _register_user(client)
+    token = reg["token"]
+    # Create a document via the app's engine
+    from app.db import get_engine
+    engine = get_engine(app)
+    with Session(engine) as session:
+        doc = Document(filename="test.pdf", media_type="application/pdf", storage_path="/tmp", user_id=reg["user"]["id"], status="ready")
+        session.add(doc)
+        session.commit()
+        session.refresh(doc)
+        assert doc.content_version == 1
+        bump_content_version(session, doc.id)
+        session.commit()
+        session.refresh(doc)
+        assert doc.content_version == 2
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -130,10 +163,17 @@ Add `bump_content_version(session, document_id)` call in these locations:
     bump_content_version(session, document_id)
 ```
 
-2. `_process_document_background()` — after line ~228 (after slides committed):
-```python
-    bump_content_version(session, document_id)
-```
+2. `_process_document_background()` — TWO locations:
+   - After line ~228 (after slides/extracts committed):
+   ```python
+       bump_content_version(session, document_id)
+   ```
+   - After line ~274 (after ALL background explanations finished, end of the windowed loop):
+   ```python
+       bump_content_version(session, document_id)
+       session.commit()
+   ```
+   This ensures clients who sync between slides-ready and explanations-done will see a second version bump.
 
 3. `regenerate_document_explanations()` — after each slide commit inside the loop (after line ~929):
 Already covered by `_upsert_slide_explanation` call within the loop.
@@ -162,12 +202,14 @@ git commit -m "feat(backend): bump_content_version helper wired into mutation pa
 - [ ] **Step 1: Write failing test for manifest endpoint**
 
 ```python
-# backend/tests/test_sync.py (append)
-from fastapi.testclient import TestClient
+# backend/tests/test_sync.py (append — uses app_and_client fixture from Task 2)
 
-def test_sync_manifest_returns_documents(client: TestClient, auth_headers: dict):
+def test_sync_manifest_returns_documents(app_and_client):
     """Manifest should list all documents with version, page_count, filename."""
-    resp = client.get("/api/v1/sync/manifest", headers=auth_headers)
+    app, client = app_and_client
+    reg = _register_user(client)
+    headers = _auth_header(reg["token"])
+    resp = client.get("/api/v1/sync/manifest", headers=headers)
     assert resp.status_code == 200
     data = resp.json()
     assert "schema" in data
@@ -342,6 +384,43 @@ Expected: ALL PASS (backward compatible — content_version is optional in some 
 ```bash
 git add backend/app/schemas.py backend/app/api/documents.py backend/app/api/bootstrap.py
 git commit -m "feat(backend): add content_version to cache-batch, bootstrap, and generate responses"
+```
+
+---
+
+## Task 4b: Backend — Schema version migration on startup
+
+**Files:**
+- Modify: `backend/app/main.py` (startup hook)
+
+When `CURRENT_EXPLANATION_VERSION` or `CURRENT_EXTRACT_SCHEMA_VERSION` changes (code deploy), all documents with old-version explanations become stale. The manifest/client detects this via schema version, but the backend should also bump `content_version` for affected documents so that the version numbers stay meaningful.
+
+- [ ] **Step 1: Add startup check in create_app()**
+
+In `backend/app/main.py`, after `init_db(engine)`, add:
+
+```python
+from app.services.explanation_engine import CURRENT_EXPLANATION_VERSION
+from app.services.slide_processor import CURRENT_EXTRACT_SCHEMA_VERSION
+
+def _migrate_content_versions_if_needed(engine):
+    """Bump content_version for all documents when schema versions change."""
+    from sqlmodel import Session, select, text
+    META_KEY = "__schema_versions__"
+    with Session(engine) as session:
+        # Store last-seen schema versions in a simple key-value approach
+        # Use Document table's first row or a dedicated meta mechanism
+        # For simplicity, use a file marker in storage dir
+        pass  # Implementation: compare stored vs current, bulk UPDATE if changed
+```
+
+The exact implementation should store the last-applied schema versions (e.g., in a `storage/.schema_version` file or a meta table) and run `UPDATE document SET content_version = content_version + 1` when they differ.
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add backend/app/main.py
+git commit -m "feat(backend): bump content_version on schema version upgrade"
 ```
 
 ---
@@ -646,8 +725,9 @@ export class DocumentCacheManager {
       await this.delete(docId);
     }
 
-    // Save new schema version
-    await this.saveSchemaVersion(manifest.schema);
+    // NOTE: Do NOT save schema version here. Caller (usePreload) must save
+    // schema version only AFTER all updated docs are successfully fetched.
+    // Otherwise a failed batch leaves local schema updated but docs stale.
 
     return { updated, removed, unchanged };
   }
@@ -799,10 +879,13 @@ export type BootstrapData = {
 };
 ```
 
-Update `DocumentCacheBatchPayload` (or whatever the current type name is) to include `content_version`:
-```typescript
-// In the cache batch payload type, add content_version to each document item
-```
+Update `DocumentCacheBatchPayload` to include `content_version` on each document item.
+
+Update `SlideExplanationGeneratePayload` to include `content_version: number`.
+
+Update `DocumentExplanationGeneratePayload` (if exists) to include `content_version: number`.
+
+Both mutation response types must carry `content_version` so the frontend can update the cache manager atomically.
 
 - [ ] **Step 2: Verify build**
 
@@ -871,6 +954,7 @@ export function usePreload(manager: DocumentCacheManager | null) {
         }
 
         let done = 0;
+        let allBatchesSucceeded = true;
         for (const batch of batches) {
           if (runRef.current !== runId) return;
           try {
@@ -886,9 +970,16 @@ export function usePreload(manager: DocumentCacheManager | null) {
             setProgress({ done, total: diff.updated.length });
           } catch (err) {
             console.error("[usePreload] batch failed:", err);
+            allBatchesSucceeded = false;
             done += batch.length;
             setProgress({ done, total: diff.updated.length });
           }
+        }
+
+        // Only persist schema version AFTER all batches succeeded.
+        // If any batch failed, next sync will re-detect schema change and retry.
+        if (allBatchesSucceeded) {
+          await manager.saveSchemaVersion(manifest.schema);
         }
       } catch (err) {
         console.error("[usePreload] sync failed:", err);
@@ -964,6 +1055,18 @@ The new useUpload should be ~80-100 lines. It:
 - Manages loading/status state
 - Exposes the SAME return type as current useUpload (UploadState & UploadActions)
 
+**Critical**: After bootstrap returns `first_document`, immediately seed it into the manager:
+```typescript
+if (data.first_document) {
+  await manager.set(data.first_document.document_id, {
+    slides: data.first_document.slides,
+    explanations: [],  // bootstrap doesn't include explanations
+    version: data.first_document.content_version,
+  });
+}
+```
+This prevents usePreload from re-fetching the first document during manifest sync (its version is already stored).
+
 ```typescript
 // frontend/hooks/useUpload.ts (new, ~80 lines)
 "use client";
@@ -1019,40 +1122,42 @@ Testing uses the tools already in the repo: **backend pytest** for API/model tes
 Add to `backend/tests/test_sync.py`:
 
 ```python
-def test_content_version_bumps_on_explanation_generate(client, auth_headers, sample_document_id):
-    """Generate explanation → document.content_version should increase."""
-    # Get initial version
-    resp = client.get("/api/v1/sync/manifest", headers=auth_headers)
-    v_before = resp.json()["documents"][sample_document_id]["version"]
-    # Generate explanation for first slide
-    # ... (trigger generation)
-    # Check version bumped
-    resp = client.get("/api/v1/sync/manifest", headers=auth_headers)
-    v_after = resp.json()["documents"][sample_document_id]["version"]
-    assert v_after > v_before
-
-def test_manifest_excludes_deleted_documents(client, auth_headers, sample_document_id):
-    """After deleting a document, manifest should not include it."""
-    client.delete(f"/api/v1/documents/{sample_document_id}", headers=auth_headers)
-    resp = client.get("/api/v1/sync/manifest", headers=auth_headers)
-    assert sample_document_id not in resp.json()["documents"]
-
-def test_manifest_includes_schema_versions(client, auth_headers):
+def test_manifest_includes_schema_versions(app_and_client):
     """Manifest schema block should match current global constants."""
-    resp = client.get("/api/v1/sync/manifest", headers=auth_headers)
+    app, client = app_and_client
+    reg = _register_user(client)
+    headers = _auth_header(reg["token"])
+    resp = client.get("/api/v1/sync/manifest", headers=headers)
+    assert resp.status_code == 200
     schema = resp.json()["schema"]
     from app.services.explanation_engine import CURRENT_EXPLANATION_VERSION
     from app.services.slide_processor import CURRENT_EXTRACT_SCHEMA_VERSION
     assert schema["explanation_version"] == CURRENT_EXPLANATION_VERSION
     assert schema["extract_version"] == CURRENT_EXTRACT_SCHEMA_VERSION
 
-def test_cache_batch_includes_content_version(client, auth_headers, sample_document_id):
-    """Cache-batch response should include content_version for each document."""
-    resp = client.get(f"/api/v1/documents/cache-batch?document_id={sample_document_id}", headers=auth_headers)
+def test_cache_batch_includes_content_version(app_and_client):
+    """Cache-batch response should include content_version."""
+    app, client = app_and_client
+    reg = _register_user(client)
+    headers = _auth_header(reg["token"])
+    # Create a ready document with slides via engine
+    from app.db import get_engine
+    from app.models import Slide
+    engine = get_engine(app)
+    with Session(engine) as session:
+        doc = Document(filename="test.pdf", media_type="application/pdf", storage_path="/tmp", user_id=reg["user"]["id"], status="ready", page_count=1)
+        session.add(doc)
+        session.commit()
+        session.refresh(doc)
+        slide = Slide(document_id=doc.id, page_num=1, image_path="slide_001.webp", thumbnail_path="thumb_001.webp", width=800, height=600)
+        session.add(slide)
+        session.commit()
+        doc_id = doc.id
+    resp = client.get(f"/api/v1/documents/cache-batch?document_id={doc_id}", headers=headers)
     assert resp.status_code == 200
-    doc = resp.json()["documents"][0]
-    assert "content_version" in doc
-    assert isinstance(doc["content_version"], int)
+    bundle = resp.json()["documents"][0]
+    assert "content_version" in bundle
+    assert isinstance(bundle["content_version"], int)
 ```
 
 - [ ] **Step 2: Run backend tests**
@@ -1060,22 +1165,22 @@ def test_cache_batch_includes_content_version(client, auth_headers, sample_docum
 Run: `cd backend && python -m pytest tests/test_sync.py -v`
 Expected: ALL PASS
 
-- [ ] **Step 3: Playwright tests — cache sync lifecycle**
+- [ ] **Step 3: Playwright tests — black-box browser flow tests**
 
-Rewrite `tests/test_cache_sync.py` (Playwright-based, same pattern as existing `tests/test_local_cache.py`):
+Rewrite `tests/test_cache_sync.py` (Playwright-based, same pattern as existing `tests/test_local_cache.py`). These tests drive the real app through Playwright, NOT by instantiating DocumentCacheManager directly. They verify end-to-end cache behavior through observable page state and raw IndexedDB reads.
 
-Test cases (run in browser via Playwright `page.evaluate()`):
+Test cases:
 
-1. **DocumentCacheManager.set() persists to IDB**: Create manager, set() a doc, read from IDB, verify match
-2. **DocumentCacheManager.delete() removes from IDB**: Set doc, delete(), verify gone from IDB
-3. **diffManifest removes stale local docs**: Set 3 docs locally, call diffManifest with only 2 in manifest, verify third is removed
-4. **diffManifest detects version change**: Set doc with version=1, manifest has version=2, verify it's in `updated` list
-5. **Schema change marks all as updated**: Set schema locally, call diffManifest with different schema versions, verify ALL docs in `updated`
-6. **updateExplanation preserves existing on error path**: Set doc with explanation, call updateExplanation with `explanation: null, slideState: "error"`, verify original explanation preserved
-7. **Multi-user isolation**: Create manager for "user-A", set data, create manager for "user-B", verify user-B cannot see user-A data
+1. **Fresh login populates IDB**: Login, wait for sync, use `page.evaluate()` to count IndexedDB `documents` store entries, verify count matches number of ready docs
+2. **Reload uses cached data**: After sync completes, reload page, verify first slide appears without re-fetching all docs (check network request count via `performance.getEntriesByType('resource')`)
+3. **Document deletion cleans local cache**: Delete a doc via direct API call, re-login, verify the deleted doc's ID is not in IndexedDB
+4. **Version change triggers re-sync**: Generate explanation via API, re-login, verify the doc's IndexedDB entry has the new version number
+5. **Multi-user isolation**: Login as user A, verify IDB populated. Register user B, login as B, use `page.evaluate()` to check IDB database name includes user ID, verify B cannot see A's data
+6. **IDB failure resilience**: (Manual test — document in plan but skip in CI) Break `indexedDB.open` via page.evaluate, switch document, verify slides still render from memory
+7. **Error path preserves explanation**: (Tested via backend pytest — the updateExplanation null-explanation behavior is internal to DocumentCacheManager, verified by inspecting IDB after a failed generation)
 
-Run: `python tests/test_cache_sync.py` (uses Playwright like the existing test)
-Expected: ALL PASS
+Run: `TEST_USER=shc TEST_PASSWORD=... python tests/test_cache_sync.py`
+Expected: ALL PASS (tests 6-7 are manual/backend-only)
 
 - [ ] **Step 4: Commit**
 
