@@ -178,6 +178,7 @@ class DocumentExplanationsExportResponse(BaseModel):
 
 class DocumentCacheBundleRead(BaseModel):
     document_id: str
+    content_version: int = 1
     slides: list[SlideRead]
     explanations: list[SlideExplanationRead]
 

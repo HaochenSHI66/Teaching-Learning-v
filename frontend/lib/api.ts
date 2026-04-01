@@ -183,16 +183,19 @@ export type SlideExplanation = {
 
 export type SlideExplanationGeneratePayload = SlideExplanation & {
   overwrote_existing: boolean;
+  content_version: number;
 };
 
 export type DocumentExplanationGeneratePayload = {
   document_id: string;
   generated_count: number;
   overwrote_existing: boolean;
+  content_version: number;
 };
 
 export type DocumentCacheBundle = {
   document_id: string;
+  content_version: number;
   slides: Slide[];
   explanations: SlideExplanation[];
 };
@@ -374,6 +377,7 @@ export type BootstrapData = {
   folders: DocumentLibrary;
   first_document: {
     document_id: string;
+    content_version: number;
     slides: Slide[];
   } | null;
 };
@@ -1223,4 +1227,14 @@ export async function deleteAdminDocument(documentId: string): Promise<void> {
 
 export async function fetchAdminSystem(): Promise<AdminSystem> {
   return request<AdminSystem>("/api/v1/admin/system");
+}
+
+// ── Sync manifest ──
+export type SyncManifestResponse = {
+  schema: { explanation_version: number; extract_version: number };
+  documents: Record<string, { version: number; page_count: number; filename: string }>;
+};
+
+export async function fetchSyncManifest(): Promise<SyncManifestResponse> {
+  return request<SyncManifestResponse>("/api/v1/sync/manifest");
 }

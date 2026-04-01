@@ -753,6 +753,7 @@ def get_document_cache_batch(
         bundles.append(
             DocumentCacheBundleRead(
                 document_id=requested_id,
+                content_version=document.content_version or 1,
                 slides=_build_slide_reads(
                     document_id=requested_id,
                     slides=slides,
