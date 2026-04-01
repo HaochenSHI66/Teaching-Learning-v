@@ -13,6 +13,7 @@ from app.api.account import router as account_router
 from app.api.analytics import router as analytics_router
 from app.api.auth import router as auth_router
 from app.api.bookmarks import router as bookmarks_router
+from app.api.bootstrap import router as bootstrap_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
 from app.api.export_notes import router as export_notes_router
@@ -90,6 +91,7 @@ def create_app(
     app.include_router(analytics_router)
     app.include_router(slide_notes_router)
     app.include_router(bookmarks_router)
+    app.include_router(bootstrap_router)
     app.include_router(flashcards_router)
     app.include_router(knowledge_graph_router)
     app.include_router(sync_router)
