@@ -116,6 +116,9 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
   folders,
   dragState,
   sortEnabled,
+  selectMode,
+  selected,
+  onToggleSelect,
 }: {
   document: FolderDocumentItem;
   activeDocumentId: string | null;
@@ -130,6 +133,9 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
   folders: FolderGroup[];
   dragState?: "idle" | "source";
   sortEnabled?: boolean;
+  selectMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (docId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: documentDragId(document.id),
@@ -196,9 +202,18 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
         {...attributes}
       >
         {/* Main row */}
-        <div className="flex h-8 min-w-0 items-center gap-1 px-1">
-          {/* Drag handle — hidden when sort is not manual */}
-          {sortEnabled !== false ? (
+        <div className="flex min-h-[32px] min-w-0 items-center gap-1 px-1 py-1">
+          {/* Select checkbox OR drag handle */}
+          {selectMode ? (
+            <input
+              type="checkbox"
+              checked={selected ?? false}
+              onChange={(e) => { e.stopPropagation(); onToggleSelect?.(document.id); }}
+              onClick={(e) => e.stopPropagation()}
+              className="h-4 w-4 shrink-0 cursor-pointer rounded"
+              style={{ accentColor: "var(--brand-sage)" }}
+            />
+          ) : sortEnabled !== false ? (
             <button
               ref={setActivatorNodeRef}
               {...listeners}
@@ -225,7 +240,7 @@ const SortableDocumentCard = memo(function SortableDocumentCard({
 
           {/* Filename */}
           <span
-            className="min-w-0 flex-1 truncate text-left text-[13px] text-[var(--tx-2)] group-hover:text-[var(--tx-1)] group-hover:underline decoration-[var(--bd-4)] underline-offset-2 transition-colors"
+            className="min-w-0 flex-1 text-left text-[13px] leading-snug break-all text-[var(--tx-2)] group-hover:text-[var(--tx-1)] group-hover:underline decoration-[var(--bd-4)] underline-offset-2 transition-colors"
             title={document.filename}
             onMouseEnter={() => prefetchDocument(document.id)}
             onTouchStart={() => prefetchDocument(document.id)}
@@ -477,8 +492,13 @@ export function DocumentLibrary({
 }: DocumentLibraryProps) {
   const [folderDraftOpen, setFolderDraftOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
-  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<{ total: number; done: number; current: string } | null>(null);
+  const [batchGenQueue, setBatchGenQueue] = useState<{ total: number; done: number; current: string } | null>(null);
+  const batchGenAbortRef = useRef(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const [activeDragDocumentId, setActiveDragDocumentId] = useState<string | null>(null);
   const [activeDropGroupId, setActiveDropGroupId] = useState<string | null>(null);
   const [flashGroupId, setFlashGroupId] = useState<string | null>(null);
@@ -515,17 +535,78 @@ export function DocumentLibrary({
     setFolderDraftOpen(false);
   }
 
-  function handleFileSelected(file: File) {
-    if (showFolderPicker) return; // prevent double-open on rapid clicks
-    setPendingUploadFile(file);
+  function handleFilesSelected(files: File[]) {
+    if (showFolderPicker || files.length === 0) return;
+    setPendingUploadFiles(files);
     setShowFolderPicker(true);
   }
 
   function handleFolderPickerDone(folderId: string | null) {
     setShowFolderPicker(false);
-    const file = pendingUploadFile;
-    setPendingUploadFile(null);
-    if (file) void onUpload(file, folderId);
+    const files = pendingUploadFiles;
+    setPendingUploadFiles([]);
+    if (files.length === 0) return;
+
+    // Queue upload: process files one by one
+    void (async () => {
+      const total = files.length;
+      setUploadQueue({ total, done: 0, current: files[0].name });
+      for (let i = 0; i < total; i++) {
+        setUploadQueue({ total, done: i, current: files[i].name });
+        try {
+          await onUpload(files[i], folderId);
+        } catch (err) {
+          console.error(`Upload failed for ${files[i].name}:`, err);
+        }
+      }
+      setUploadQueue(null);
+    })();
+  }
+
+  async function handleBatchGenerateSelected() {
+    const allDocs = [
+      ...library.folders.flatMap((f) => f.documents),
+      ...library.uncategorized.documents,
+    ].filter((d) => d.status === "ready" && selectedDocIds.has(d.id));
+
+    if (allDocs.length === 0) return;
+    batchGenAbortRef.current = false;
+    setSelectMode(false);
+    const total = allDocs.length;
+
+    for (let i = 0; i < total; i++) {
+      if (batchGenAbortRef.current) break;
+      const doc = allDocs[i];
+      setBatchGenQueue({ total, done: i, current: doc.filename });
+      try {
+        await onRegenerateDocument(doc.id);
+      } catch (err) {
+        console.error(`Batch gen failed for ${doc.filename}:`, err);
+      }
+    }
+    setBatchGenQueue(null);
+    setSelectedDocIds(new Set());
+  }
+
+  function toggleDocSelect(docId: string) {
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    const allDocs = [
+      ...library.folders.flatMap((f) => f.documents),
+      ...library.uncategorized.documents,
+    ].filter((d) => d.status === "ready");
+    if (selectedDocIds.size === allDocs.length) {
+      setSelectedDocIds(new Set());
+    } else {
+      setSelectedDocIds(new Set(allDocs.map((d) => d.id)));
+    }
   }
 
   function setFlashTarget(targetFolderId: string | null) {
@@ -623,20 +704,108 @@ export function DocumentLibrary({
 
   return (
     <div className="flex h-full flex-col p-3">
-      <label className={`btn btn-primary mb-3 inline-flex cursor-pointer text-xs ${backgroundProcessing ? "opacity-70" : ""}`}>
-        <span>{backgroundProcessing ? "处理中…" : "上传 PDF/图片"}</span>
+      <label className={`btn btn-primary mb-3 inline-flex cursor-pointer text-xs ${backgroundProcessing || uploadQueue ? "opacity-70" : ""}`}>
+        <span>
+          {uploadQueue
+            ? `上传中 ${uploadQueue.done + 1}/${uploadQueue.total}`
+            : backgroundProcessing
+              ? "处理中…"
+              : "上传 PDF/图片"}
+        </span>
         <input
           accept=".pdf,image/png,image/jpeg,image/webp"
           className="hidden"
-          disabled={backgroundProcessing}
+          disabled={backgroundProcessing || !!uploadQueue}
+          multiple
           onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) handleFileSelected(file);
+            const fileList = event.target.files;
+            if (fileList && fileList.length > 0) {
+              handleFilesSelected(Array.from(fileList));
+            }
             event.currentTarget.value = "";
           }}
           type="file"
         />
       </label>
+      {/* Batch generate controls */}
+      {batchGenQueue ? (
+        <div className="mb-3 rounded-[14px] border border-[var(--bd-2)] bg-[var(--sf-1)] px-3 py-2">
+          <div className="flex items-center justify-between text-[11px] text-[var(--tx-4)]">
+            <span className="truncate max-w-[160px]">{batchGenQueue.current}</span>
+            <div className="flex items-center gap-2 shrink-0 ml-2">
+              <span className="tabular-nums">{batchGenQueue.done + 1}/{batchGenQueue.total}</span>
+              <button
+                className="rounded px-1.5 py-0.5 text-[10px] border border-[var(--bd-2)] hover:bg-[var(--sf-3)] transition-colors"
+                onClick={() => { batchGenAbortRef.current = true; }}
+                type="button"
+              >
+                停止
+              </button>
+            </div>
+          </div>
+          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-[var(--sf-4)]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[var(--brand-sage)] to-[var(--brand-amber)] transition-all duration-500"
+              style={{ width: `${((batchGenQueue.done + 1) / batchGenQueue.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      ) : selectMode ? (
+        <div className="mb-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between text-[12px] text-[var(--tx-3)]">
+            <button
+              className="underline underline-offset-2 text-[var(--tx-4)] hover:text-[var(--tx-2)] transition-colors"
+              onClick={toggleSelectAll}
+              type="button"
+            >
+              {selectedDocIds.size === [...library.folders.flatMap((f) => f.documents), ...library.uncategorized.documents].filter((d) => d.status === "ready").length ? "取消全选" : "全选"}
+            </button>
+            <span className="text-[var(--tx-5)]">已选 {selectedDocIds.size} 篇</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="btn btn-primary flex-1 !py-1.5 text-[11px]"
+              disabled={selectedDocIds.size === 0 || loading || !!generationDocId}
+              onClick={() => void handleBatchGenerateSelected()}
+              type="button"
+            >
+              生成解析 ({selectedDocIds.size})
+            </button>
+            <button
+              className="btn btn-outline !py-1.5 !px-3 text-[11px]"
+              onClick={() => { setSelectMode(false); setSelectedDocIds(new Set()); }}
+              type="button"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          className="btn btn-outline mb-3 w-full text-xs"
+          disabled={loading || !!generationDocId || !!uploadQueue}
+          onClick={() => setSelectMode(true)}
+          type="button"
+        >
+          批量生成解析
+        </button>
+      )}
+
+      {/* Upload queue progress */}
+      {uploadQueue && (
+        <div className="mb-3 rounded-[14px] border border-[var(--bd-2)] bg-[var(--sf-1)] px-3 py-2">
+          <div className="flex items-center justify-between text-[11px] text-[var(--tx-4)]">
+            <span className="truncate max-w-[180px]">{uploadQueue.current}</span>
+            <span className="tabular-nums shrink-0 ml-2">{uploadQueue.done + 1}/{uploadQueue.total}</span>
+          </div>
+          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-[var(--sf-4)]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[var(--brand-sage)] to-[var(--brand-amber)] transition-all duration-500"
+              style={{ width: `${((uploadQueue.done + 1) / uploadQueue.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="mb-3 rounded-[18px] border border-[var(--bd-2)] bg-[var(--sf-1)] p-2.5">
         {folderDraftOpen ? (
@@ -753,6 +922,9 @@ export function DocumentLibrary({
                           folders={library.folders}
                           dragState={document.id === activeDragDocumentId ? "source" : "idle"}
                           sortEnabled={sortMode === "manual"}
+                          selectMode={selectMode}
+                          selected={selectedDocIds.has(document.id)}
+                          onToggleSelect={toggleDocSelect}
                         />
                       ))
                     )}
@@ -781,13 +953,13 @@ export function DocumentLibrary({
 
       <FolderPickerModal
         isOpen={showFolderPicker}
-        filename={pendingUploadFile?.name ?? ""}
+        filename={pendingUploadFiles.length === 1 ? pendingUploadFiles[0].name : `${pendingUploadFiles.length} 个文件`}
         folders={library.folders}
         mode="upload"
         onConfirm={handleFolderPickerDone}
         onClose={() => {
           setShowFolderPicker(false);
-          setPendingUploadFile(null);
+          setPendingUploadFiles([]);
         }}
       />
     </div>

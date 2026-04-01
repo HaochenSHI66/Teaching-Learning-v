@@ -40,6 +40,9 @@ export default function Page() {
   const [roi, setRoi] = useState<RoiBox | null>(null);
   const [globalStatus, setGlobalStatus] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [splitRatio, setSplitRatio] = useState(50); // percentage for left panel
+  const splitDragging = useRef(false);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
   const [interactiveReady, setInteractiveReady] = useState(false);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [bookmarkFilter, setBookmarkFilter] = useState<BookmarkTag | null>(null);
@@ -48,43 +51,28 @@ export default function Page() {
   const [exportModalOpen, setExportModalOpen] = useState(false);
 
   // ── Loading screen state ──
+  // Bootstrap API loads folders + first doc in ONE request.
+  // initialLoaded = bootstrap complete = all data ready.
   const [appReady, setAppReady] = useState(false);
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
-  const firstDocLoadedRef = useRef(false);
   const [loadingSteps, setLoadingSteps] = useState([
     { label: "正在连接服务器…", done: false },
-    { label: "加载文档库…", done: false },
-    { label: "预载最近文档…", done: false },
+    { label: "加载数据…", done: false },
+    { label: "准备就绪…", done: false },
   ]);
 
-  // Step 1: mark "connected" once component mounts
+  // Step 1: connected on mount
   useEffect(() => {
     setLoadingSteps((prev) => prev.map((s, i) => i === 0 ? { ...s, done: true } : s));
   }, []);
 
-  // Step 2: mark "library loaded" when initial fetch completes
+  // Step 2+3: bootstrap complete (folders + first doc all in one request)
   useEffect(() => {
     if (upload.initialLoaded) {
-      setLoadingSteps((prev) => prev.map((s, i) => i <= 1 ? { ...s, done: true } : s));
-    }
-  }, [upload.initialLoaded]);
-
-  // Step 3: auto-load first document during loading screen
-  useEffect(() => {
-    if (!upload.initialLoaded || firstDocLoadedRef.current) return;
-    firstDocLoadedRef.current = true;
-
-    const firstDoc = upload.documents[0];
-    if (firstDoc) {
-      // Preload first document while loading screen is still showing
-      upload.loadDocument(firstDoc.id).finally(() => {
-        setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true })));
-      });
-    } else {
-      // No documents — skip step 3
+      // All data arrived from bootstrap — mark everything done
       setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true })));
     }
-  }, [upload.initialLoaded, upload.documents]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [upload.initialLoaded]);
 
   // Auto-dismiss loading screen after all steps done
   useEffect(() => {
@@ -118,6 +106,11 @@ export default function Page() {
       img.src = slides[i].image_url;
     }
   }, [upload.slides, currentSlideIndex]);
+
+  // Mobile: sidebar starts collapsed (drawer mode)
+  useEffect(() => {
+    if (isMobile) setSidebarCollapsed(true);
+  }, [isMobile]);
 
   // Task 1 & 6: Keyboard navigation via extracted hook
   useKeyboardNavigation(upload.slides, currentSlideIndex, setCurrentSlideIndex);
@@ -396,8 +389,60 @@ export default function Page() {
       )}
 
       <div className={`relative flex min-h-0 flex-1 overflow-hidden ${isMobile ? "gap-0 p-0" : "gap-4 p-4 md:p-5"}`}>
-        {/* Sidebar — hidden on mobile */}
-        {!isMobile && (
+        {/* Sidebar — drawer overlay on mobile, inline on desktop */}
+        {isMobile ? (
+          <>
+            {/* Backdrop */}
+            {!sidebarCollapsed && (
+              <div
+                className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity"
+                onClick={() => setSidebarCollapsed(true)}
+              />
+            )}
+            {/* Drawer */}
+            <aside
+              className={`fixed inset-y-0 left-0 z-40 w-[85vw] max-w-[340px] bg-[var(--sf-sidebar)] shadow-2xl transition-transform duration-300 ease-out ${
+                sidebarCollapsed ? "-translate-x-full" : "translate-x-0"
+              }`}
+            >
+              <div className="flex h-full flex-col pt-2">
+                <div className="flex items-center justify-between px-3 pb-2">
+                  <span className="text-[13px] font-medium text-[var(--tx-2)]">文档库</span>
+                  <button
+                    className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-[var(--sf-3)] transition-colors"
+                    onClick={() => setSidebarCollapsed(true)}
+                    type="button"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <DocumentLibrary
+                    activeDocumentId={upload.documentId}
+                    backgroundProcessing={upload.backgroundProcessing}
+                    generationDocId={upload.generationDocId}
+                    generationProgress={upload.generationProgress}
+                    library={upload.library}
+                    loading={loading}
+                    onAbortGeneration={upload.abortGeneration}
+                    onCreateFolder={(name) => upload.createFolder(name)}
+                    onDeleteDocument={handleDeleteDocument}
+                    onDeleteFolder={handleDeleteFolder}
+                    onMoveDocument={upload.moveDocument}
+                    onRegenerateDocument={upload.regenerateDocumentExplanations}
+                    onSelectDocument={(docId) => {
+                      setSidebarCollapsed(true); // auto-close drawer after selecting
+                      return upload.loadDocument(docId);
+                    }}
+                    onUpload={upload.handleUpload}
+                  />
+                </div>
+              </div>
+            </aside>
+          </>
+        ) : (
           <aside
             className={`min-h-0 shrink-0 overflow-hidden rounded-[28px] border border-[var(--bd-1)] bg-[var(--sf-sidebar)] shadow-[var(--sh-panel)] backdrop-blur-xl transition-all duration-300 ${
               sidebarCollapsed ? "w-0 basis-0 min-w-0 p-0 border-0 opacity-0 pointer-events-none" : "w-[320px] basis-[320px]"
@@ -422,12 +467,27 @@ export default function Page() {
           </aside>
         )}
 
-        <section className={`grid h-full min-h-0 flex-1 ${
-          isMobile
-            ? "grid-rows-[45%_1fr] gap-0"
-            : "grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]"
-        }`}>
-            {/* Task 3: Processing animation for first upload */}
+        <section
+          ref={splitContainerRef}
+          className={`flex h-full min-h-0 min-w-0 flex-1 overflow-hidden ${
+            isMobile
+              ? "flex-col gap-0"
+              : "flex-row gap-0"
+          }`}
+          onMouseMove={(e) => {
+            if (!splitDragging.current || isMobile || !splitContainerRef.current) return;
+            const rect = splitContainerRef.current.getBoundingClientRect();
+            const pct = ((e.clientX - rect.left) / rect.width) * 100;
+            setSplitRatio(Math.max(30, Math.min(70, pct)));
+          }}
+          onMouseUp={() => { splitDragging.current = false; }}
+          onMouseLeave={() => { splitDragging.current = false; }}
+        >
+            {/* Left panel: Slide Viewer */}
+            <div
+              className="min-h-0 min-w-0 overflow-hidden shrink-0"
+              style={isMobile ? { height: "45%" } : { flex: `0 0 calc(${splitRatio}% - 6px)` }}
+            >
             {showProcessingAnimation ? (
               <div className="flex h-full flex-col items-center justify-center rounded-[30px] border border-[var(--bd-1)] bg-[var(--gd-processing)] shadow-[var(--sh-card)]">
                 <svg className="mb-4 h-8 w-8 animate-spin text-[var(--tx-5)]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -454,6 +514,24 @@ export default function Page() {
               />
             </ErrorBoundary>
             )}
+            </div>
+
+            {/* Drag handle (desktop only) */}
+            {!isMobile && (
+              <div
+                className="shrink-0 flex items-center justify-center cursor-col-resize group select-none"
+                style={{ width: 12 }}
+                onMouseDown={(e) => { e.preventDefault(); splitDragging.current = true; }}
+              >
+                <div className="h-8 w-1 rounded-full bg-[var(--bd-2)] transition-colors group-hover:bg-[var(--bd-4)] group-active:bg-[var(--brand-amber)]" />
+              </div>
+            )}
+
+            {/* Right panel: AI Panel */}
+            <div
+              className="min-h-0 min-w-0 overflow-hidden"
+              style={isMobile ? { flex: 1 } : { flex: `1 1 0%` }}
+            >
             <ErrorBoundary resetKey={upload.documentId}>
               <AIPanel
                 batchProgress={batchProgress}
@@ -490,8 +568,11 @@ export default function Page() {
                   if (upload.sessionId) void chat.ask(message, upload.sessionId, currentSlide);
                 }}
                 roiReady={Boolean(roi)}
+                slidePageMap={Object.fromEntries(upload.slides.map((s) => [s.id, s.page_num]))}
+                sessionId={upload.sessionId ?? undefined}
               />
             </ErrorBoundary>
+            </div>
         </section>
       </div>
 

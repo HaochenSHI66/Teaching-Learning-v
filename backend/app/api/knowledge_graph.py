@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/v1/knowledge-graph", tags=["knowledge-graph"])
 logger = logging.getLogger(__name__)
 
 # ── Chunked generation settings ──────────────────────────────────
-CHUNK_SIZE = 12  # pages per LLM call (within the 10-15 range)
+CHUNK_SIZE = 6  # pages per LLM call (reduced from 12 to prevent JSON truncation)
 
 CONCEPT_EXTRACT_PROMPT = """你是一个专业的学术知识图谱提取引擎。你的任务是从PPT讲解内容中精确提取核心概念和它们之间的逻辑关系，构建高质量的知识图谱。
 
@@ -53,8 +53,8 @@ CONCEPT_EXTRACT_PROMPT = """你是一个专业的学术知识图谱提取引擎�
 - 不要写空洞的描述如"一个重要的概念"。要写具体内容，如"一种基于梯度信息迭代更新参数以最小化损失函数的优化算法"
 
 页码标注（slide_nums）：
-- 只标注该概念被**实质性讨论**的页码，即该页对概念有定义、推导、举例或深入解释
-- 如果某页只是在列表中提到了概念名称但没有展开，不要标注该页
+- 标注该概念出现的**所有页码**，包括定义、推导、举例、提及
+- 宁多勿少——只要该页内容涉及到这个概念就应该标注
 
 重要度评分（importance）：
 - 5：文档的核心主题概念，贯穿全文
@@ -128,13 +128,39 @@ def _create_text_gateway(timeout: float = 120.0) -> ModelGateway:
 
 
 def _parse_llm_json(raw: str) -> dict:
-    """Parse JSON from LLM output, stripping markdown fences if present."""
+    """Parse JSON from LLM output, with truncation repair."""
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.split("\n", 1)[1]
     if cleaned.endswith("```"):
         cleaned = cleaned.rsplit("```", 1)[0]
-    return json.loads(cleaned.strip())
+    cleaned = cleaned.strip()
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Try to repair truncated JSON by closing open brackets
+        repaired = cleaned
+        # Count open/close braces and brackets
+        open_braces = repaired.count("{") - repaired.count("}")
+        open_brackets = repaired.count("[") - repaired.count("]")
+        # Trim back to last complete item (find last '},')
+        last_complete = max(repaired.rfind("},"), repaired.rfind("}]"))
+        if last_complete > 0:
+            repaired = repaired[: last_complete + 1]
+            # Close remaining open brackets/braces
+            open_brackets = repaired.count("[") - repaired.count("]")
+            open_braces = repaired.count("{") - repaired.count("}")
+            repaired += "]" * max(0, open_brackets)
+            repaired += "}" * max(0, open_braces)
+            try:
+                result = json.loads(repaired)
+                logger.warning("Repaired truncated JSON (trimmed %d chars)", len(cleaned) - len(repaired))
+                return result
+            except json.JSONDecodeError:
+                pass
+        # If repair fails, raise original error
+        raise
 
 
 def _chunk_explanations(
@@ -646,7 +672,9 @@ def get_prerequisite_chain(
         for prereq_id in prereqs_map.get(cid, []):
             if prereq_id not in visited:
                 _traverse(prereq_id, depth + 1)
-        chain.append(cid)
+        # Don't include the target concept itself in its own prerequisite chain
+        if cid != concept_id:
+            chain.append(cid)
 
     _traverse(concept_id, 0)
 

@@ -219,110 +219,50 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
     );
   }
 
-  // ── Desktop layout: thumbnails + main slide ──
+  // ── Desktop layout: main slide on top, thumbnails strip at bottom ──
   return (
-    <section className="grid h-full min-h-0 grid-cols-[112px_1fr] gap-4 rounded-[30px] border border-[var(--bd-1)] bg-[var(--sf-2)]/96 p-4 shadow-[var(--sh-card)]">
-      <aside className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-[var(--bd-2)] bg-[var(--sf-3)] p-2">
-        <BookmarkFilter
-          activeFilter={bookmarkFilter}
-          onFilterChange={onBookmarkFilterChange}
-          bookmarkCounts={{
-            important: bookmarks.filter((b) => b.tag === "important").length,
-            difficult: bookmarks.filter((b) => b.tag === "difficult").length,
-            review: bookmarks.filter((b) => b.tag === "review").length,
-            exam: bookmarks.filter((b) => b.tag === "exam").length,
-          }}
-        />
-        <ul className="min-h-0 flex-1 space-y-2 overflow-auto">
-          {slides.map((slide, index) => {
-            const slideBMs = bookmarks.filter((b) => b.slide_id === slide.id);
-            if (bookmarkFilter && !slideBMs.some((b) => b.tag === bookmarkFilter)) return null;
-            const dotColors: Record<BookmarkTag, string> = {
-              important: "bg-red-400",
-              difficult: "bg-orange-400",
-              review: "bg-blue-400",
-              exam: "bg-purple-400",
-            };
-            const slideStat = flashcardStats?.slides.find((s) => s.slide_id === slide.id);
-            return (
-              <li key={slide.id}>
-                <button
-                  className={`w-full overflow-hidden rounded-xl border text-left transition ${
-                    index === currentIndex
-                      ? "border-[var(--bd-4)] bg-[var(--gd-active-card)] ring-2 ring-[var(--bd-4)]/40"
-                      : "border-[var(--bd-2)] bg-[var(--sf-1)] hover:border-[var(--bd-4)] hover:bg-[var(--sf-1)]"
-                  }`}
-                  onClick={() => {
-                    onSelect(index);
-                    onRoiChange(null);
-                  }}
-                  type="button"
-                >
-                  <img
-                    alt={`Slide ${slide.page_num}`}
-                    className="block h-auto w-full"
-                    loading="lazy"
-                    decoding="async"
-                    src={getAssetUrl(slide.thumbnail_url)}
-                  />
-                  {slideStat && slideStat.total > 0 && (
-                    <div className="flex h-1 w-full">
-                      {slideStat.mastered > 0 && (
-                        <div className="h-full bg-emerald-400" style={{ width: `${(slideStat.mastered / slideStat.total) * 100}%` }} />
-                      )}
-                      {slideStat.total - slideStat.mastered - slideStat.due > 0 && (
-                        <div className="h-full bg-amber-300" style={{ width: `${((slideStat.total - slideStat.mastered - slideStat.due) / slideStat.total) * 100}%` }} />
-                      )}
-                      {slideStat.due > 0 && (
-                        <div className="h-full bg-gray-300" style={{ width: `${(slideStat.due / slideStat.total) * 100}%` }} />
-                      )}
-                    </div>
-                  )}
-                  <span className="flex items-center gap-1 bg-[var(--sf-3)] px-2 py-1 text-xs text-[var(--tx-4)]">
-                    #{slide.page_num}
-                    {slideBMs.map((bm) => (
-                      <span key={bm.id} className={`inline-block h-1.5 w-1.5 rounded-full ${dotColors[bm.tag]}`} />
-                    ))}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </aside>
+    <section className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-[30px] border border-[var(--bd-1)] bg-[var(--sf-2)]/96 p-4 shadow-[var(--sh-card)]">
+      {/* Header bar */}
+      <header className="shrink-0 flex items-center justify-between rounded-[24px] border border-[var(--bd-2)] bg-[var(--sf-1)] px-4 py-2.5 text-sm text-[var(--tx-4)]">
+        <div className="flex items-center gap-3">
+          <p className="text-sm font-medium text-[var(--tx-2)]">第 {currentSlide.page_num} 页</p>
+          <BookmarkFilter
+            activeFilter={bookmarkFilter}
+            onFilterChange={onBookmarkFilterChange}
+            bookmarkCounts={{
+              important: bookmarks.filter((b) => b.tag === "important").length,
+              difficult: bookmarks.filter((b) => b.tag === "difficult").length,
+              review: bookmarks.filter((b) => b.tag === "review").length,
+              exam: bookmarks.filter((b) => b.tag === "exam").length,
+            }}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          {currentSlide && (
+            <SlideBookmarks
+              slideId={currentSlide.id}
+              documentId={documentId}
+              bookmarks={bookmarks}
+              onBookmarksChange={onBookmarksChange}
+            />
+          )}
+          {roi ? <span className="rounded-full border border-[var(--bd-4)] bg-[#f2e8d3] px-3 py-1 text-xs text-[#6d7f5a]">ROI</span> : null}
+          <button
+            className="btn btn-outline !rounded-lg !px-3 !py-1.5 text-xs"
+            onClick={() => onRoiChange(null)}
+            type="button"
+          >
+            清除框选
+          </button>
+          <span className="tabular-nums text-[12px]">
+            {currentIndex + 1}/{slides.length}
+          </span>
+        </div>
+      </header>
 
-      <div className="flex min-h-0 flex-col gap-3">
-        <header className="shrink-0 flex items-center justify-between rounded-[24px] border border-[var(--bd-2)] bg-[var(--sf-1)] px-4 py-3 text-sm text-[var(--tx-4)]">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--tx-6)]">Current Slide</p>
-            <p className="mt-1 text-sm font-medium text-[var(--tx-2)]">当前页：{currentSlide.page_num}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {currentSlide && (
-              <SlideBookmarks
-                slideId={currentSlide.id}
-                documentId={documentId}
-                bookmarks={bookmarks}
-                onBookmarksChange={onBookmarksChange}
-              />
-            )}
-            {roi ? <span className="rounded-full border border-[var(--bd-4)] bg-[#f2e8d3] px-3 py-1 text-xs text-[#6d7f5a]">ROI 已选择</span> : null}
-            <button
-              className="btn btn-outline !rounded-lg !px-3 !py-1.5 text-xs"
-              onClick={() => onRoiChange(null)}
-              type="button"
-            >
-              清除框选
-            </button>
-            <span>
-              {currentIndex + 1}/{slides.length}
-            </span>
-          </div>
-        </header>
-
-        <div className="flex-1 overflow-auto rounded-[24px] border border-[var(--bd-2)] bg-[var(--gd-slide)] p-3">
+        <div className="flex-1 min-h-0 overflow-hidden rounded-[24px] border border-[var(--bd-2)] bg-[var(--gd-slide)] p-3 flex items-center justify-center">
           <div
-            className="relative mx-auto inline-block touch-none select-none rounded-[22px] border border-[var(--bd-1)] bg-[var(--sf-1)] p-2 shadow-[var(--sh-panel)]"
+            className="relative touch-none select-none rounded-[22px] border border-[var(--bd-1)] bg-[var(--sf-1)] p-2 shadow-[var(--sh-panel)] max-w-full max-h-full"
             // Mouse events
             onMouseDown={(event) => {
               const point = toRelative(event.clientX, event.clientY);
@@ -381,7 +321,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
             <img
               ref={imgRef}
               alt={`Slide ${currentSlide.page_num}`}
-              className={`mx-auto block h-auto max-w-full rounded-[18px] ${mainImageLoaded ? "" : "opacity-0"}`}
+              className={`mx-auto block max-w-full max-h-full rounded-[18px] object-contain ${mainImageLoaded ? "" : "opacity-0"}`}
               draggable={false}
               fetchPriority="high"
               decoding="async"
@@ -395,6 +335,65 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
               />
             ) : null}
           </div>
+        </div>
+
+      {/* Thumbnail strip at bottom — horizontal scroll */}
+      <div className="shrink-0 max-h-[72px] rounded-[14px] border border-[var(--bd-2)] bg-[var(--sf-3)] p-1">
+        <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: "thin" }}>
+          {slides.map((slide, index) => {
+            const slideBMs = bookmarks.filter((b) => b.slide_id === slide.id);
+            if (bookmarkFilter && !slideBMs.some((b) => b.tag === bookmarkFilter)) return null;
+            const dotColors: Record<BookmarkTag, string> = {
+              important: "bg-red-400",
+              difficult: "bg-orange-400",
+              review: "bg-blue-400",
+              exam: "bg-purple-400",
+            };
+            const slideStat = flashcardStats?.slides.find((s) => s.slide_id === slide.id);
+            return (
+              <button
+                key={slide.id}
+                className={`shrink-0 overflow-hidden rounded-lg border transition ${
+                  index === currentIndex
+                    ? "border-[var(--bd-4)] ring-2 ring-[var(--brand-amber)]/30"
+                    : "border-[var(--bd-2)] hover:border-[var(--bd-4)]"
+                }`}
+                onClick={() => {
+                  onSelect(index);
+                  onRoiChange(null);
+                }}
+                type="button"
+                style={{ width: 64 }}
+              >
+                <img
+                  alt={`Slide ${slide.page_num}`}
+                  className="block h-auto w-full"
+                  loading="lazy"
+                  decoding="async"
+                  src={getAssetUrl(slide.thumbnail_url)}
+                />
+                {slideStat && slideStat.total > 0 && (
+                  <div className="flex h-0.5 w-full">
+                    {slideStat.mastered > 0 && (
+                      <div className="h-full bg-emerald-400" style={{ width: `${(slideStat.mastered / slideStat.total) * 100}%` }} />
+                    )}
+                    {slideStat.total - slideStat.mastered - slideStat.due > 0 && (
+                      <div className="h-full bg-amber-300" style={{ width: `${((slideStat.total - slideStat.mastered - slideStat.due) / slideStat.total) * 100}%` }} />
+                    )}
+                    {slideStat.due > 0 && (
+                      <div className="h-full bg-gray-300" style={{ width: `${(slideStat.due / slideStat.total) * 100}%` }} />
+                    )}
+                  </div>
+                )}
+                <div className="flex items-center justify-center gap-0.5 bg-[var(--sf-3)] py-0.5 text-[10px] text-[var(--tx-5)]">
+                  {slide.page_num}
+                  {slideBMs.map((bm) => (
+                    <span key={bm.id} className={`inline-block h-1 w-1 rounded-full ${dotColors[bm.tag]}`} />
+                  ))}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </section>

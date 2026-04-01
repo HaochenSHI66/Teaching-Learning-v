@@ -118,9 +118,14 @@ export function useSlideGeneration({
     }
   }, [documentId, currentSlide, setCachedExplanation, setExplanation, setExplanationMeta, setGlobalStatus, startProgressTimer, stopProgressTimer]);
 
+  const batchAbortControllerRef = useRef<AbortController | null>(null);
+
   const handleBatchGenerate = useCallback(async () => {
     if (!documentId || slides.length === 0) return;
     batchAbortRef.current = false;
+    const abortController = new AbortController();
+    batchAbortControllerRef.current = abortController;
+
     setSlideGenerationLoading(true);
     setGlobalStatus("批量生成解析中…");
 
@@ -139,8 +144,13 @@ export function useSlideGeneration({
       setBatchProgress((prev) => prev ? { ...prev, currentPages } : prev);
 
       const results = await Promise.allSettled(
-        windowSlides.map((slide) => generateSlideExplanation(documentId!, slide.id)),
+        windowSlides.map((slide) =>
+          generateSlideExplanation(documentId!, slide.id, abortController.signal),
+        ),
       );
+
+      if (batchAbortRef.current) break;
+
       for (let j = 0; j < results.length; j++) {
         const r = results[j];
         if (r.status === "fulfilled") {
@@ -154,6 +164,7 @@ export function useSlideGeneration({
       setGlobalStatus(`批量生成中… ${completed}/${total} 页`);
     }
 
+    batchAbortControllerRef.current = null;
     setSlideGenerationLoading(false);
     const aborted = batchAbortRef.current;
     setGlobalStatus(
@@ -172,6 +183,8 @@ export function useSlideGeneration({
 
   const abortBatchGeneration = useCallback(() => {
     batchAbortRef.current = true;
+    // Immediately cancel in-flight HTTP requests
+    batchAbortControllerRef.current?.abort();
   }, []);
 
   return {

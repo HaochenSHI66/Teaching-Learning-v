@@ -28,6 +28,7 @@ from app.api.sessions import router as sessions_router
 from app.api.slide_notes import router as slide_notes_router
 from app.api.sync import router as sync_router
 from app.api.admin import router as admin_router
+from app.api.bootstrap import router as bootstrap_router
 from app.api.usage import router as usage_router
 from app.db import create_db_engine, ensure_storage, get_database_url, init_db
 
@@ -97,6 +98,7 @@ def create_app(
     app.include_router(sync_router)
     app.include_router(usage_router)
     app.include_router(admin_router)
+    app.include_router(bootstrap_router)
 
     init_db(engine)
 

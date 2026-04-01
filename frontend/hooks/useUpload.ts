@@ -3,10 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
+  getCachedSlides,
+  setCachedSlides as setLocalSlides,
+  getCachedExplanations as getLocalExplanations,
+  setCachedExplanationsLocal as setLocalExplanations,
+  isCacheFresh,
+  setLastSyncTime,
+} from "@/lib/localCache";
+import {
   createSession,
   createFolder as createFolderRequest,
   deleteDocument as deleteDocumentRequest,
   deleteFolder as deleteFolderRequest,
+  fetchBootstrap,
+  fetchDocumentCacheBatch,
   fetchDocumentExplanations,
   fetchDocumentStatus,
   fetchExplanationsWithPrefetch,
@@ -65,11 +75,34 @@ const EMPTY_LIBRARY: DocumentLibrary = {
   uncategorized: { id: "uncategorized", name: "未归类", documents: [] },
 };
 
+const PRELOAD_START_DELAY_MS = 4_000;
+const PRELOAD_BATCH_SIZE = 4;
+const PRELOAD_BATCH_CONCURRENCY = 2;
+
 function flattenLibrary(library: DocumentLibrary): DocumentListItem[] {
   return [
     ...library.folders.flatMap((folder) => folder.documents),
     ...library.uncategorized.documents,
   ];
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function countReadySlides(items: Slide[]): number {
+  return items.reduce((total, slide) => total + (slide.explanation_state === "ready" ? 1 : 0), 0);
+}
+
+function hasCompleteExplanationCache(slides: Slide[] | undefined, explanations: SlideExplanation[] | undefined): boolean {
+  if (!slides || !explanations) return false;
+  const requiredReadyCount = countReadySlides(slides);
+  if (requiredReadyCount === 0) return true;
+  return new Set(explanations.map((item) => item.slide_id)).size >= requiredReadyCount;
 }
 
 function moveLibraryDocument(
@@ -144,15 +177,139 @@ export function useUpload(): UploadState & UploadActions {
   const documentIdRef = useRef<string | null>(null);
   /** Track document IDs that have already been auto-generated to avoid repeating. */
   const autoGenDoneRef = useRef<Set<string>>(new Set());
+  /** Monotonic run ID for background full-library preload. */
+  const preloadRunRef = useRef(0);
 
   useEffect(() => {
-    void refreshDocuments();
+    void bootstrapLoad();
   }, []);
 
   // Keep documentIdRef in sync for stale-closure checks in fire-and-forget async blocks.
   useEffect(() => {
     documentIdRef.current = documentId;
   }, [documentId]);
+
+  function hasFullCachedDocument(targetDocumentId: string): boolean {
+    // Simply check if we have slides data cached — don't check explanation completeness
+    // (which incorrectly skips docs with no generated explanations)
+    return slideCacheRef.current.has(targetDocumentId);
+  }
+
+  function prioritizeDocumentsForPreload(
+    docs: DocumentListItem[],
+    priorityDocumentId?: string | null,
+  ): DocumentListItem[] {
+    if (!priorityDocumentId) return docs;
+    const priorityDoc = docs.find((doc) => doc.id === priorityDocumentId);
+    if (!priorityDoc) return docs;
+    return [priorityDoc, ...docs.filter((doc) => doc.id !== priorityDocumentId)];
+  }
+
+  async function restoreLocalCacheToMemory(docs: DocumentListItem[], currentDocumentId?: string | null) {
+    await Promise.all(
+      docs.map(async (doc) => {
+        const [localSlides, localExp] = await Promise.all([
+          getCachedSlides(doc.id).catch(() => undefined),
+          getLocalExplanations(doc.id).catch(() => undefined),
+        ]);
+        if (localSlides) slideCacheRef.current.set(doc.id, localSlides);
+        if (localExp) explanationCacheRef.current.set(doc.id, localExp);
+      }),
+    );
+
+    const focusDocumentId = currentDocumentId ?? documentIdRef.current;
+    if (!focusDocumentId) return;
+    const localExp = explanationCacheRef.current.get(focusDocumentId);
+    if (localExp) {
+      setCachedExplanations(Object.fromEntries(localExp.map((item) => [item.slide_id, item])));
+    }
+  }
+
+  /** One-shot bootstrap: try local cache first, fallback to network. */
+  async function bootstrapLoad() {
+    try {
+      const data = await fetchBootstrap();
+      setLibrary(data.folders);
+      setDocuments(flattenLibrary(data.folders));
+
+      const allDocs = flattenLibrary(data.folders).filter((d) => d.status === "ready");
+      const initialDocumentId = data.first_document?.document_id ?? null;
+
+      // Restore memory cache from IndexedDB in background (don't block loading screen)
+      void (async () => {
+        try {
+          await restoreLocalCacheToMemory(allDocs, initialDocumentId);
+        } catch {
+          // IndexedDB restore failed — ignore
+        }
+        // Always preload to fill any gaps (preloadAllDocuments skips already-cached docs)
+        try {
+          await new Promise((resolve) => setTimeout(resolve, PRELOAD_START_DELAY_MS ?? 0));
+        } catch { /* ignore */ }
+        void preloadAllDocuments(allDocs, {
+          priorityDocumentId: initialDocumentId,
+          forceRefreshAll: false,
+        });
+      })();
+
+      // If bootstrap includes first document data, show slides immediately
+      if (data.first_document) {
+        const { document_id, slides: fetchedSlides } = data.first_document;
+        documentIdRef.current = document_id;
+        setDocumentId(document_id);
+        setSlides(fetchedSlides);
+        slideCacheRef.current.set(document_id, fetchedSlides);
+        setStatusText(`文档加载完成，共 ${fetchedSlides.length} 页。`);
+
+        // If explanations already in local cache, use immediately; otherwise fetch
+        const localExp = explanationCacheRef.current.get(document_id);
+        if (localExp) {
+          setCachedExplanations(Object.fromEntries(localExp.map((item) => [item.slide_id, item])));
+        } else {
+          fetchDocumentExplanations(document_id)
+            .then((explanations) => {
+              explanationCacheRef.current.set(document_id, explanations);
+              void setLocalExplanations(document_id, explanations);
+              if (documentIdRef.current === document_id) {
+                setCachedExplanations(Object.fromEntries(explanations.map((item) => [item.slide_id, item])));
+              }
+            })
+            .catch(() => {});
+        }
+
+        // Preload first slide image
+        if (fetchedSlides.length > 0 && typeof window !== "undefined") {
+          const img = new window.Image();
+          img.src = getAssetUrl(fetchedSlides[0].image_url);
+          for (const slide of fetchedSlides) {
+            const t = new window.Image();
+            t.src = getAssetUrl(slide.thumbnail_url);
+          }
+        }
+
+        // Session + explanations: load async (don't block loading screen)
+        if (fetchedSlides.length > 0) {
+          createSession(document_id, fetchedSlides[0].id)
+            .then((s) => setSessionId(s?.id ?? null))
+            .catch(() => {});
+        }
+      }
+      // preloadAllDocuments is now called from the IndexedDB check above
+
+    } catch (err) {
+      console.error("[useUpload] bootstrap failed, falling back to refreshDocuments:", err);
+      // Fallback to old method
+      try {
+        const nextLibrary = await fetchFolderLibrary();
+        setLibrary(nextLibrary);
+        setDocuments(flattenLibrary(nextLibrary));
+      } catch (err2) {
+        console.error("[useUpload] refreshDocuments also failed:", err2);
+      }
+    } finally {
+      setInitialLoaded(true);
+    }
+  }
 
   async function refreshDocuments() {
     try {
@@ -161,8 +318,6 @@ export function useUpload(): UploadState & UploadActions {
       setDocuments(flattenLibrary(nextLibrary));
     } catch (err) {
       console.error("[useUpload] refreshDocuments failed:", err);
-    } finally {
-      setInitialLoaded(true);
     }
   }
 
@@ -175,37 +330,38 @@ export function useUpload(): UploadState & UploadActions {
     const fetchedSlides = await slidesPromise;
     setDocumentId(targetDocumentId);
     setSlides(fetchedSlides);
+    slideCacheRef.current.set(targetDocumentId, fetchedSlides);
 
-    // ── Preload ALL thumbnail + first slide images in parallel ──
-    // This runs concurrently with session creation & explanations fetch.
-    // We await the first batch so the loading screen waits for images too.
+    // ── Preload images ──
+    // Only BLOCK on the first slide image (what the user sees immediately).
+    // Thumbnails load in background — they're small and lazy-loaded anyway.
     if (fetchedSlides.length > 0 && typeof window !== "undefined") {
       const preloadImg = (url: string) =>
         new Promise<void>((resolve) => {
           const img = new window.Image();
           img.onload = () => resolve();
-          img.onerror = () => resolve(); // don't block on error
+          img.onerror = () => resolve();
           img.src = getAssetUrl(url);
         });
 
-      // Critical: first slide + all thumbnails — must be ready before showing UI
-      const criticalLoads = [
-        preloadImg(fetchedSlides[0].image_url),
-        ...fetchedSlides.map((s) => preloadImg(s.thumbnail_url)),
-      ];
-      // Also preload nearby full-size images (non-blocking)
-      for (let i = 1; i < Math.min(4, fetchedSlides.length); i++) {
-        criticalLoads.push(preloadImg(fetchedSlides[i].image_url));
-      }
-
-      // Wait for all critical images, but cap at 6s to avoid hanging forever
+      // Critical: only first slide image — blocks loading screen
       await Promise.race([
-        Promise.all(criticalLoads),
-        new Promise<void>((r) => setTimeout(r, 6000)),
+        preloadImg(fetchedSlides[0].image_url),
+        new Promise<void>((r) => setTimeout(r, 3000)), // 3s max
       ]);
+
+      // Fire-and-forget: thumbnails + nearby slides (don't await)
+      for (const slide of fetchedSlides) {
+        const t = new window.Image();
+        t.src = getAssetUrl(slide.thumbnail_url);
+      }
+      for (let i = 1; i < Math.min(4, fetchedSlides.length); i++) {
+        const img = new window.Image();
+        img.src = getAssetUrl(fetchedSlides[i].image_url);
+      }
     }
 
-    // Start session creation immediately (don't block on explanations)
+    // Session + explanations: fire-and-forget, don't block loading screen
     if (options?.resetSession ?? true) {
       const sessionPromise = fetchedSlides.length > 0
         ? createSession(targetDocumentId, fetchedSlides[0].id)
@@ -213,53 +369,105 @@ export function useUpload(): UploadState & UploadActions {
       sessionPromise.then((s) => setSessionId(s?.id ?? null)).catch(() => {});
     }
 
-    // Now wait for explanations (loads in background while user sees slides)
-    const explanations = await explanationsPromise;
-    setCachedExplanations(Object.fromEntries(explanations.map((item) => [item.slide_id, item])));
+    // Explanations load in background — user can already see slides
+    explanationsPromise
+      .then((explanations) => {
+        explanationCacheRef.current.set(targetDocumentId, explanations);
+        void setLocalExplanations(targetDocumentId, explanations);
+        // Guard: only update React state if user is still on this document
+        if (documentIdRef.current !== targetDocumentId) return;
+        setCachedExplanations(Object.fromEntries(explanations.map((item) => [item.slide_id, item])));
+
+        // Auto-generate explanations for first few slides if missing
+        if (!autoGenDoneRef.current.has(targetDocumentId)) {
+          autoGenDoneRef.current.add(targetDocumentId);
+          const explanationMap = new Set(explanations.map((e) => e.slide_id));
+          const slidesToGenerate = fetchedSlides
+            .slice(0, 3)
+            .filter((s) => !explanationMap.has(s.id));
+
+          if (slidesToGenerate.length > 0) {
+            autoGenDocRef.current = targetDocumentId;
+            void (async () => {
+              for (const slide of slidesToGenerate) {
+                if (autoGenDocRef.current !== targetDocumentId) return;
+                if (documentIdRef.current !== targetDocumentId) return;
+                try {
+                  const result = await generateSlideExplanation(targetDocumentId, slide.id);
+                  if (autoGenDocRef.current !== targetDocumentId) return;
+                  if (documentIdRef.current !== targetDocumentId) return;
+                  setCachedExplanations((prev) => ({ ...prev, [slide.id]: result }));
+                  setSlides((prev) =>
+                    prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
+                  );
+                } catch (err) {
+                  console.error(`[useUpload] auto-gen slide ${slide.id} failed:`, err);
+                }
+              }
+            })();
+          }
+        }
+      })
+      .catch((err) => console.error("[useUpload] explanations fetch failed:", err));
 
     setStatusText(`文档加载完成，共 ${fetchedSlides.length} 页。`);
-
-    // Task 5: Auto-generate explanations for first few slides if missing
-    if (!autoGenDoneRef.current.has(targetDocumentId)) {
-      autoGenDoneRef.current.add(targetDocumentId);
-      const explanationMap = new Set(explanations.map((e) => e.slide_id));
-      const slidesToGenerate = fetchedSlides
-        .slice(0, 3)
-        .filter((s) => !explanationMap.has(s.id));
-
-      if (slidesToGenerate.length > 0) {
-        autoGenDocRef.current = targetDocumentId;
-        // Fire sequentially in background — don't block UI
-        void (async () => {
-          for (const slide of slidesToGenerate) {
-            if (autoGenDocRef.current !== targetDocumentId) return;
-            if (documentIdRef.current !== targetDocumentId) return;
-            try {
-              const result = await generateSlideExplanation(targetDocumentId, slide.id);
-              if (autoGenDocRef.current !== targetDocumentId) return;
-              if (documentIdRef.current !== targetDocumentId) return;
-              setCachedExplanations((prev) => ({ ...prev, [slide.id]: result }));
-              setSlides((prev) =>
-                prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
-              );
-            } catch (err) {
-              console.error(`[useUpload] auto-gen slide ${slide.id} failed:`, err);
-            }
-          }
-        })();
-      }
-    }
   }
 
+  // ── Cache: preloaded data for all documents ──
+  const slideCacheRef = useRef<Map<string, Slide[]>>(new Map());
+  const explanationCacheRef = useRef<Map<string, SlideExplanation[]>>(new Map());
+
   async function loadDocument(targetDocumentId: string) {
-    // Cancel any in-flight background poll from a previous upload.
     pollAbortRef.current?.abort();
     autoGenDocRef.current = null;
+
+    // Fast path: if slides are already cached, show immediately
+    const cachedSlides = slideCacheRef.current.get(targetDocumentId);
+    if (cachedSlides) {
+      setLoading(true);
+      setStatusText("切换文档...");
+      setDocumentId(targetDocumentId);
+      setSlides(cachedSlides);
+
+      // Session in background
+      if (cachedSlides.length > 0) {
+        createSession(targetDocumentId, cachedSlides[0].id)
+          .then((s) => setSessionId(s?.id ?? null))
+          .catch(() => {});
+        if (typeof window !== "undefined") {
+          const img = new window.Image();
+          img.src = getAssetUrl(cachedSlides[0].image_url);
+        }
+      }
+
+      // Explanations: show cache immediately, then refresh from API
+      setCachedExplanations({});
+
+      // Show cached explanations first (instant)
+      const cachedExp = explanationCacheRef.current.get(targetDocumentId);
+      if (cachedExp && cachedExp.length > 0) {
+        setCachedExplanations(Object.fromEntries(cachedExp.map((item) => [item.slide_id, item])));
+      }
+
+      // Always fetch fresh from API (catches newly generated explanations)
+      fetchDocumentExplanations(targetDocumentId)
+        .then((explanations) => {
+          if (documentIdRef.current !== targetDocumentId) return;
+          explanationCacheRef.current.set(targetDocumentId, explanations);
+          void setLocalExplanations(targetDocumentId, explanations);
+          setCachedExplanations(Object.fromEntries(explanations.map((item) => [item.slide_id, item])));
+        })
+        .catch(() => {});
+      setStatusText(`文档加载完成，共 ${cachedSlides.length} 页。`);
+      setLoading(false);
+      return;
+    }
+
+    // Slow path: fetch from server
     setStatusText("正在加载文档...");
     try {
       const status = await fetchDocumentStatus(targetDocumentId);
       if (status.status === "processing") {
-        // Don't lock the UI while waiting — background poll handles this
         setStatusText("文档仍在处理中，请稍候…");
         const finalStatus = await pollDocumentReady(targetDocumentId, (progress) => {
           if (progress.status === "processing") {
@@ -279,13 +487,84 @@ export function useUpload(): UploadState & UploadActions {
 
       setLoading(true);
       await hydrateDocument(targetDocumentId, { resetSession: true });
-      // Refresh doc list in background — don't block user from viewing the document
       void refreshDocuments();
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知错误";
       setStatusText(`加载失败：${message}`);
     } finally {
       setLoading(false);
+    }
+  }
+
+  /** Preload slides + explanations for ALL documents → memory + IndexedDB. */
+  async function preloadAllDocuments(
+    docs: DocumentListItem[],
+    options?: { priorityDocumentId?: string | null; forceRefreshAll?: boolean },
+  ) {
+    const runId = preloadRunRef.current + 1;
+    preloadRunRef.current = runId;
+
+    const readyDocs = prioritizeDocumentsForPreload(
+      docs.filter((d) => d.status === "ready"),
+      options?.priorityDocumentId ?? documentIdRef.current,
+    );
+    const pendingDocIds = readyDocs
+      .filter((doc) => options?.forceRefreshAll || !hasFullCachedDocument(doc.id))
+      .map((doc) => doc.id);
+
+    if (pendingDocIds.length === 0) {
+      await setLastSyncTime();
+      return;
+    }
+
+    const batches = chunkArray(pendingDocIds, PRELOAD_BATCH_SIZE);
+    const queue = [...batches];
+    let hadFailure = false;
+
+    async function runWorker() {
+      while (queue.length > 0 && preloadRunRef.current === runId) {
+        const batch = queue.shift();
+        if (!batch) return;
+
+        try {
+          const payload = await fetchDocumentCacheBatch(batch);
+          if (preloadRunRef.current !== runId) return;
+
+          const returnedIds = new Set(payload.documents.map((item) => item.document_id));
+          if (batch.some((documentId) => !returnedIds.has(documentId))) {
+            hadFailure = true;
+          }
+
+          await Promise.all(
+            payload.documents.map(async (item) => {
+              slideCacheRef.current.set(item.document_id, item.slides);
+              explanationCacheRef.current.set(item.document_id, item.explanations);
+              await Promise.all([
+                setLocalSlides(item.document_id, item.slides),
+                setLocalExplanations(item.document_id, item.explanations),
+              ]);
+
+              if (documentIdRef.current === item.document_id) {
+                setCachedExplanations(Object.fromEntries(item.explanations.map((exp) => [exp.slide_id, exp])));
+              }
+            }),
+          );
+        } catch (err) {
+          hadFailure = true;
+          console.error("[useUpload] cache batch preload failed:", err);
+        }
+      }
+    }
+
+    const workerCount = Math.max(1, Math.min(PRELOAD_BATCH_CONCURRENCY, queue.length));
+    await Promise.all(Array.from({ length: workerCount }, runWorker));
+
+    if (
+      preloadRunRef.current === runId &&
+      !hadFailure &&
+      readyDocs.every((doc) => hasFullCachedDocument(doc.id))
+    ) {
+      await setLastSyncTime();
     }
   }
 
@@ -447,20 +726,46 @@ export function useUpload(): UploadState & UploadActions {
           if (!slide) break;
           try {
             const result = await generateSlideExplanation(targetDocumentId, slide.id);
+            const nextExplanationList = [
+              ...(explanationCacheRef.current.get(targetDocumentId) ?? []).filter((item) => item.slide_id !== slide.id),
+              result,
+            ].sort((a, b) => a.page_num - b.page_num);
+            explanationCacheRef.current.set(targetDocumentId, nextExplanationList);
+            void setLocalExplanations(targetDocumentId, nextExplanationList);
             completedRef.value++;
             setGenerationProgress({ current: completedRef.value, total });
             setStatusText(`生成解析中… ${completedRef.value}/${total} 页`);
-            setCachedExplanations((prev) => ({ ...prev, [slide.id]: result }));
-            setSlides((prev) =>
-              prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
-            );
+            if (documentIdRef.current === targetDocumentId) {
+              setCachedExplanations((prev) => ({ ...prev, [slide.id]: result }));
+              setSlides((prev) =>
+                prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s)),
+              );
+            }
+            const cachedSlidesForDoc = slideCacheRef.current.get(targetDocumentId);
+            if (cachedSlidesForDoc) {
+              const nextSlidesForDoc = cachedSlidesForDoc.map((s) =>
+                s.id === slide.id ? { ...s, explanation_state: "ready" as const } : s,
+              );
+              slideCacheRef.current.set(targetDocumentId, nextSlidesForDoc);
+              void setLocalSlides(targetDocumentId, nextSlidesForDoc);
+            }
           } catch (err) {
             console.error(`[useUpload] regenerate slide ${slide.id} failed:`, err);
             completedRef.value++;
             setGenerationProgress({ current: completedRef.value, total });
-            setSlides((prev) =>
-              prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "error" as const } : s)),
-            );
+            if (documentIdRef.current === targetDocumentId) {
+              setSlides((prev) =>
+                prev.map((s) => (s.id === slide.id ? { ...s, explanation_state: "error" as const } : s)),
+              );
+            }
+            const cachedSlidesForDoc = slideCacheRef.current.get(targetDocumentId);
+            if (cachedSlidesForDoc) {
+              const nextSlidesForDoc = cachedSlidesForDoc.map((s) =>
+                s.id === slide.id ? { ...s, explanation_state: "error" as const } : s,
+              );
+              slideCacheRef.current.set(targetDocumentId, nextSlidesForDoc);
+              void setLocalSlides(targetDocumentId, nextSlidesForDoc);
+            }
           }
         }
       }
@@ -489,12 +794,27 @@ export function useUpload(): UploadState & UploadActions {
   }
 
   function setCachedExplanation(slideId: string, explanation: SlideExplanation) {
-    setCachedExplanations((prev) => ({ ...prev, [slideId]: explanation }));
-    setSlides((prev) =>
-      prev.map((slide) =>
-        slide.id === slideId ? { ...slide, explanation_state: "ready" } : slide,
-      ),
-    );
+    setCachedExplanations((prev) => {
+      const next = { ...prev, [slideId]: explanation };
+      // Sync to IndexedDB: update the full explanations array for this document
+      if (documentId) {
+        const allExp = Object.values(next);
+        explanationCacheRef.current.set(documentId, allExp);
+        void setLocalExplanations(documentId, allExp);
+      }
+      return next;
+    });
+    setSlides((prev) => {
+      const next = prev.map((slide) =>
+        slide.id === slideId ? { ...slide, explanation_state: "ready" as const } : slide,
+      );
+      // Sync slides state to IndexedDB too
+      if (documentId) {
+        slideCacheRef.current.set(documentId, next);
+        void setLocalSlides(documentId, next);
+      }
+      return next;
+    });
   }
 
   function reset() {

@@ -37,11 +37,14 @@ type AIPanelProps = {
   onClearSlideMessages: () => void;
   onElaborateSelection: (text: string) => void;
   onJumpToSlide?: (slideId: string) => void;
+  /** Map slide ID → page number for display */
+  slidePageMap?: Record<string, number>;
+  sessionId?: string;
 };
 
 const TABS = [
   { key: "explain", label: "解析" },
-  { key: "summary", label: "总结" },
+  { key: "translate", label: "翻译" },
   { key: "chat", label: "追问" },
   { key: "graph", label: "概念" },
 ] as const;
@@ -164,11 +167,32 @@ export function AIPanel({
   onClearSlideMessages,
   onElaborateSelection,
   onJumpToSlide,
+  slidePageMap,
+  sessionId,
 }: AIPanelProps) {
   const [tab, setTab] = useState<TabKey>("explain");
   const explanationRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+  const [translation, setTranslation] = useState<string>("");
+  const [translationLoading, setTranslationLoading] = useState(false);
+  const translationSlideRef = useRef<string | null>(null);
+
+  // Font size control (persisted in localStorage)
+  const FONT_SIZES = [14, 15, 16.5, 18, 20] as const;
+  const [fontSizeIdx, setFontSizeIdx] = useState(() => {
+    if (typeof window === "undefined") return 2;
+    const saved = localStorage.getItem("tl-font-size-idx");
+    return saved ? Math.min(Math.max(Number(saved), 0), FONT_SIZES.length - 1) : 2;
+  });
+  const fontSize = FONT_SIZES[fontSizeIdx];
+  const changeFontSize = (delta: number) => {
+    setFontSizeIdx((prev) => {
+      const next = Math.min(Math.max(prev + delta, 0), FONT_SIZES.length - 1);
+      localStorage.setItem("tl-font-size-idx", String(next));
+      return next;
+    });
+  };
   const badge = getExplanationBadge(explanationState, explanationLoading);
   const extractionMarkdown = useMemo(() => buildExtractionMarkdown(extraction), [extraction]);
   const repeatSummary = explanationMeta?.repeat_summary;
@@ -186,10 +210,16 @@ export function AIPanel({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [slideMessages]);
 
+  // Clear translation when switching slides
+  useEffect(() => {
+    setTranslation("");
+    translationSlideRef.current = null;
+  }, [currentSlideId]);
+
   // Task 4: Compute which tabs have content for badge indicators
   const tabHasContent: Record<TabKey, boolean> = {
     explain: explanationState === "ready",
-    summary: Boolean(explanationMeta?.sections?.summary_md),
+    translate: Boolean(translation),
     chat: slideMessages.length > 0,
     graph: false,
   };
@@ -198,8 +228,8 @@ export function AIPanel({
     <section className={`flex h-full min-h-0 flex-col border border-[var(--bd-1)] bg-[var(--gd-card)] shadow-[var(--sh-panel)] ${
       isMobile ? "rounded-none border-x-0 p-2" : "rounded-[30px] p-3"
     }`}>
-      {/* Tab bar */}
-      <header className="mb-1.5 shrink-0 md:mb-2">
+      {/* Tab bar + font size controls */}
+      <header className="mb-1.5 shrink-0 flex items-center justify-between gap-2 md:mb-2">
         <div className="inline-flex flex-wrap gap-0.5 rounded-full border border-[var(--bd-2)] bg-[var(--sf-1)] p-0.5 shadow-sm">
           {TABS.map((item) => (
             <button
@@ -217,6 +247,22 @@ export function AIPanel({
               )}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-0.5">
+          <button
+            className="flex h-6 w-6 items-center justify-center rounded-md text-[12px] text-[var(--tx-5)] hover:bg-[var(--sf-3)] transition-colors disabled:opacity-30"
+            onClick={() => changeFontSize(-1)}
+            disabled={fontSizeIdx === 0}
+            type="button"
+            title="缩小字体"
+          >A-</button>
+          <button
+            className="flex h-6 w-6 items-center justify-center rounded-md text-[12px] text-[var(--tx-5)] hover:bg-[var(--sf-3)] transition-colors disabled:opacity-30"
+            onClick={() => changeFontSize(1)}
+            disabled={fontSizeIdx === FONT_SIZES.length - 1}
+            type="button"
+            title="放大字体"
+          >A+</button>
         </div>
       </header>
 
@@ -310,7 +356,7 @@ export function AIPanel({
               </div>
             )}
 
-            <div ref={explanationRef} className="min-h-0 flex-1 overflow-auto p-3" data-note-source="explanation-content">
+            <div ref={explanationRef} className="min-h-0 flex-1 overflow-auto p-3" data-note-source="explanation-content" style={{ fontSize: `${fontSize}px` }}>
               {/* Branch 1: structured JSON items available */}
               {hasStructuredExplanation && explanationMeta?.structured_items?.length ? (
                 <div className="space-y-3">
@@ -427,30 +473,99 @@ export function AIPanel({
         </div>
       )}
 
-      {/* ── 总结 ─────────────────────────────────────── */}
-      {tab === "summary" && (
-        <div key="summary" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col">
+      {/* ── 翻译 ─────────────────────────────────────── */}
+      {tab === "translate" && (
+        <div key="translate" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col">
           <section className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[var(--bd-2)] bg-[var(--sf-1)]">
-            <header className="shrink-0 flex items-center gap-2 border-b border-[var(--bd-3)] px-3 py-2">
-              <p className="text-[13px] font-medium text-[var(--tx-2)]">知识点总结</p>
-              <span className="rounded-full border border-[var(--bd-4)] bg-[var(--sf-2)] px-2 py-0.5 text-[12px] text-[var(--tx-5)]">
-                快速复习
-              </span>
+            <header className="shrink-0 flex items-center justify-between gap-2 border-b border-[var(--bd-3)] px-3 py-2">
+              <p className="text-[13px] font-medium text-[var(--tx-2)]">中文翻译</p>
+              <button
+                className="btn btn-primary !px-3 !py-1.5 !text-[13px] gap-1.5"
+                disabled={disabled || translationLoading}
+                onClick={async () => {
+                  if (!currentSlideId || !documentId) return;
+                  // Don't re-translate if already done for this slide
+                  if (translationSlideRef.current === currentSlideId && translation) return;
+                  setTranslationLoading(true);
+                  setTranslation("");
+                  translationSlideRef.current = currentSlideId;
+                  try {
+                    const { askSlideQuestion } = await import("@/lib/api");
+                    const extractText = extraction?.text || "";
+                    if (!sessionId) { setTranslation("无会话，请先选择文档"); setTranslationLoading(false); return; }
+                    const resp = await askSlideQuestion({
+                      sessionId,
+                      message: `请将以下PPT页面内容翻译成中文，输出 Markdown 格式。
+
+格式要求（极其重要）：
+- 标题用 ## 或 ###
+- PPT 的一级 bullet 用 "- "（无缩进）
+- PPT 的二级 bullet 用 "  - "（2个空格缩进）
+- PPT 的三级 bullet 用 "    - "（4个空格缩进）
+- 严格按照原始 PPT 的层级关系缩进，这是最重要的要求
+- 专业术语翻译后括号保留英文原文，如：梯度下降 (Gradient Descent)
+- 代码块用 \`\`\` 包裹，保持原样不翻译
+- 行内公式用 $...$ 嵌在文字中
+- 独立公式用 $$...$$ 且必须单独占一行，前后各空一行，例如：
+
+翻译文字
+
+$$E = mc^2$$
+
+下一行文字
+
+- 只翻译，不解释、不总结、不添加任何额外内容
+
+原文内容：
+${extractText}`,
+                      slideId: currentSlideId,
+                      mode: "slide",
+                    });
+                    if (translationSlideRef.current === currentSlideId) {
+                      // Post-process: ensure $$ display math has blank lines around it
+                      let text = resp.answer;
+                      text = text.replace(/([^\n])\$\$/g, '$1\n\n$$');
+                      text = text.replace(/\$\$([^\n])/g, '$$\n\n$1');
+                      setTranslation(text);
+                    }
+                  } catch (err) {
+                    setTranslation("翻译失败，请重试。");
+                  } finally {
+                    setTranslationLoading(false);
+                  }
+                }}
+                type="button"
+              >
+                {translationLoading ? (
+                  <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                ) : null}
+                {translationLoading ? "翻译中…" : translation ? "重新翻译" : "生成翻译"}
+              </button>
             </header>
             <div className="min-h-0 flex-1 overflow-auto p-3">
-              {explanationMeta?.sections?.summary_md ? (
-                <MarkdownContent content={explanationMeta.sections.summary_md} />
-              ) : explanationMeta?.title ? (
-                <MarkdownContent content={`**「${explanationMeta.title}」尚未生成知识点总结。**\n\n点击「解析」标签页的「生成解析」按钮重新生成。`} />
+              {translationLoading ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                  <svg className="h-5 w-5 animate-spin text-[var(--tx-5)]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  <p className="text-[13px] text-[var(--tx-5)]">正在翻译...</p>
+                </div>
+              ) : translation ? (
+                <MarkdownContent content={translation} />
               ) : (
-                <MarkdownContent content="**当前页尚未生成知识点总结。** 点击「解析」标签页的「生成解析」按钮开始。" />
+                <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                  <p className="text-[13px] text-[var(--tx-5)]">点击「生成翻译」将当前页 PPT 内容翻译为中文</p>
+                  <p className="text-[12px] text-[var(--tx-6)]">保留原始排版结构，不添加解释</p>
+                </div>
               )}
             </div>
           </section>
         </div>
       )}
-
-      {/* 结构标签已隐藏 */}
 
       {/* ── 追问 ─────────────────────────────────────── */}
       {tab === "chat" && (
@@ -471,7 +586,7 @@ export function AIPanel({
                       <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-[var(--sf-5)] px-4 py-2.5 text-[13px] text-[var(--tx-2)] shadow-sm">
                         <MarkdownContent content={m.content} />
                         {m.slideId && (
-                          <p className="mt-1 text-[11px] opacity-50">第 {m.slideId} 页</p>
+                          <p className="mt-1 text-[11px] opacity-50">第 {slidePageMap?.[m.slideId!] ?? "?"} 页</p>
                         )}
                       </div>
                       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--sf-4)] text-[13px] text-[var(--tx-4)]">
@@ -489,7 +604,7 @@ export function AIPanel({
                       <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[var(--bd-2)] bg-[var(--sf-1)] px-4 py-2.5 text-[13px] text-[var(--tx-3)] shadow-sm">
                         <MarkdownContent content={m.content} />
                         {m.slideId && (
-                          <p className="mt-1 text-[11px] text-[var(--tx-6)]">第 {m.slideId} 页</p>
+                          <p className="mt-1 text-[11px] text-[var(--tx-6)]">第 {slidePageMap?.[m.slideId!] ?? "?"} 页</p>
                         )}
                       </div>
                     </div>

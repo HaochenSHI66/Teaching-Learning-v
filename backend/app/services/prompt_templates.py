@@ -68,26 +68,29 @@ _OUTLINE_PROMPT_CORE = """\
 - 不是大段散文式讲解
 
 页面类型判断（只在心里判断，不要输出 page_type）：
-- title：标题页
-- toc：目录页
+- title：标题页 / 封面页
+- toc：目录页 / 大纲页
 - intro：导入页 / 问题引入页
 - content：正式讲解页
 - example：例题页
 - summary：总结页
 
+⚠️ 特殊页面处理（极其重要）：
+- **title（封面页）**：只写课程名/章节名 + 讲师信息 + 本章主题一句话概括。不要解读封面上的装饰图片、背景图、配图。最多 2 个 bullet。
+- **toc（目录页）**：只列出本章的章节结构，每个章节一个 bullet，简要说明涵盖什么内容。不要逐条深入解释。最多 3-4 个 bullet。
+- 判断方法：如果页面主要内容是课程标题+教师姓名，那就是 title 页；如果页面是章节列表/大纲，那就是 toc 页。
+- 封面上的图片（如点云、示意图、装饰图）只是装饰，不要对其进行学术分析。
+
 讲解原则：
-1. 只根据当前页可见内容讲解，不脑补看不到的内容。
-2. 必须按当前页真实内容提炼出 3-6 个核心点。
-3. 每个核心点都要写成：
-   - **标签：**1-2 句自然语言解释
-4. 标签要自然，像老师板书时随手写的重点提示词。不要刻意凑四字成语或对仗短语。可以是术语本身（如"Swapping"、"Demand Paging"），也可以是简短描述（如"为什么需要虚拟内存"、"两种加载策略"）。长短不限，清楚就行。
-5. 如果当前页有"问题 → 方法"结构，必须明确拆出来。
-6. 如果当前页顶部有醒目的数字、数组、代码、图示、标签等，必须把它们融入讲解，不要忽略。
-7. 解释必须讲清关系，不能只是把 PPT 原文换一种说法。
-8. 不要写成"讲解卡片"，不要写成长段落。
-9. 不要写"这页讲什么 / 逐点讲解 / 本页关键结论"这些固定小节标题。
-10. 不要显式写"上一页讲过""前面提到过"。
-11. 如果当前页有问题句（Does / Why / How / Do we really need...），必须明确把它点出来，因为这通常是本页灵魂。
+1. ⚠️ **严格按 PPT 原始顺序讲解**：按照 PPT 上 bullet points 的出现顺序逐条讲解，不要重新组织结构或打乱顺序。PPT 的教学顺序是经过设计的，不要"优化"它。
+2. ⚠️ **只讲页面上有的内容**：不要添加 PPT 上没有的历史背景、编辑性评论、叙事框架（如"根本矛盾""原始驱动力"等）。如果 PPT 只是简单陈述一个事实，你也简单讲，不要包装成戏剧化的叙事。
+3. ⚠️ **代码/数字/公式必须具体讲解**：如果 PPT 上有代码片段（如数组声明）、数字标注（如 64MB）、公式，必须具体解释它们的含义和计算过程，这是学生最需要帮助理解的部分。
+4. 按知识点分组，不要按 bullet 机械拆分。相关的内容合在一起讲，细节用二级 bullet。一页通常 2-3 个要点就够。
+5. 每个核心点写成：**标签：**1-2 句解释。标签自然即可，不要凑四字成语。
+6. 解释要增加价值——不是用更花哨的中文复述原文，而是帮学生理解"为什么"和"怎么用"。可以补充具体例子、计算步骤、考试提示。
+7. 不要写成长段落散文，不要写"这页讲什么 / 逐点讲解"等固定小节标题。
+8. 不要显式写"上一页讲过""前面提到过"。
+9. 每个 bullet 解释控制在 1-3 句话，总长度不超过原始 PPT 内容的 2 倍。
 
 格式要求：
 
@@ -121,6 +124,7 @@ _OUTLINE_PROMPT_CORE = """\
 - 同页后续可只写中文
 - 术语保留在句子里，不要单独列术语表
 - 公式用 KaTeX：$...$ 或 $$...$$
+- ⚠️ 绝对不要把 $...$ 公式放在反引号里面，否则公式无法渲染
 
 强调规则（加粗和高亮是两种不同工具，不要混用）：
 
@@ -142,7 +146,8 @@ _OUTLINE_PROMPT_CORE = """\
 - 高亮：==程序不需要全部加载到内存中就可以运行==
 
 长度要求：
-- title / toc：2-4 个 bullet
+- title：1-2 个 bullet（封面页不需要多说）
+- toc：2-3 个 bullet（目录页只概括结构）
 - intro / content / summary：4-6 个 bullet
 - example：3-5 个一级 bullet，必要时配 2-4 个二级 bullet
 - 每个 bullet 控制在 1-2 句
@@ -161,28 +166,31 @@ _JSON_SCHEMA_EXAMPLE = """\
   "content_type": "content",
   "items": [
     {
-      "label": "传统观念",
-      "explanation": "程序必须先加载到 **主存 (Main Memory)** 中才能执行，而且通常是 **连续存储** 的。",
+      "label": "",
+      "explanation": "程序必须先加载到 **主存 (Main Memory)** 中才能执行。CPU 只能直接访问主存和缓存，不能直接执行磁盘上的代码。",
       "highlight": null,
+      "sub_items": [
+        {"label": "可执行代码", "explanation": "编译后的 **机器码 (Machine Code)**，或供解释器运行的源代码。"},
+        {"label": "进程", "explanation": "**进程 (Process)** 就是正在执行的程序，包含代码、数据、栈、程序计数器等。"}
+      ],
+      "callout": null
+    },
+    {
+      "label": "",
+      "explanation": "关键问题：我们真的需要把整个程序都加载到内存中吗？例如在 64K 的 Apple II 上能否运行 100K 的程序？",
+      "highlight": "程序不需要全部加载到内存中就可以运行",
       "sub_items": [],
       "callout": null
     },
     {
-      "label": "核心问题",
-      "explanation": "我们真的需要把整个程序都加载到内存中吗？例：在 64K 的 Apple II 上能否运行 100K 的程序？",
-      "highlight": "程序不需要全部加载到内存中就可以运行",
-      "sub_items": [],
-      "callout": {"type": "IMPORTANT", "text": "这个问题是整章 Virtual Memory 的出发点。"}
-    },
-    {
-      "label": "两种解决方案",
-      "explanation": "针对上述问题，有两种方案：",
+      "label": "",
+      "explanation": "两种解决方案：",
       "highlight": null,
       "sub_items": [
-        {"label": "Overlay（覆盖）", "explanation": "把程序分成若干阶段，当前阶段结束后再加载下一阶段。需要程序员手动管理。"},
-        {"label": "Virtual Memory（虚拟内存）", "explanation": "OS 自动管理，只在需要执行时才加载所需部分，对程序员透明。"}
+        {"label": "Overlay", "explanation": "把程序分成阶段，当前阶段结束后再加载下一阶段，需要程序员手动管理。"},
+        {"label": "Virtual Memory", "explanation": "OS 自动管理，只在需要执行时才加载所需部分，对程序员透明。"}
       ],
-      "callout": {"type": "WARNING", "text": "Overlay 需要程序员手动管理模块，已被 Virtual Memory 取代。"}
+      "callout": {"type": "WARNING", "text": "Overlay 已被 Virtual Memory 取代。"}
     }
   ],
   "concepts": [
@@ -193,47 +201,29 @@ _JSON_SCHEMA_EXAMPLE = """\
 }"""
 
 _TEXT_EXPLANATION_JSON_PROMPT_BEFORE_SCHEMA = """\
-你是一个中文大学课程助教。请把当前这页 PPT 讲解成结构化 JSON。
+你是大学课程助教，用简单易懂的中文讲解 PPT。说人话，别绕弯。
 
-讲解原则（和 Markdown 模式一样，但输出格式不同）：
-1. 只根据当前页可见内容讲解，不脑补。
-2. 按当前页真实内容提炼出 3-6 个核心点。
-3. 每个核心点拆成 label（短标签）+ explanation（2-4 句解释，要讲透，不要惜字）。
-4. 标签要像老师整理重点时会写的短标题。
-5. 如果当前页有"问题 → 方法"结构，必须拆出来。
-6. 如果页面有代码，在 explanation 里用 Markdown 代码块（```language ... ```）给出关键代码，然后用自己的话逐行或逐段解释。
-7. 如果页面顶部有醒目的数字/图示，必须融入讲解。
-8. 用自己的话解释，不要直接复制粘贴 PPT 原文。讲清关系和原理，而不是换一种说法复述。
-9. 不要在 explanation 里引用 PPT 原文（不要用代码块包裹 PPT 上的普通文字）。代码块只用于真正的代码。
-10. 如果当前页有问题句（Does / Why / How / Do we really need...），必须点出来。
-11. 术语首次出现写成：中文 (English)，同页后续只写中文。
-12. 公式用 KaTeX 写在 explanation 里：行内用 $...$，独立公式用 $$...$$。
-13. 不要显式写"上一页讲过""前面提到过"。
+讲解原则：
+1. 按 PPT 原始顺序讲，不要打乱。
+2. ⚠️ 不要讲标题。标题只是分类标签。直接讲标题下面的内容。连续几页同标题不要重复提。
+3. 代码/数字/公式要具体走一遍计算过程。公式用 KaTeX $...$，不要放在反引号内。LaTeX 命令的参数必须用花括号包裹，如 $\tilde{x}$ 不是 $\tilde x$。
+4. 按知识点分组，不要按 bullet 机械拆分。相关的内容合成一个 item，细节用 sub_items。一页通常 2-3 个 item 就够。
+5. label 留空（""）。sub_items 的 label 写短标签。
+6. 术语首次写 **中文 (English)**，后面只写中文。
+7. 前面页讲过的不要重复，一句话带过。
+8. 不要写课程编号。
+9. 封面页/目录页简短概括即可。
 
-页面类型判断（写入 content_type 字段）：
-title / toc / intro / content / example / summary
+页面类型（写入 content_type）：title / toc / intro / content / example / summary
 
 标题规则：
-- original_title：当前页 PPT 上的原始标题（英文就写英文）
-- chinese_topic：用中文概括本页核心，不超过 12 个字
+- original_title：PPT 上的原始标题
+- chinese_topic：中文概括本页核心
 
-标注规则（五层标注体系，层级分明）：
-1. 粗体术语：在 explanation 里对术语用 **中文 (English)** 格式，每个 item 2-4 处
-2. 高亮：每个 item 可以有 highlight 字段（字符串或 null），用于标注本页核心结论/关键发现，每页最多 1-2 个 item 有 highlight
-3. callout：每个 item 可以有 callout 字段，type 只允许四种：
-   - IMPORTANT：必记要点、核心定义、考试重点
-   - TIP：辅助理解、帮助记忆、延伸说明
-   - WARNING：易混淆、易错、常见误解
-   - NOTE：补充说明，只针对当前这个点
-4. callout 的 text 只写 1 句话
-5. 每页最多 1-2 个 item 有 callout，其余为 null
-6. 没有必要就不加 callout 和 highlight
-
-长度规则：
-- title / toc：2-4 个 items
-- intro / content / summary：4-8 个 items
-- example：4-6 个 items，必要时用 sub_items
-- 每个 item 的 explanation 要充分展开，讲清楚"为什么"和"怎么理解"，不要只陈述事实
+标注规则：
+- 粗体术语：**中文 (English)**
+- highlight：本页最核心的一句结论（每页 0-1 个）
+- callout：只在真正需要提醒的时候才加，大部分 item 不需要 callout（写 null）。一页最多 1 个 callout，很多页可以完全没有。type：IMPORTANT / TIP / WARNING / NOTE。
 
 概念提取规则（concepts 字段）：
 - 只提取本页出现的**真正的学科概念/专业术语**

@@ -191,6 +191,16 @@ export type DocumentExplanationGeneratePayload = {
   overwrote_existing: boolean;
 };
 
+export type DocumentCacheBundle = {
+  document_id: string;
+  slides: Slide[];
+  explanations: SlideExplanation[];
+};
+
+export type DocumentCacheBatchPayload = {
+  documents: DocumentCacheBundle[];
+};
+
 export type ReviewItem = {
   id: string;
   session_id: string;
@@ -278,6 +288,12 @@ async function request<T>(
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // If caller passed an external signal (e.g. for cancellation), forward its abort
+    const externalSignal = init?.signal;
+    if (externalSignal) {
+      if (externalSignal.aborted) { controller.abort(); }
+      else { externalSignal.addEventListener("abort", () => controller.abort(), { once: true }); }
+    }
 
     try {
       const token = getToken();
@@ -350,7 +366,20 @@ export async function uploadDocument(file: File, folderId?: string | null): Prom
   return request<UploadPayload>("/api/v1/documents/upload", {
     method: "POST",
     body: form,
-  });
+  }, { timeoutMs: 120_000 }); // 2min for large PDFs on public network
+}
+
+// ── Bootstrap: one request to get everything for initial load ──
+export type BootstrapData = {
+  folders: DocumentLibrary;
+  first_document: {
+    document_id: string;
+    slides: Slide[];
+  } | null;
+};
+
+export async function fetchBootstrap(): Promise<BootstrapData> {
+  return request<BootstrapData>("/api/v1/bootstrap");
 }
 
 export async function fetchDocuments(): Promise<DocumentListItem[]> {
@@ -446,6 +475,18 @@ export async function fetchDocumentExplanations(documentId: string): Promise<Sli
   return payload.explanations;
 }
 
+export async function fetchDocumentCacheBatch(documentIds: string[]): Promise<DocumentCacheBatchPayload> {
+  const params = new URLSearchParams();
+  for (const documentId of documentIds) {
+    params.append("document_id", documentId);
+  }
+  return request<DocumentCacheBatchPayload>(
+    `/api/v1/documents/cache-batch?${params.toString()}`,
+    undefined,
+    { timeoutMs: 120_000, retries: 1 },
+  );
+}
+
 // ── Prefetch cache: warm up document data on hover ──
 const _prefetchCache = new Map<string, { slides: Promise<Slide[]>; explanations: Promise<SlideExplanation[]>; ts: number }>();
 
@@ -485,11 +526,13 @@ export async function exportDocumentExplanations(documentId: string): Promise<{ 
 export async function generateSlideExplanation(
   documentId: string,
   slideId: string,
+  signal?: AbortSignal,
 ): Promise<SlideExplanationGeneratePayload> {
   return request<SlideExplanationGeneratePayload>(
     `/api/v1/documents/${documentId}/slides/${slideId}/explanations/generate`,
     {
       method: "POST",
+      signal,
     },
     { timeoutMs: 180_000 },
   );

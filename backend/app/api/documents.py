@@ -8,7 +8,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request, UploadFile, status
 from app.middleware.rate_limit import rate_limit
 from sqlmodel import Session, select
 from sqlalchemy import func
@@ -35,6 +35,8 @@ from app.models import (
 )
 from app.schemas import (
     DocumentDeleteResponse,
+    DocumentCacheBatchResponse,
+    DocumentCacheBundleRead,
     DocumentExplanationGenerateResponse,
     DocumentExplanationsExportResponse,
     DocumentExplanationsResponse,
@@ -449,6 +451,67 @@ def _upsert_slide_explanation(
     return explanation, overwrote_existing
 
 
+def _current_explanations_for_document(*, session: Session, document_id: str) -> list[SlideExplanation]:
+    all_explanations = session.exec(
+        select(SlideExplanation)
+        .where(SlideExplanation.document_id == document_id)
+        .order_by(SlideExplanation.page_num, SlideExplanation.generated_at.desc())
+    ).all()
+
+    seen_slides: dict[str, SlideExplanation] = {}
+    for item in all_explanations:
+        if item.slide_id not in seen_slides:
+            seen_slides[item.slide_id] = item
+
+    explanations = [item for item in seen_slides.values() if _explanation_is_current(item)]
+    explanations.sort(key=lambda x: x.page_num)
+    return explanations
+
+
+def _build_slide_reads(
+    *,
+    document_id: str,
+    slides: list[Slide],
+    extract_map: dict[str, dict],
+    explanations: list[SlideExplanation],
+) -> list[SlideRead]:
+    explanation_map = {item.slide_id: item for item in explanations}
+    return [
+        SlideRead(
+            id=slide.id,
+            page_num=slide.page_num,
+            image_url=f"/storage/{document_id}/{slide.image_path}",
+            thumbnail_url=f"/storage/{document_id}/{slide.thumbnail_path}",
+            width=slide.width,
+            height=slide.height,
+            extract=_payload_to_extract_read(
+                document_id=document_id,
+                slide=slide,
+                payload=extract_map.get(slide.id),
+            ),
+            explanation_state=(
+                "ready"
+                if _explanation_is_current(explanation_map.get(slide.id))
+                and extract_payload_is_current(extract_map.get(slide.id))
+                else "not_generated"
+            ),
+        )
+        for slide in slides
+    ]
+
+
+def _build_explanation_reads(*, explanations: list[SlideExplanation]) -> list[SlideExplanationRead]:
+    return [
+        SlideExplanationRead(
+            slide_id=item.slide_id,
+            page_num=item.page_num,
+            markdown=item.markdown,
+            meta=item.meta,
+        )
+        for item in explanations
+    ]
+
+
 def _upsert_concepts_from_meta(*, session: Session, document_id: str, slide: Slide, meta: dict) -> None:
     """Create or update Concept records from meta.concepts extracted during explanation generation."""
     concepts = meta.get("concepts") or []
@@ -653,6 +716,56 @@ def list_documents(
     )
 
 
+@router.get("/cache-batch", response_model=DocumentCacheBatchResponse)
+def get_document_cache_batch(
+    request: Request,
+    document_id: list[str] = Query(...),
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> DocumentCacheBatchResponse:
+    if len(document_id) > 6:
+        raise HTTPException(status_code=422, detail="At most 6 documents may be requested per cache batch")
+
+    requested_ids = list(dict.fromkeys(document_id))
+    documents = session.exec(select(Document).where(Document.id.in_(requested_ids))).all()
+    document_map = {document.id: document for document in documents}
+
+    bundles: list[DocumentCacheBundleRead] = []
+    for requested_id in requested_ids:
+        document = document_map.get(requested_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        _check_document_owner(document, current_user)
+        if document.status == "processing":
+            raise HTTPException(status_code=409, detail="Document is still being processed")
+        if document.status == "error":
+            raise HTTPException(status_code=422, detail="Document processing failed")
+
+        extract_map = _refresh_document_extracts_if_needed(
+            session=session,
+            document=document,
+            storage_root=request.app.state.storage_dir,
+        )
+        slides = session.exec(
+            select(Slide).where(Slide.document_id == requested_id).order_by(Slide.page_num)
+        ).all()
+        explanations = _current_explanations_for_document(session=session, document_id=requested_id)
+        bundles.append(
+            DocumentCacheBundleRead(
+                document_id=requested_id,
+                slides=_build_slide_reads(
+                    document_id=requested_id,
+                    slides=slides,
+                    extract_map=extract_map,
+                    explanations=explanations,
+                ),
+                explanations=_build_explanation_reads(explanations=explanations),
+            )
+        )
+
+    return DocumentCacheBatchResponse(documents=bundles)
+
+
 @router.get("/{document_id}/status", response_model=DocumentStatusResponse)
 def get_document_status(
     document_id: str,
@@ -692,38 +805,16 @@ def list_document_slides(
         storage_root=request.app.state.storage_dir,
     )
     slides = session.exec(select(Slide).where(Slide.document_id == document_id).order_by(Slide.page_num)).all()
-    slide_ids = [slide.id for slide in slides]
-    explanations = (
-        session.exec(select(SlideExplanation).where(SlideExplanation.slide_id.in_(slide_ids))).all()
-        if slide_ids
-        else []
-    )
-    explanation_map = {item.slide_id: item for item in explanations}
+    explanations = _current_explanations_for_document(session=session, document_id=document_id)
 
     return SlidesResponse(
         document_id=document_id,
-        slides=[
-            SlideRead(
-                id=slide.id,
-                page_num=slide.page_num,
-                image_url=f"/storage/{document_id}/{slide.image_path}",
-                thumbnail_url=f"/storage/{document_id}/{slide.thumbnail_path}",
-                width=slide.width,
-                height=slide.height,
-                extract=_payload_to_extract_read(
-                    document_id=document_id,
-                    slide=slide,
-                    payload=extract_map.get(slide.id),
-                ),
-                explanation_state=(
-                    "ready"
-                    if _explanation_is_current(explanation_map.get(slide.id))
-                    and extract_payload_is_current(extract_map.get(slide.id))
-                    else "not_generated"
-                ),
-            )
-            for slide in slides
-        ],
+        slides=_build_slide_reads(
+            document_id=document_id,
+            slides=slides,
+            extract_map=extract_map,
+            explanations=explanations,
+        ),
     )
 
 
@@ -740,30 +831,11 @@ def list_document_explanations(
     if document.status != "ready":
         raise HTTPException(status_code=409, detail="Document explanations are not ready")
 
-    all_explanations = session.exec(
-        select(SlideExplanation)
-        .where(SlideExplanation.document_id == document_id)
-        .order_by(SlideExplanation.page_num, SlideExplanation.generated_at.desc())
-    ).all()
-    # Deduplicate: keep only the latest per slide_id
-    seen_slides: dict[str, SlideExplanation] = {}
-    for item in all_explanations:
-        if item.slide_id not in seen_slides:
-            seen_slides[item.slide_id] = item
-    explanations = [item for item in seen_slides.values() if _explanation_is_current(item)]
-    explanations.sort(key=lambda x: x.page_num)
+    explanations = _current_explanations_for_document(session=session, document_id=document_id)
 
     return DocumentExplanationsResponse(
         document_id=document_id,
-        explanations=[
-            SlideExplanationRead(
-                slide_id=item.slide_id,
-                page_num=item.page_num,
-                markdown=item.markdown,
-                meta=item.meta,
-            )
-            for item in explanations
-        ],
+        explanations=_build_explanation_reads(explanations=explanations),
     )
 
 
@@ -777,7 +849,7 @@ def regenerate_slide_explanation(
     request: Request,
     session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
-    _rate_limit=Depends(rate_limit(20, 60, "explanation_generate")),
+    _rate_limit=Depends(rate_limit(200, 60, "explanation_generate")),
 ) -> SlideExplanationGenerateResponse:
     document = session.get(Document, document_id)
     if not document:
@@ -830,7 +902,7 @@ def regenerate_document_explanations(
     request: Request,
     session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
-    _rate_limit=Depends(rate_limit(20, 60, "explanation_generate")),
+    _rate_limit=Depends(rate_limit(200, 60, "explanation_generate")),
 ) -> DocumentExplanationGenerateResponse:
     document = session.get(Document, document_id)
     if not document:

@@ -414,7 +414,11 @@ h4 {
 }
 
 .markdown-body strong {
-  color: var(--tx-1);
+  color: #3b82c4;
+  font-weight: 600;
+}
+[data-theme="dark"] .markdown-body strong {
+  color: #6ba8d9;
 }
 
 .markdown-body em {

@@ -51,7 +51,7 @@ function CalloutBox({ type, text }: { type: keyof typeof CALLOUT_CONFIG; text: s
   const config = CALLOUT_CONFIG[type] || CALLOUT_CONFIG.NOTE;
   return (
     <div
-      className="mt-1.5 rounded-xl px-3 py-2 text-[13px] text-[var(--tx-3)]"
+      className="mt-1.5 rounded-xl px-3 py-2 text-[0.9em] text-[var(--tx-3)]"
       style={{
         borderLeft: `4px solid ${config.border}`,
         background: config.bg,
@@ -68,7 +68,7 @@ function CalloutBox({ type, text }: { type: keyof typeof CALLOUT_CONFIG; text: s
 
 function HighlightBadge({ text }: { text: string }) {
   return (
-    <div className="mt-1.5 rounded-lg border border-[var(--ac-amber-border)] bg-[var(--ac-amber-bg)] px-3 py-1.5 text-[13px] font-medium text-[var(--ac-amber-text)]">
+    <div className="mt-1.5 rounded-lg border border-[var(--ac-amber-border)] bg-[var(--ac-amber-bg)] px-3 py-1.5 text-[0.9em] font-medium text-[var(--ac-amber-text)]">
       <InlineMarkdown text={text} />
     </div>
   );
@@ -96,37 +96,54 @@ const CONTENT_TYPE_BORDER: Record<string, string> = {
 
 // ── Single Item ──────────────────────────────────────────────
 
+const ACCENT_COLORS = [
+  "var(--brand-blue)",
+  "var(--brand-sage)",
+  "var(--brand-amber)",
+  "var(--brand-terracotta)",
+  "var(--brand-olive)",
+];
+
 function ExplanationItemCard({
   item,
   contentType,
+  index,
 }: {
   item: ExplanationItem;
   contentType: string;
+  index: number;
 }) {
   if (!item.label && !item.explanation) return null;
-
-  const borderColor = CONTENT_TYPE_BORDER[contentType] || "var(--brand-sage)";
+  const accent = ACCENT_COLORS[index % ACCENT_COLORS.length];
 
   return (
     <div
-      className="overflow-hidden rounded-xl border border-[var(--bd-1)] bg-[var(--sf-1)] px-3.5 py-2.5"
-      style={{ borderLeftWidth: "4px", borderLeftColor: borderColor }}
+      className="relative rounded-xl bg-[var(--sf-1)]/60 px-5 py-4"
+      style={{ borderLeft: `3px solid ${accent}` }}
     >
-      {/* Label + explanation — markdown-body for code/math styling */}
-      <div className="markdown-body text-[14px] leading-relaxed text-[var(--tx-3)] [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:bg-[var(--sf-3)] [&_pre]:text-[var(--tx-2)]">
+      {/* Step number badge */}
+      <span
+        className="absolute -left-3 top-4 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold text-white"
+        style={{ backgroundColor: accent }}
+      >
+        {index + 1}
+      </span>
+
+      {/* Main explanation */}
+      <div className="markdown-body text-[1em] leading-[1.85] text-[var(--tx-3)] [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:bg-[var(--sf-3)] [&_pre]:text-[var(--tx-2)]">
         {item.label && (
-          <strong className="text-[var(--tx-1)]">{item.label}：</strong>
+          <strong className="text-[#3b82c4] font-semibold">{item.label}：</strong>
         )}
         <InlineMarkdown text={item.explanation} />
       </div>
 
-      {/* Sub-items */}
+      {/* Sub-items — tree line */}
       {item.sub_items?.length > 0 && (
-        <ul className="markdown-body mt-1.5 space-y-1 pl-4 [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:bg-[var(--sf-3)] [&_pre]:text-[var(--tx-2)]">
+        <ul className="markdown-body mt-3.5 space-y-2 border-l-2 border-[var(--bd-2)] pl-5 ml-1.5 [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:bg-[var(--sf-3)] [&_pre]:text-[var(--tx-2)]">
           {item.sub_items.map((sub, i) => (
-            <li key={i} className="list-disc text-[13px] leading-relaxed text-[var(--tx-3)]">
+            <li key={i} className="text-[0.93em] leading-[1.8] text-[var(--tx-4)]">
               {sub.label && (
-                <strong className="text-[var(--tx-2)]">{sub.label}：</strong>
+                <strong className="text-[#3b82c4] font-semibold">{sub.label}：</strong>
               )}
               <InlineMarkdown text={sub.explanation} />
             </li>
@@ -134,12 +151,11 @@ function ExplanationItemCard({
         </ul>
       )}
 
-      {/* Highlight */}
-      {item.highlight && <HighlightBadge text={item.highlight} />}
-
       {/* Callout */}
       {item.callout && (
-        <CalloutBox type={item.callout.type} text={item.callout.text} />
+        <div className="mt-3.5">
+          <CalloutBox type={item.callout.type} text={item.callout.text} />
+        </div>
       )}
     </div>
   );
@@ -153,17 +169,45 @@ type StructuredContentProps = {
   contentType?: string;
 };
 
+/**
+ * Group adjacent "plain" items (no callout, no highlight, no sub_items) into
+ * a single flowing block. Items with special annotations get their own card.
+ */
+function groupItems(items: ExplanationItem[]): { type: "flow"; items: ExplanationItem[] }[] | { type: "card"; item: ExplanationItem }[] {
+  const groups: ({ type: "flow"; items: ExplanationItem[] } | { type: "card"; item: ExplanationItem })[] = [];
+  let currentFlow: ExplanationItem[] = [];
+
+  const isPlain = (item: ExplanationItem) =>
+    !item.callout && !item.highlight && (!item.sub_items || item.sub_items.length === 0);
+
+  for (const item of items) {
+    if (isPlain(item)) {
+      currentFlow.push(item);
+    } else {
+      if (currentFlow.length > 0) {
+        groups.push({ type: "flow", items: [...currentFlow] });
+        currentFlow = [];
+      }
+      groups.push({ type: "card", item });
+    }
+  }
+  if (currentFlow.length > 0) {
+    groups.push({ type: "flow", items: currentFlow });
+  }
+  return groups as any;
+}
+
 export function StructuredContent({
   items,
   title,
   contentType = "content",
 }: StructuredContentProps) {
-  // Parse title: strip "## " prefix if present
   const displayTitle = title?.replace(/^##\s*/, "") || "";
   const typeLabel = CONTENT_TYPE_LABEL[contentType];
+  const groups = groupItems(items);
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {/* Header */}
       {displayTitle && (
         <div className="flex items-start gap-2">
@@ -178,12 +222,39 @@ export function StructuredContent({
         </div>
       )}
 
-      {/* Items */}
+      {/* Items — numbered cards */}
+      <div className="space-y-5 pl-3">
+        {items.map((item, index) => (
+          <ExplanationItemCard key={index} item={item} contentType={contentType} index={index} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Keep old render path for backward compatibility
+function _LegacyStructuredContent({
+  items,
+  title,
+  contentType = "content",
+}: StructuredContentProps) {
+  const displayTitle = title?.replace(/^##\s*/, "") || "";
+  const typeLabel = CONTENT_TYPE_LABEL[contentType];
+  return (
+    <div className="space-y-2.5">
+      {displayTitle && (
+        <div className="flex items-start gap-2">
+          <h2 className="flex-1 font-serif text-[17px] font-bold leading-snug text-[var(--tx-1)]">
+            {displayTitle}
+          </h2>
+        </div>
+      )}
       {items.map((item, index) => (
         <ExplanationItemCard
           key={index}
           item={item}
           contentType={contentType}
+          index={index}
         />
       ))}
     </div>
