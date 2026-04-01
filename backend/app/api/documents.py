@@ -65,6 +65,13 @@ from app.services.slide_processor import (
 )
 from app.api.knowledge_graph import generate_knowledge_graph_for_document
 
+def bump_content_version(session: Session, document_id: str) -> None:
+    document = session.get(Document, document_id)
+    if document:
+        document.content_version = (document.content_version or 0) + 1
+        session.add(document)
+
+
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
 
@@ -224,6 +231,8 @@ def _process_document_background(
         # Commit slides and mark document ready before generating explanations,
         # so the document is immediately accessible in the UI.
         session.commit()
+        bump_content_version(session, document.id)
+        session.commit()
 
         # Generate explanations in windowed batches (3 at a time, sequential windows)
         # to preserve cross-page context while still gaining speedup
@@ -270,6 +279,9 @@ def _process_document_background(
                     )
                 )
             session.commit()
+
+        bump_content_version(session, document.id)
+        session.commit()
 
         # Auto-generate knowledge graph after all explanations are done
         _maybe_auto_generate_knowledge_graph(session, document.id)
@@ -416,6 +428,7 @@ def _upsert_slide_explanation(
         explanation.version = CURRENT_EXPLANATION_VERSION
         explanation.generated_at = datetime.now(timezone.utc)
         session.add(explanation)
+        bump_content_version(session, document_id)
         return explanation, overwrote_existing
 
     explanation = SlideExplanation(
@@ -428,6 +441,7 @@ def _upsert_slide_explanation(
     )
     session.add(explanation)
     session.flush()
+    bump_content_version(session, document_id)
 
     # Auto-upsert concepts extracted from the explanation
     _upsert_concepts_from_meta(session=session, document_id=document_id, slide=slide, meta=meta)

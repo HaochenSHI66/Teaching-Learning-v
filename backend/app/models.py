@@ -36,6 +36,7 @@ class Document(SQLModel, table=True):
     page_count: int = Field(default=0)
     user_id: str | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow)
+    content_version: int = Field(default=1)
 
 
 class Folder(SQLModel, table=True):

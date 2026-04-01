@@ -75,6 +75,7 @@ _SQLITE_COLUMN_BACKFILLS: dict[str, dict[str, str]] = {
         "folder_id": "TEXT",
         "sort_order": "INTEGER NOT NULL DEFAULT 0",
         "user_id": "TEXT",
+        "content_version": "INTEGER NOT NULL DEFAULT 1",
     },
     "folder": {
         "user_id": "TEXT",
