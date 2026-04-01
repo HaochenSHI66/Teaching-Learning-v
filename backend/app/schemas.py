@@ -158,6 +158,7 @@ class SlideExplanationGenerateResponse(BaseModel):
     markdown: str
     meta: dict | None = None
     overwrote_existing: bool
+    content_version: int | None = None
 
 
 class DocumentExplanationsResponse(BaseModel):
@@ -169,11 +170,19 @@ class DocumentExplanationGenerateResponse(BaseModel):
     document_id: str
     generated_count: int
     overwrote_existing: bool
+    content_version: int | None = None
 
 
 class DocumentExplanationsExportResponse(BaseModel):
     document_id: str
     markdown: str
+
+
+class DocumentCacheBundleRead(BaseModel):
+    document_id: str
+    content_version: int
+    slides: list[SlideRead]
+    explanations: list[SlideExplanationRead]
 
 
 class DocumentDeleteResponse(BaseModel):

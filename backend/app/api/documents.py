@@ -803,6 +803,7 @@ def regenerate_slide_explanation(
         markdown=explanation.markdown,
         meta=explanation.meta,
         overwrote_existing=overwrote_existing,
+        content_version=document.content_version,
     )
 
 
@@ -860,6 +861,7 @@ def regenerate_document_explanations(
         document_id=document_id,
         generated_count=generated_count,
         overwrote_existing=overwrote_existing,
+        content_version=document.content_version,
     )
 
 
