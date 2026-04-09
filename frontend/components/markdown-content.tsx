@@ -136,7 +136,7 @@ export function MarkdownContent({ content, className = "", onConceptClick }: Mar
             },
           } as any),
         }}
-        rehypePlugins={[rehypeRaw, rehypeKatex]}
+        rehypePlugins={[[rehypeRaw, { passThrough: ["math", "inlineMath"] }], rehypeKatex]}
         remarkPlugins={[remarkGfm, remarkMath]}
       >
         {convertWikiLinks(normalizeCallouts(stripCodeFence(content)))}

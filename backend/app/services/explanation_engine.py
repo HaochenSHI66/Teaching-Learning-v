@@ -337,6 +337,19 @@ def _detect_compact_slide_type(*, extracted_text: str, extract_payload: dict | N
     )
     if has_dense_content:
         return None
+    # Pages that introduce examples/exercises always need full LLM explanation,
+    # even if they appear short (e.g. "Examples" title + one formula).
+    _EXAMPLE_KEYWORDS = (
+        "example", "exercise", "problem", "solution", "solve",
+        "例题", "题目", "习题", "解答", "求解",
+    )
+    all_text = " ".join([
+        extracted_text,
+        str(payload.get("summary") or ""),
+        " ".join(str(t) for t in (payload.get("title_candidates") or [])),
+    ]).lower()
+    if any(kw in all_text for kw in _EXAMPLE_KEYWORDS):
+        return None
     if _looks_like_toc_page(extracted_text=extracted_text, extract_payload=payload):
         return "toc"
     if not text_blocks and not title_candidates:
@@ -800,31 +813,42 @@ def generate_slide_explanation(
     if slide_image_path:
         dual = DualModelPipeline()
         if dual.is_configured():
-            # JSON pipeline (primary — structured output)
-            try:
-                json_data = dual.generate_json(
-                    slide_image_path=slide_image_path,
-                    extraction_text=prompt_extraction_text,
-                    page_num=slide.page_num,
-                    question=question,
-                    related_pages=related_pages,
-                    repeat_analysis=(extract_payload or {}).get("repeat_analysis"),
-                    document_id=slide.document_id,
-                )
-                if json_data and isinstance(json_data, dict) and json_data.get("items"):
-                    canonical_markdown = render_explanation_json(json_data)
-                    meta = build_meta_from_json(json_data)
-                    meta["pipeline"] = "dual-json"
-                    return canonical_markdown, follow_ups, degraded, meta
-                else:
-                    logger.error("JSON pipeline returned empty/invalid data for page %d", slide.page_num)
-            except Exception as exc:
-                logger.error("JSON pipeline failed for page %d: %s", slide.page_num, exc)
+            import time as _time
 
-            # If JSON failed, raise — no Markdown fallback
+            MAX_RETRIES = 3
+            last_error: str = ""
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    json_data = dual.generate_json(
+                        slide_image_path=slide_image_path,
+                        extraction_text=prompt_extraction_text,
+                        page_num=slide.page_num,
+                        question=question,
+                        related_pages=related_pages,
+                        repeat_analysis=(extract_payload or {}).get("repeat_analysis"),
+                        document_id=slide.document_id,
+                    )
+                    if json_data and isinstance(json_data, dict) and json_data.get("items"):
+                        canonical_markdown = render_explanation_json(json_data)
+                        meta = build_meta_from_json(json_data)
+                        meta["pipeline"] = "dual-json"
+                        if attempt > 1:
+                            meta["retry_attempts"] = attempt
+                        return canonical_markdown, follow_ups, degraded, meta
+                    else:
+                        last_error = f"JSON pipeline returned empty/invalid data for page {slide.page_num}"
+                        logger.error("%s (attempt %d/%d)", last_error, attempt, MAX_RETRIES)
+                except Exception as exc:
+                    last_error = f"JSON pipeline failed for page {slide.page_num}: {exc}"
+                    logger.error("%s (attempt %d/%d)", last_error, attempt, MAX_RETRIES)
+
+                if attempt < MAX_RETRIES:
+                    _time.sleep(1)
+
+            # All retries exhausted — raise with details
             raise RuntimeError(
-                f"JSON pipeline failed for page {slide.page_num}. "
-                "Markdown fallback is disabled."
+                f"第 {slide.page_num} 页讲解生成失败（已重试 {MAX_RETRIES} 次）。"
+                f"原因：{last_error}"
             )
 
     # No image path — template fallback only (compact slides already handled above)

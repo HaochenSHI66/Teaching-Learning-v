@@ -339,6 +339,21 @@ def _explanation_is_current(explanation: SlideExplanation | None) -> bool:
     return True
 
 
+def _compute_explanation_state(
+    explanation: SlideExplanation | None,
+    extract_payload: dict | None,
+) -> str:
+    """Return 'ready', 'error', or 'not_generated'."""
+    if explanation is None:
+        return "not_generated"
+    meta = getattr(explanation, "meta", None) or {}
+    if meta.get("pipeline") == "error":
+        return "error"
+    if _explanation_is_current(explanation) and extract_payload_is_current(extract_payload):
+        return "ready"
+    return "not_generated"
+
+
 def _refresh_document_extracts_if_needed(
     *,
     session: Session,
@@ -414,14 +429,20 @@ def _upsert_slide_explanation(
         raise HTTPException(status_code=404, detail="Document not found")
 
     slide_image_path = storage_root / document.storage_path / slide.image_path
-    markdown, _, _, meta = generate_slide_explanation(
-        slide=slide,
-        question="请生成这一页的完整讲解",
-        extracted_text=extracted_text,
-        slide_image_path=slide_image_path if slide_image_path.exists() else None,
-        extract_payload=extract_payload,
-        related_pages=[slide.page_num],
-    )
+    try:
+        markdown, _, _, meta = generate_slide_explanation(
+            slide=slide,
+            question="请生成这一页的完整讲解",
+            extracted_text=extracted_text,
+            slide_image_path=slide_image_path if slide_image_path.exists() else None,
+            extract_payload=extract_payload,
+            related_pages=[slide.page_num],
+        )
+    except RuntimeError as exc:
+        # All retries failed — save a failure placeholder so the frontend can show it
+        logger.warning("Saving failure placeholder for slide %s (page %d): %s", slide.id, slide.page_num, exc)
+        markdown = f"## 第 {slide.page_num} 页：讲解生成失败\n\n> ⚠️ 该页讲解在重试 3 次后仍未成功生成。\n>\n> 错误信息：{exc}\n\n请点击「重新生成」按钮再次尝试。"
+        meta = {"pipeline": "error", "error": str(exc)}
     overwrote_existing = explanation is not None
 
     if explanation:
@@ -489,11 +510,9 @@ def _build_slide_reads(
                 slide=slide,
                 payload=extract_map.get(slide.id),
             ),
-            explanation_state=(
-                "ready"
-                if _explanation_is_current(explanation_map.get(slide.id))
-                and extract_payload_is_current(extract_map.get(slide.id))
-                else "not_generated"
+            explanation_state=_compute_explanation_state(
+                explanation_map.get(slide.id),
+                extract_map.get(slide.id),
             ),
         )
         for slide in slides

@@ -17,6 +17,15 @@ from app.models import Document, Slide, SlideExplanation, SlideExtract, User
 router = APIRouter(prefix="/api/v1/bootstrap", tags=["bootstrap"])
 
 
+def _bootstrap_explanation_state(explanation: SlideExplanation | None) -> str:
+    if explanation is None:
+        return "not_generated"
+    meta = getattr(explanation, "meta", None) or {}
+    if meta.get("pipeline") == "error":
+        return "error"
+    return "ready"
+
+
 class BootstrapSlide(BaseModel):
     id: str
     page_num: int
@@ -82,12 +91,12 @@ def get_bootstrap_data(
                 .order_by(Slide.page_num)
             ).all()
 
-            # Only check which slides have explanations (don't send full content — too large)
+            # Check which slides have explanations and their status
             explanations_db = session.exec(
-                select(SlideExplanation.slide_id)
+                select(SlideExplanation)
                 .where(SlideExplanation.document_id == first_doc_id)
             ).all()
-            explanation_set = set(explanations_db)
+            explanation_map: dict[str, SlideExplanation] = {e.slide_id: e for e in explanations_db}
 
             # Extract payloads (keyed by slide_id)
             slide_ids = [s.id for s in slides_db]
@@ -107,7 +116,7 @@ def get_bootstrap_data(
                     thumbnail_url=f"/storage/{first_doc_id}/{slide.thumbnail_path}",
                     width=slide.width,
                     height=slide.height,
-                    explanation_state="ready" if slide.id in explanation_set else "not_generated",
+                    explanation_state=_bootstrap_explanation_state(explanation_map.get(slide.id)),
                     extract=extract.payload if extract and extract.payload else None,
                 ))
 

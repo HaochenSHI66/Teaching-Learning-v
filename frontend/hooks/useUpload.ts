@@ -150,11 +150,19 @@ export function useUpload(): UploadState & UploadActions {
         documentIdRef.current = document_id;
         setDocumentId(document_id);
 
-        // Seed bootstrap data into cache manager
+        // Seed bootstrap data into cache manager.
+        // Hydrate from IDB first to preserve any existing explanations —
+        // otherwise we'd overwrite them with [] and the version would match
+        // the server, causing usePreload to skip re-fetching.
+        await mgr.hydrate(document_id);
+        const existingData = mgr.get(document_id);
+        const existingExplanations = existingData?.explanations ?? [];
         await mgr.set(document_id, {
           slides: fetchedSlides,
-          explanations: [],
-          version: content_version ?? 0,
+          explanations: existingExplanations,
+          // Use version 0 when we have no explanations so that diffManifest
+          // marks this doc as "updated" and preload fetches explanations.
+          version: existingExplanations.length > 0 ? (content_version ?? 0) : 0,
         });
 
         setStatusText(`文档加载完成，共 ${fetchedSlides.length} 页。`);

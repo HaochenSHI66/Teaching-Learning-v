@@ -132,7 +132,9 @@ function ExplanationItemCard({
       {/* Main explanation */}
       <div className="markdown-body text-[1em] leading-[1.85] text-[var(--tx-3)] [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:bg-[var(--sf-3)] [&_pre]:text-[var(--tx-2)]">
         {item.label && (
-          <strong className="text-[#3b82c4] font-semibold">{item.label}：</strong>
+          <span className="font-semibold text-[#3b82c4]">
+            <InlineMarkdown text={item.label + "："} />
+          </span>
         )}
         <InlineMarkdown text={item.explanation} />
       </div>
@@ -143,7 +145,9 @@ function ExplanationItemCard({
           {item.sub_items.map((sub, i) => (
             <li key={i} className="text-[0.93em] leading-[1.8] text-[var(--tx-4)]">
               {sub.label && (
-                <strong className="text-[#3b82c4] font-semibold">{sub.label}：</strong>
+                <span className="font-semibold text-[#3b82c4]">
+                  <InlineMarkdown text={sub.label + "："} />
+                </span>
               )}
               <InlineMarkdown text={sub.explanation} />
             </li>

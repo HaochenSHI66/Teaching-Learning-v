@@ -300,7 +300,9 @@ export function ExportNotesModal({
         <div className="mb-3 flex items-center gap-4 text-xs text-[var(--tx-5)]">
           <span>{previewMeta.title}</span>
           <span>{previewMeta.page_count} 页</span>
-          <span>{previewMeta.concept_count} 个概念</span>
+          {previewMeta.concept_count > 0 && (
+            <span>{previewMeta.concept_count} 个概念</span>
+          )}
         </div>
       )}
 
