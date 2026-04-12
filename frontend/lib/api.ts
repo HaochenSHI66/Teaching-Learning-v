@@ -245,12 +245,12 @@ import { getToken } from "./auth";
 import { type AuthUser, setToken, setUser } from "./auth";
 
 // API base: empty string = same origin (production behind tunnel).
-// Only use localhost:8000 when running locally on localhost.
+// Only use localhost:18920 when running locally on localhost.
 function _detectApiBase(): string {
   if (process.env.NEXT_PUBLIC_API_BASE_URL) return process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (typeof window === "undefined") return "http://localhost:8000"; // SSR fallback
+  if (typeof window === "undefined") return "http://127.0.0.1:18920"; // SSR fallback
   return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-    ? "http://localhost:8000"
+    ? "http://127.0.0.1:18920"
     : "";  // same origin — relative URLs
 }
 const apiBase = _detectApiBase();

@@ -406,11 +406,73 @@ h4 {
   color: var(--tx-1);
 }
 
+/* H2 — section separator with accent left bar */
+.markdown-body h2 {
+  margin-top: 1.6em;
+  margin-bottom: 0.55em;
+  padding-left: 0.65em;
+  border-left: 3px solid var(--brand-blue);
+  font-size: 1.08em;
+  letter-spacing: 0.01em;
+}
+.markdown-body h2:first-child {
+  margin-top: 0;
+}
+[data-theme="dark"] .markdown-body h2 {
+  border-left-color: var(--brand-blue);
+}
+
+/* H3 — smaller, with a subtle bottom rule */
+.markdown-body h3 {
+  margin-top: 1.1em;
+  margin-bottom: 0.4em;
+  padding-bottom: 0.2em;
+  font-size: 0.98em;
+  color: var(--tx-2);
+  border-bottom: 1px solid var(--bd-3);
+}
+
 .markdown-body p,
 .markdown-body li,
 .markdown-body td,
 .markdown-body th {
   color: var(--tx-3);
+}
+
+/* Top-level list: a bit more breathing room */
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.4em;
+  margin-top: 0.45em;
+  margin-bottom: 0.45em;
+}
+
+.markdown-body li {
+  margin-top: 0.3em;
+  margin-bottom: 0.3em;
+  line-height: 1.75;
+}
+
+/* Nested lists — indent + subtle left rule to show hierarchy */
+.markdown-body ul ul,
+.markdown-body ol ul,
+.markdown-body ul ol,
+.markdown-body ol ol {
+  margin-top: 0.2em;
+  margin-bottom: 0.1em;
+  padding-left: 1em;
+  border-left: 2px solid var(--bd-3);
+  margin-left: 0.15em;
+}
+
+.markdown-body ul ul li,
+.markdown-body ol ul li {
+  color: var(--tx-4);
+  font-size: 0.94em;
+}
+[data-theme="dark"] .markdown-body ul ul,
+[data-theme="dark"] .markdown-body ol ul {
+  border-left-color: rgba(100, 160, 240, 0.18);
 }
 
 .markdown-body strong {
@@ -439,9 +501,10 @@ h4 {
 
 .markdown-body code {
   border-radius: 0.35rem;
-  background: rgba(111, 140, 104, 0.12);
-  padding: 0.1rem 0.3rem;
-  color: #7d5d3f;
+  background: rgba(114, 144, 166, 0.13);
+  padding: 0.1rem 0.35rem;
+  color: #5a7fa0;
+  font-size: 0.9em;
 }
 [data-theme="dark"] .markdown-body code {
   background: rgba(127, 160, 120, 0.12);
