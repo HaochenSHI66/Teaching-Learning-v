@@ -68,6 +68,14 @@
 
 ---
 
+## 🏗️ 系统架构
+
+![System Architecture](docs/architecture.png)
+
+> 完整数据流：用户上传 PDF → Slide Processor 渲染页面 + OCR → Dual Model Pipeline（视觉模型提取图表结构，文本模型生成结构化讲解）→ 缓存层 → 前端分屏展示 + 学习工具。
+
+---
+
 ## 🚀 怎么用？
 
 ### 在线使用（推荐）
