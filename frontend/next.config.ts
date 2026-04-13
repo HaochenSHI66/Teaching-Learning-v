@@ -9,6 +9,7 @@ if (typeof window === "undefined" && typeof globalThis.localStorage !== "undefin
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  output: "standalone",
 
   // ── Production optimizations for public deployment ──
   compress: true,

@@ -30,7 +30,10 @@ if lsof -i :13900 -sTCP:LISTEN >/dev/null 2>&1; then
 else
   echo "  启动中..."
   cd "$SCRIPT_DIR/frontend"
-  nohup node .next/standalone/server.js \
+  # 确保 standalone 静态文件就位
+  cp -r .next/static .next/standalone/.next/static 2>/dev/null || true
+  cp -r public .next/standalone/public 2>/dev/null || true
+  PORT=13900 nohup node .next/standalone/server.js \
     > "$LOG_DIR/frontend.log" 2>&1 &
   sleep 3
   lsof -i :13900 -sTCP:LISTEN >/dev/null 2>&1 && echo "  ✓ 已启动" || { echo "  ✗ 失败，查看 logs/frontend.log"; exit 1; }
