@@ -209,11 +209,27 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
           </div>
         </div>
 
-        {/* Swipe hint (only first few views) */}
-        <div className="shrink-0 flex items-center justify-center gap-3 py-1.5 text-[11px] text-[var(--tx-6)]">
-          <span>← 上一页</span>
-          <span className="h-1 w-1 rounded-full bg-[var(--tx-6)]" />
-          <span>下一页 →</span>
+        {/* Navigation buttons */}
+        <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-t border-[var(--bd-2)] bg-[var(--sf-1)]">
+          <button
+            className="flex items-center gap-1.5 rounded-xl border border-[var(--bd-1)] bg-[var(--sf-2)] px-4 py-2 text-[13px] font-medium text-[var(--tx-3)] active:bg-[var(--sf-4)] disabled:opacity-30 disabled:pointer-events-none"
+            disabled={currentIndex <= 0}
+            onClick={() => { onSelect(currentIndex - 1); onRoiChange(null); }}
+            type="button"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            上一页
+          </button>
+          <span className="text-[12px] tabular-nums text-[var(--tx-5)]">{currentIndex + 1} / {slides.length}</span>
+          <button
+            className="flex items-center gap-1.5 rounded-xl border border-[var(--bd-1)] bg-[var(--sf-2)] px-4 py-2 text-[13px] font-medium text-[var(--tx-3)] active:bg-[var(--sf-4)] disabled:opacity-30 disabled:pointer-events-none"
+            disabled={currentIndex >= slides.length - 1}
+            onClick={() => { onSelect(currentIndex + 1); onRoiChange(null); }}
+            type="button"
+          >
+            下一页
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
         </div>
       </section>
     );

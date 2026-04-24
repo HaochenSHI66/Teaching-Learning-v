@@ -40,7 +40,7 @@ export default function Page() {
   const [roi, setRoi] = useState<RoiBox | null>(null);
   const [globalStatus, setGlobalStatus] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [splitRatio, setSplitRatio] = useState(50); // percentage for left panel
+  const [splitRatio, setSplitRatio] = useState(50); // percentage for left panel (desktop) or top panel (mobile)
   const splitDragging = useRef(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const [interactiveReady, setInteractiveReady] = useState(false);
@@ -475,7 +475,8 @@ export default function Page() {
               : "flex-row gap-0"
           }`}
           onMouseMove={(e) => {
-            if (!splitDragging.current || isMobile || !splitContainerRef.current) return;
+            if (!splitDragging.current || !splitContainerRef.current) return;
+            if (isMobile) return; // mobile uses touch events on the handle
             const rect = splitContainerRef.current.getBoundingClientRect();
             const pct = ((e.clientX - rect.left) / rect.width) * 100;
             setSplitRatio(Math.max(30, Math.min(70, pct)));
@@ -483,10 +484,10 @@ export default function Page() {
           onMouseUp={() => { splitDragging.current = false; }}
           onMouseLeave={() => { splitDragging.current = false; }}
         >
-            {/* Left panel: Slide Viewer */}
+            {/* Left/Top panel: Slide Viewer */}
             <div
               className="min-h-0 min-w-0 overflow-hidden shrink-0"
-              style={isMobile ? { height: "45%" } : { flex: `0 0 calc(${splitRatio}% - 6px)` }}
+              style={isMobile ? { height: `${splitRatio}%` } : { flex: `0 0 calc(${splitRatio}% - 6px)` }}
             >
             {showProcessingAnimation ? (
               <div className="flex h-full flex-col items-center justify-center rounded-[30px] border border-[var(--bd-1)] bg-[var(--gd-processing)] shadow-[var(--sh-card)]">
@@ -516,8 +517,26 @@ export default function Page() {
             )}
             </div>
 
-            {/* Drag handle (desktop only) */}
-            {!isMobile && (
+            {/* Drag handle — vertical on desktop, horizontal on mobile */}
+            {isMobile ? (
+              <div
+                className="shrink-0 flex items-center justify-center cursor-row-resize select-none touch-none z-10"
+                style={{ height: 16 }}
+                onMouseDown={(e) => { e.preventDefault(); splitDragging.current = true; }}
+                onTouchStart={(e) => { e.preventDefault(); splitDragging.current = true; }}
+                onTouchMove={(e) => {
+                  if (!splitDragging.current || !splitContainerRef.current) return;
+                  e.preventDefault();
+                  const touch = e.touches[0];
+                  const rect = splitContainerRef.current.getBoundingClientRect();
+                  const pct = ((touch.clientY - rect.top) / rect.height) * 100;
+                  setSplitRatio(Math.max(25, Math.min(75, pct)));
+                }}
+                onTouchEnd={() => { splitDragging.current = false; }}
+              >
+                <div className="h-1 w-10 rounded-full bg-[var(--bd-3)]" />
+              </div>
+            ) : (
               <div
                 className="shrink-0 flex items-center justify-center cursor-col-resize group select-none"
                 style={{ width: 12 }}
@@ -527,10 +546,10 @@ export default function Page() {
               </div>
             )}
 
-            {/* Right panel: AI Panel */}
+            {/* Right/Bottom panel: AI Panel */}
             <div
               className="min-h-0 min-w-0 overflow-hidden"
-              style={isMobile ? { flex: 1 } : { flex: `1 1 0%` }}
+              style={isMobile ? { flex: 1, minHeight: 0 } : { flex: `1 1 0%` }}
             >
             <ErrorBoundary resetKey={upload.documentId}>
               <AIPanel
