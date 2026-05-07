@@ -26,3 +26,6 @@ output/
 # Local storage
 storage/
 backend/storage/
+
+# Eval results (large JSON files, not for version control)
+tools/eval_results/*.json

@@ -135,6 +135,20 @@ class ModelGateway:
             payload["max_tokens"] = 1024
         return self._post_chat_completion(payload)
 
+    def generate_vision_json(self, *, prompt: str, slide_image_path: Path) -> dict:
+        """Call vision model and return parsed JSON dict. Use for judge/eval calls.
+
+        Note: uses the same model/API key as the main gateway (self-evaluation risk).
+        For an independent judge, set VISION_API_KEY / VISION_BASE_URL / VISION_MODEL
+        to a different provider in backend/.env before running rubric_judge.py.
+        """
+        payload = self._build_payload(prompt_text=prompt, image_paths=[slide_image_path])
+        payload["max_tokens"] = 4096  # judge responses need more room than extraction
+        if not self._is_anthropic:
+            payload["response_format"] = {"type": "json_object"}
+        raw = self._post_chat_completion(payload)
+        return json.loads(raw)
+
     def _build_payload(self, *, prompt_text: str, image_paths: list[Path]) -> dict[str, Any]:
         if self._is_anthropic:
             return self._build_anthropic_payload(prompt_text=prompt_text, image_paths=image_paths)

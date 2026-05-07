@@ -16,7 +16,6 @@ import json
 import os
 import sqlite3
 import sys
-import warnings
 from datetime import datetime
 from pathlib import Path
 from statistics import mean, stdev
@@ -187,26 +186,21 @@ def call_judge(
     # (Qwen-VL via OpenAI-compat does not always honour a separate system role)
     full_prompt = JUDGE_SYSTEM_PROMPT + "\n\n" + user_prompt
 
-    payload = gateway._build_payload(
-        prompt_text=full_prompt,
-        image_paths=[image_path],
-    )
-    # Request JSON output
-    if not gateway._is_anthropic:
-        payload["response_format"] = {"type": "json_object"}
-
     for attempt in range(2):
         try:
-            raw = gateway._post_chat_completion(payload)
-            return json.loads(raw)
+            judgment = gateway.generate_vision_json(prompt=full_prompt, slide_image_path=image_path)
+            missing = [f"Q{i}" for i in range(1, 8) if f"Q{i}" not in judgment]
+            if missing:
+                print(f"  [WARN] judge response missing keys: {missing}", file=sys.stderr)
+            return judgment
         except json.JSONDecodeError:
             if attempt == 0:
-                warnings.warn(f"Judge returned invalid JSON, retrying once…")
+                print("  [WARN] Judge returned invalid JSON, retrying once…", file=sys.stderr)
                 continue
-            warnings.warn(f"Judge returned invalid JSON after retry, skipping.")
+            print("  [WARN] Judge returned invalid JSON after retry, skipping.", file=sys.stderr)
             return None
         except Exception as exc:
-            warnings.warn(f"Judge call failed: {exc}")
+            print(f"  [WARN] Judge call failed: {exc}", file=sys.stderr)
             return None
     return None
 
@@ -276,8 +270,6 @@ def main() -> None:
         raise SystemExit(f"DB not found: {db_path}")
 
     conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-
     user_id = get_user_id(conn, args.user)
     print(f"User: {args.user} (id={user_id})")
 
@@ -288,7 +280,10 @@ def main() -> None:
     if not rows:
         raise SystemExit("No slide explanations found for this user/document.")
 
-    # Use the VISION API for judge calls (has vision capability)
+    # Use the VISION API for judge calls (has vision capability).
+    # WARNING: self-evaluation risk — this uses the same model that generated the explanations.
+    # To use an independent judge, set VISION_API_KEY / VISION_BASE_URL / VISION_MODEL
+    # to a different provider/model in backend/.env before running this script.
     gateway = ModelGateway(
         api_key=os.environ.get("VISION_API_KEY") or os.environ.get("API_KEY"),
         base_url=os.environ.get("VISION_BASE_URL") or os.environ.get("BASE_URL"),
@@ -310,8 +305,12 @@ def main() -> None:
 
         print(f"[{i+1}/{len(rows)}] {filename} page {page_num} …", end=" ", flush=True)
 
-        # Resolve image path
-        image_path = STORAGE_ROOT / doc_id / image_rel if image_rel else None
+        # Resolve image path (support absolute paths stored in DB)
+        if not image_rel:
+            image_path = None
+        else:
+            p = Path(image_rel)
+            image_path = p if p.is_absolute() else STORAGE_ROOT / doc_id / p
         if not image_path or not image_path.exists():
             print("SKIP (image not found)")
             result = {**dict(row), "judgment": None, "error": "image_not_found"}
