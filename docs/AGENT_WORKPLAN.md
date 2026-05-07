@@ -207,4 +207,5 @@ User 同时在做 autoresearch-meta 论文（target COLM/NeurIPS 2026, superviso
 |---|---|---|
 | 2026-05-03 | 4 份设计文档 + 16 篇论文下载 + NotebookLM 入库 | 阶段 0 完成 |
 | 2026-05-03 | #1 prompt_templates.py v2 升级（Tier A+B 全套）+ dual_pipeline 防御 | +44 行 diff，编译通过、smoke test 通过；待 production 灰度验证 |
-| | | |
+| 2026-05-07 | #B 评估底座全套（rubric_judge / eval_format / eval_quiz / eval_retrieval / eval_ab） | 5 个工具完成，eval_results 加入 gitignore |
+| 2026-05-07 | 前端 4 项改动（缩略图自动跟随、悬停高亮、全局追问、DeepSeek V4 Flash） | 10 个 commit，TypeScript clean，push 完成 |
