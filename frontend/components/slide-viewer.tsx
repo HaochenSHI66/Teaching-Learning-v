@@ -300,7 +300,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
               setDraftRoi(null);
             }}
             onMouseLeave={() => {
-              if (dragStart) { setDragStart(null); setDraftRoi(null); }
+              if (dragStart) { setDragStart(null); setDraftRoi(null); dragMovedRef.current = false; }
               onHoverItem?.(null);
             }}
             onMouseMove={(event) => {

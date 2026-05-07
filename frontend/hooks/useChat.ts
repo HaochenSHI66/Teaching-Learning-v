@@ -60,6 +60,18 @@ export function useChat(): ChatState & ChatActions {
     };
   }, []);
 
+  const loadGlobalMessages = useCallback(async () => {
+    setGlobalLoading(true);
+    try {
+      const msgs = await fetchGlobalMessages();
+      setGlobalMessages(msgs);
+    } catch {
+      // silently keep empty list; network errors are non-critical for history
+    } finally {
+      setGlobalLoading(false);
+    }
+  }, []);
+
   const ask = useCallback(
     async (message: string, sessionId: string, slide?: Slide) => {
       const question = message.trim();
@@ -88,6 +100,7 @@ export function useChat(): ChatState & ChatActions {
           { id: nextId(), role: "assistant", content: response.answer, slideId },
         ]);
         setStatusText(response.degraded ? "回答完成（降级模式）" : "回答完成");
+        if (mode === "global") void loadGlobalMessages();
       } catch (error) {
         // If this request was aborted (superseded), don't update UI
         if (controller.signal.aborted) return;
@@ -103,7 +116,7 @@ export function useChat(): ChatState & ChatActions {
         }
       }
     },
-    [mode],
+    [mode, loadGlobalMessages],
   );
 
   const askRoi = useCallback(async (roi: RoiBox, sessionId: string, slide: Slide) => {
@@ -136,18 +149,6 @@ export function useChat(): ChatState & ChatActions {
 
   const clearSlideMessages = useCallback((slideId: string) => {
     setChatMessages((prev) => prev.filter((m) => m.slideId !== slideId));
-  }, []);
-
-  const loadGlobalMessages = useCallback(async () => {
-    setGlobalLoading(true);
-    try {
-      const msgs = await fetchGlobalMessages();
-      setGlobalMessages(msgs);
-    } catch {
-      // silently keep empty list; network errors are non-critical for history
-    } finally {
-      setGlobalLoading(false);
-    }
   }, []);
 
   const clearGlobalMessages = useCallback(async () => {
