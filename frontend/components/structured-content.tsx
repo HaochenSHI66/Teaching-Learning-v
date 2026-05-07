@@ -171,6 +171,7 @@ type StructuredContentProps = {
   items: ExplanationItem[];
   title?: string;
   contentType?: string;
+  highlightIndex?: number | null;
 };
 
 /**
@@ -205,6 +206,7 @@ export function StructuredContent({
   items,
   title,
   contentType = "content",
+  highlightIndex,
 }: StructuredContentProps) {
   const displayTitle = title?.replace(/^##\s*/, "") || "";
   const typeLabel = CONTENT_TYPE_LABEL[contentType];
@@ -229,7 +231,16 @@ export function StructuredContent({
       {/* Items — numbered cards */}
       <div className="space-y-5 pl-3">
         {items.map((item, index) => (
-          <ExplanationItemCard key={index} item={item} contentType={contentType} index={index} />
+          <div
+            key={index}
+            className={`rounded-xl transition-colors duration-150 ${
+              highlightIndex === index
+                ? "bg-blue-50 border-l-[3px] border-blue-400 pl-2 -ml-2"
+                : ""
+            }`}
+          >
+            <ExplanationItemCard item={item} contentType={contentType} index={index} />
+          </div>
         ))}
       </div>
     </div>

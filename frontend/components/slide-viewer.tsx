@@ -20,6 +20,9 @@ type SlideViewerProps = {
   onBookmarksChange: () => void;
   documentId: string;
   flashcardStats: FlashcardStats | null;
+  itemCount?: number;
+  onHoverItem?: (index: number | null) => void;
+  onLockItem?: (index: number | null) => void;
 };
 
 type Point = { x: number; y: number };
@@ -28,7 +31,7 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, bookmarks, bookmarkFilter, onBookmarkFilterChange, onBookmarksChange, documentId, flashcardStats }: SlideViewerProps) {
+export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, bookmarks, bookmarkFilter, onBookmarkFilterChange, onBookmarksChange, documentId, flashcardStats, itemCount = 0, onHoverItem, onLockItem }: SlideViewerProps) {
   const currentSlide = slides[currentIndex];
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [dragStart, setDragStart] = useState<Point | null>(null);
@@ -297,8 +300,15 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
             }}
             onMouseLeave={() => {
               if (dragStart) { setDragStart(null); setDraftRoi(null); }
+              onHoverItem?.(null);
             }}
             onMouseMove={(event) => {
+              if (itemCount && onHoverItem) {
+                const rect = event.currentTarget.getBoundingClientRect();
+                const relY = event.clientY - rect.top;
+                const band = Math.min(Math.floor((relY / rect.height) * itemCount), itemCount - 1);
+                onHoverItem(band);
+              }
               if (!dragStart) return;
               const point = toRelative(event.clientX, event.clientY);
               if (point) updateDraft(dragStart, point);
@@ -310,6 +320,13 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
               setDragStart(null);
               if (!point) { setDraftRoi(null); return; }
               commitDrag(start, point);
+            }}
+            onClick={(e) => {
+              if (!itemCount || !onLockItem) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const relY = e.clientY - rect.top;
+              const band = Math.min(Math.floor((relY / rect.height) * itemCount), itemCount - 1);
+              onLockItem(band);
             }}
             // Touch events
             onTouchEnd={(event) => {

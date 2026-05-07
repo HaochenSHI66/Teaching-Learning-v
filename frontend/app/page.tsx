@@ -38,6 +38,8 @@ export default function Page() {
 
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [roi, setRoi] = useState<RoiBox | null>(null);
+  const [hoveredItemIndex, setHoveredItemIndex] = useState<number | null>(null);
+  const [lockedItemIndex, setLockedItemIndex] = useState<number | null>(null);
   const [globalStatus, setGlobalStatus] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [splitRatio, setSplitRatio] = useState(50); // percentage for left panel (desktop) or top panel (mobile)
@@ -164,6 +166,14 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLockedItemIndex(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
     if (!currentSlide) {
       setExplanation("");
       setExplanationMeta(null);
@@ -173,6 +183,8 @@ export default function Page() {
     setExplanation(cached?.markdown ?? "");
     setExplanationMeta(cached?.meta ?? null);
   }, [currentSlide, upload.cachedExplanations, setExplanation, setExplanationMeta]);
+
+  const explanationItemCount = chat.explanationMeta?.structured_items?.length ?? 0;
 
   const statusText =
     chat.statusText || upload.statusText || globalStatus || "待机";
@@ -506,8 +518,13 @@ export default function Page() {
                 currentIndex={currentSlideIndex}
                 documentId={upload.documentId ?? ""}
                 flashcardStats={flashcardStats}
+                itemCount={explanationItemCount}
                 onBookmarkFilterChange={setBookmarkFilter}
                 onBookmarksChange={refreshBookmarks}
+                onHoverItem={setHoveredItemIndex}
+                onLockItem={(index) => {
+                  setLockedItemIndex((prev) => (prev === index ? null : index));
+                }}
                 onRoiChange={setRoi}
                 onSelect={setCurrentSlideIndex}
                 roi={roi}
@@ -565,6 +582,8 @@ export default function Page() {
                 explanation={chat.explanation}
                 explanationMeta={chat.explanationMeta}
                 generationProgress={slideGenerationProgress ?? null}
+                hoveredItemIndex={hoveredItemIndex}
+                lockedItemIndex={lockedItemIndex}
                 loading={loading}
                 mode={chat.mode}
                 onChatInputChange={chat.setChatInput}

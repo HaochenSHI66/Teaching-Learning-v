@@ -20,6 +20,8 @@ type AIPanelProps = {
   explanationLoading: boolean;
   explanationState: "not_generated" | "ready" | "generating" | "error";
   extraction: SlideExtract | null;
+  hoveredItemIndex?: number | null;
+  lockedItemIndex?: number | null;
   loading: boolean;
   chatInput: string;
   chatMessages: ChatMessage[];
@@ -150,6 +152,8 @@ export function AIPanel({
   explanationLoading,
   explanationState,
   extraction,
+  hoveredItemIndex,
+  lockedItemIndex,
   loading,
   chatInput,
   chatMessages,
@@ -193,6 +197,7 @@ export function AIPanel({
       return next;
     });
   };
+  const activeHighlight = lockedItemIndex ?? hoveredItemIndex ?? null;
   const badge = getExplanationBadge(explanationState, explanationLoading);
   const extractionMarkdown = useMemo(() => buildExtractionMarkdown(extraction), [extraction]);
   const repeatSummary = explanationMeta?.repeat_summary;
@@ -371,6 +376,7 @@ export function AIPanel({
                     items={explanationMeta.structured_items}
                     title={explanationMeta.title}
                     contentType={explanationMeta.content_type}
+                    highlightIndex={activeHighlight}
                   />
                   {explanationMeta?.sections.repeat_md ? (
                     <details className="overflow-hidden rounded-[18px] border border-[var(--bd-1)] bg-[var(--sf-2)]">
