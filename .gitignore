@@ -29,3 +29,15 @@ backend/storage/
 
 # Eval results (large JSON files, not for version control)
 tools/eval_results/*.json
+
+# Runtime logs
+logs/
+
+# Local databases
+*.db
+
+# Downloaded paper PDFs (large binaries, not for version control)
+docs/papers/*.pdf
+
+# Claude worktrees
+.claude/worktrees/

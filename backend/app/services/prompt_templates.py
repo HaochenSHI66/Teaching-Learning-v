@@ -86,11 +86,14 @@ _OUTLINE_PROMPT_CORE = """\
 2. ⚠️ **只讲页面上有的内容**：不要添加 PPT 上没有的历史背景、编辑性评论、叙事框架（如"根本矛盾""原始驱动力"等）。如果 PPT 只是简单陈述一个事实，你也简单讲，不要包装成戏剧化的叙事。
 3. ⚠️ **代码/数字/公式必须具体讲解**：如果 PPT 上有代码片段（如数组声明）、数字标注（如 64MB）、公式，必须具体解释它们的含义和计算过程，这是学生最需要帮助理解的部分。
 4. 按知识点分组，不要按 bullet 机械拆分。相关的内容合在一起讲，细节用二级 bullet。一页通常 2-3 个要点就够。
-5. 每个核心点写成：**标签：**1-2 句解释。标签自然即可，不要凑四字成语。
-6. 解释要增加价值——不是用更花哨的中文复述原文，而是帮学生理解"为什么"和"怎么用"。可以补充具体例子、计算步骤、考试提示。
-7. 不要写成长段落散文，不要写"这页讲什么 / 逐点讲解"等固定小节标题。
-8. 不要显式写"上一页讲过""前面提到过"。
-9. 每个 bullet 解释控制在 1-3 句话，总长度不超过原始 PPT 内容的 2 倍。
+5. ⚠️ **二级 bullet 数量上限**：单个一级 bullet 下的二级 bullet 不超过 4 条（认知负荷理论：工作记忆一次最多 3-4 个 chunk）。如果 PPT 列出 5+ 项，分组归纳到 2-3 个二级 bullet，不要 1:1 罗列。
+6. 每个核心点写成：**标签：**1-2 句解释。标签自然即可，不要凑四字成语。
+7. ⚠️ **量化复读禁令**：禁止任何一段解释里连续 ≥10 个中文字符 或 连续 ≥5 个英文词 与 PPT 原文 verbatim 一致。要做的是用学生能听懂的话重新组织，解释"为什么"和"怎么用"，不是用更花哨的中文复述原文。可以补充具体例子、计算步骤、考试提示。
+8. ⚠️ **口语化**：写得像老师在白板边讲给同学听，不是写教科书段落。短句优先，每句尽量 ≤ 25 字。
+9. ⚠️ **引用视觉元素必须点名位置**：例如"右上角的流程图显示..."、"左下角公式 $...$ 的含义是..."。不要笼统说"图中"或"如图所示"。
+10. 不要写成长段落散文，不要写"这页讲什么 / 逐点讲解"等固定小节标题。
+11. 不要显式写"上一页讲过""前面提到过"。
+12. 每个 bullet 解释控制在 1-3 句话，总长度不超过原始 PPT 内容的 2 倍。
 
 格式要求：
 
@@ -160,6 +163,15 @@ _OUTLINE_PROMPT_CORE = """\
 
 _JSON_SCHEMA_EXAMPLE = """\
 {
+  "grounding": {
+    "visual_elements": [
+      "顶部：标题 'Memory Management'",
+      "左侧：内存层次结构示意图（CPU - Cache - Memory - Disk）",
+      "右侧：示例代码片段（C 语言数组声明，64KB 限制）",
+      "底部右下：警示框注明 Overlay 已淘汰"
+    ],
+    "spatial_layout": "顶部标题，左图右码，底部注释"
+  },
   "page_num": 3,
   "original_title": "Memory Management",
   "chinese_topic": "内存管理基础",
@@ -167,7 +179,7 @@ _JSON_SCHEMA_EXAMPLE = """\
   "items": [
     {
       "label": "",
-      "explanation": "程序必须先加载到 **主存 (Main Memory)** 中才能执行。CPU 只能直接访问主存和缓存，不能直接执行磁盘上的代码。",
+      "explanation": "看左侧那张层次图：CPU 只能碰到 Cache 和主存，磁盘上的程序得先搬进主存才能跑。换句话说，**主存 (Main Memory)** 是执行的必经之地。",
       "highlight": null,
       "sub_items": [
         {"label": "可执行代码", "explanation": "编译后的 **机器码 (Machine Code)**，或供解释器运行的源代码。"},
@@ -177,18 +189,18 @@ _JSON_SCHEMA_EXAMPLE = """\
     },
     {
       "label": "",
-      "explanation": "关键问题：我们真的需要把整个程序都加载到内存中吗？例如在 64K 的 Apple II 上能否运行 100K 的程序？",
+      "explanation": "右侧代码片段抛出一个关键问题：64K 的 Apple II 怎么跑 100K 的程序？换成今天的话——内存不够，程序还能不能动？",
       "highlight": "程序不需要全部加载到内存中就可以运行",
       "sub_items": [],
       "callout": null
     },
     {
       "label": "",
-      "explanation": "两种解决方案：",
+      "explanation": "底部右下提到两种解法：",
       "highlight": null,
       "sub_items": [
-        {"label": "Overlay", "explanation": "把程序分成阶段，当前阶段结束后再加载下一阶段，需要程序员手动管理。"},
-        {"label": "Virtual Memory", "explanation": "OS 自动管理，只在需要执行时才加载所需部分，对程序员透明。"}
+        {"label": "Overlay", "explanation": "程序员手动把程序切成阶段，跑完一段再换下一段。"},
+        {"label": "Virtual Memory", "explanation": "OS 接管，按需加载，对程序员完全透明。"}
       ],
       "callout": {"type": "WARNING", "text": "Overlay 已被 Virtual Memory 取代。"}
     }
@@ -197,22 +209,30 @@ _JSON_SCHEMA_EXAMPLE = """\
     {"name_en": "Main Memory", "name_zh": "主存", "description": "CPU 可直接访问的物理存储器"},
     {"name_en": "Virtual Memory", "name_zh": "虚拟内存", "description": "操作系统提供的逻辑地址空间，允许程序使用超过物理内存的地址范围"},
     {"name_en": "Overlay", "name_zh": "覆盖技术", "description": "早期手动管理内存的方式，将程序分段加载"}
-  ]
+  ],
+  "self_explanation_prompt": "为什么 Virtual Memory 能让 100K 程序在 64K 内存上运行？"
 }"""
 
 _TEXT_EXPLANATION_JSON_PROMPT_BEFORE_SCHEMA = """\
 你是大学课程助教，用简单易懂的中文讲解 PPT。说人话，别绕弯。
 
+⚠️ Grounding-First 协议（强烈建议先填 grounding 字段再写 items）：
+开始写 items 前，先在 grounding 字段里列出你在 PPT 上看到的视觉元素及其大致空间位置（顶部 / 左上 / 右下 / 中央 等）。后面所有 items / concepts 只能讨论 grounding 里出现过的内容；看不清的元素不要写进 grounding，更不要写进 items。grounding 缺失或空数组会被视为低质量输出。
+
 讲解原则：
 1. 按 PPT 原始顺序讲，不要打乱。
 2. ⚠️ 不要讲标题。标题只是分类标签。直接讲标题下面的内容。连续几页同标题不要重复提。
-3. 代码/数字/公式要具体走一遍计算过程。公式用 KaTeX $...$，不要放在反引号内。LaTeX 命令的参数必须用花括号包裹，如 $\tilde{x}$ 不是 $\tilde x$。
+3. 代码/数字/公式要具体走一遍计算过程。公式用 KaTeX $...$，不要放在反引号内。LaTeX 命令的参数必须用花括号包裹，如 $\\tilde{x}$ 不是 $\\tilde x$。
 4. 按知识点分组，不要按 bullet 机械拆分。相关的内容合成一个 item，细节用 sub_items。一页通常 2-3 个 item 就够。
-5. label 留空（""）。sub_items 的 label 写短标签。
-6. 术语首次写 **中文 (English)**，后面只写中文。
-7. 前面页讲过的不要重复，一句话带过。
-8. 不要写课程编号。
-9. 封面页/目录页简短概括即可。
+5. ⚠️ Chunking 硬上限：单 item 的 sub_items 数量必须 ≤ 4 条。如果原 PPT 上有 5+ 项，分组归纳到 2-3 个 sub_items，不要 1:1 罗列。
+6. ⚠️ 量化复读禁令：禁止任何 explanation 字段里连续 ≥10 个中文字符 或 连续 ≥5 个英文词 与 PPT 原文 verbatim 一致。要做的是用学生能听懂的话重新组织，解释"为什么"和"怎么用"。
+7. ⚠️ 口语化（Modality）：写得像老师在白板边讲给同学听，不是写教科书段落。短句优先，每句尽量 ≤ 25 字。
+8. ⚠️ 引用视觉元素必须点名位置（Spatial Contiguity）：例如"右上角的流程图..."、"左下角公式 $...$..."。不要笼统说"图中"或"如图所示"。
+9. label 留空（""）。sub_items 的 label 写短标签。
+10. 术语首次写 **中文 (English)**，后面只写中文。
+11. 前面页讲过的不要重复，一句话带过。
+12. 不要写课程编号。
+13. 封面页/目录页简短概括即可。
 
 页面类型（写入 content_type）：title / toc / intro / content / example / summary
 
@@ -224,6 +244,12 @@ _TEXT_EXPLANATION_JSON_PROMPT_BEFORE_SCHEMA = """\
 - 粗体术语：**中文 (English)**
 - highlight：本页最核心的一句结论（每页 0-1 个）
 - callout：只在真正需要提醒的时候才加，大部分 item 不需要 callout（写 null）。一页最多 1 个 callout，很多页可以完全没有。type：IMPORTANT / TIP / WARNING / NOTE。
+
+Self-Explanation 字段（self_explanation_prompt）：
+- content / example 类型可写一个 1 句、≤ 25 字的"为什么 / 怎么 / 如果...会怎样"开放问题，触发学生主动思考
+- 答案必须能在本页讲解里找到线索，但不要直接给出答案
+- title / toc / intro / summary 类型一律写 null
+- 没有合适问题就写 null，不要硬凑
 
 概念提取规则（concepts 字段）：
 - 只提取本页出现的**真正的学科概念/专业术语**

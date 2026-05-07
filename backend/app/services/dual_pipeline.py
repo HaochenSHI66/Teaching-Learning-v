@@ -23,6 +23,21 @@ logger = logging.getLogger(__name__)
 # Max previous pages to include as context
 _CONTEXT_WINDOW = 3
 
+
+def _enforce_chunking_limit(result: dict, *, max_sub_items: int) -> None:
+    """Truncate sub_items to enforce Sweller CLT chunking limit (defensive)."""
+    items = result.get("items") or []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        subs = item.get("sub_items") or []
+        if isinstance(subs, list) and len(subs) > max_sub_items:
+            logger.info(
+                "Truncating sub_items from %d to %d for chunking limit",
+                len(subs), max_sub_items,
+            )
+            item["sub_items"] = subs[:max_sub_items]
+
 # Singleton engine for context fetching (avoid creating one per page)
 _context_engine = None
 _context_engine_lock = threading.Lock()
@@ -216,6 +231,9 @@ class DualModelPipeline:
             if not isinstance(result, dict) or "items" not in result:
                 logger.warning("JSON output missing 'items' key, falling back")
                 return None
+            _enforce_chunking_limit(result, max_sub_items=4)
+            if not result.get("grounding"):
+                logger.info("JSON explanation missing grounding field on page %d", page_num)
             logger.info("JSON explanation complete: %d items", len(result.get("items", [])))
             return result
         except Exception as exc:
