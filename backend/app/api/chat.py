@@ -492,14 +492,14 @@ def get_global_messages(
     ).fetchall()
     return [
         GlobalMessageItem(
-            id=r[0],
-            session_id=r[1],
-            role=r[2],
-            content=r[3],
-            created_at=str(r[4]),
-            slide_id=r[5],
-            filename=r[6],
-            page_num=r[7],
+            id=r._mapping["id"],
+            session_id=r._mapping["session_id"],
+            role=r._mapping["role"],
+            content=r._mapping["content"],
+            created_at=r._mapping["created_at"].isoformat() if hasattr(r._mapping["created_at"], "isoformat") else str(r._mapping["created_at"]),
+            slide_id=r._mapping["slide_id"],
+            filename=r._mapping["filename"],
+            page_num=r._mapping["page_num"],
         )
         for r in rows
     ]
