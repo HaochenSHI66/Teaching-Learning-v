@@ -54,6 +54,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
   const [loadedUrl, setLoadedUrl] = useState<string | undefined>(undefined);
   const mainImageLoaded = loadedUrl === currentSlide?.image_url;
   const imgRef = useRef<HTMLImageElement>(null);
+  const thumbRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
 
   // For cached images onLoad never fires — check img.complete after URL change.
   useEffect(() => {
@@ -99,6 +100,14 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [slides.length, currentIndex, onSelect, onRoiChange]);
+
+  useEffect(() => {
+    thumbRefs.current.get(currentIndex)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [currentIndex]);
 
   const toRelative = useCallback((clientX: number, clientY: number): Point | null => {
     const element = canvasRef.current;
@@ -369,6 +378,10 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
             return (
               <button
                 key={slide.id}
+                ref={(el) => {
+                  if (el) thumbRefs.current.set(index, el);
+                  else thumbRefs.current.delete(index);
+                }}
                 className={`shrink-0 overflow-hidden rounded-lg border transition ${
                   index === currentIndex
                     ? "border-[var(--bd-4)] ring-2 ring-[var(--brand-amber)]/30"
