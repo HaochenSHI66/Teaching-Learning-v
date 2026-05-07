@@ -195,20 +195,6 @@ def get_st_embeddings(texts: list[str]) -> np.ndarray | None:
 # Embedding: Option C — TF-IDF
 # ---------------------------------------------------------------------------
 
-def get_tfidf_embeddings(texts: list[str]) -> np.ndarray:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    vec = TfidfVectorizer(
-        analyzer="char_wb",
-        ngram_range=(2, 4),
-        max_features=8192,
-        sublinear_tf=True,
-    )
-    mat = vec.fit_transform(texts)
-    # Return dense float32 array
-    arr = mat.toarray().astype(np.float32)
-    return arr
-
-
 # ---------------------------------------------------------------------------
 # Cosine similarity and Recall@K
 # ---------------------------------------------------------------------------
