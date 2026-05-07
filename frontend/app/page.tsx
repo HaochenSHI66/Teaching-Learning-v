@@ -608,6 +608,10 @@ export default function Page() {
                 roiReady={Boolean(roi)}
                 slidePageMap={Object.fromEntries(upload.slides.map((s) => [s.id, s.page_num]))}
                 sessionId={upload.sessionId ?? undefined}
+                globalMessages={chat.globalMessages}
+                globalLoading={chat.globalLoading}
+                onLoadGlobalMessages={() => void chat.loadGlobalMessages()}
+                onClearGlobalMessages={() => void chat.clearGlobalMessages()}
               />
             </ErrorBoundary>
             </div>

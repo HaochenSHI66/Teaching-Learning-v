@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { askRoiQuestion, askSlideQuestion, type RoiBox, type Slide, type SlideExplanation } from "@/lib/api";
+import { askRoiQuestion, askSlideQuestion, fetchGlobalMessages, deleteGlobalMessages, type GlobalMessageItem, type RoiBox, type Slide, type SlideExplanation } from "@/lib/api";
 
 export type ChatMessage = {
   id: string;
@@ -19,6 +19,8 @@ type ChatState = {
   loading: boolean;
   statusText: string;
   mode: "slide" | "global";
+  globalMessages: GlobalMessageItem[];
+  globalLoading: boolean;
 };
 
 type ChatActions = {
@@ -30,6 +32,8 @@ type ChatActions = {
   askRoi: (roi: RoiBox, sessionId: string, slide: Slide) => Promise<void>;
   clearSlideMessages: (slideId: string) => void;
   clearStatus: () => void;
+  loadGlobalMessages: () => Promise<void>;
+  clearGlobalMessages: () => Promise<void>;
 };
 
 export function useChat(): ChatState & ChatActions {
@@ -40,6 +44,8 @@ export function useChat(): ChatState & ChatActions {
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [mode, setMode] = useState<"slide" | "global">("slide");
+  const [globalMessages, setGlobalMessages] = useState<GlobalMessageItem[]>([]);
+  const [globalLoading, setGlobalLoading] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const msgIdRef = useRef(0);
@@ -132,6 +138,21 @@ export function useChat(): ChatState & ChatActions {
     setChatMessages((prev) => prev.filter((m) => m.slideId !== slideId));
   }, []);
 
+  const loadGlobalMessages = useCallback(async () => {
+    setGlobalLoading(true);
+    try {
+      const msgs = await fetchGlobalMessages();
+      setGlobalMessages(msgs);
+    } finally {
+      setGlobalLoading(false);
+    }
+  }, []);
+
+  const clearGlobalMessages = useCallback(async () => {
+    await deleteGlobalMessages();
+    setGlobalMessages([]);
+  }, []);
+
   return {
     chatMessages,
     explanation,
@@ -140,6 +161,8 @@ export function useChat(): ChatState & ChatActions {
     loading,
     statusText,
     mode,
+    globalMessages,
+    globalLoading,
     setChatInput,
     setMode,
     setExplanation,
@@ -148,5 +171,7 @@ export function useChat(): ChatState & ChatActions {
     askRoi,
     clearSlideMessages,
     clearStatus: () => setStatusText(""),
+    loadGlobalMessages,
+    clearGlobalMessages,
   };
 }

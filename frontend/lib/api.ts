@@ -1238,3 +1238,24 @@ export type SyncManifestResponse = {
 export async function fetchSyncManifest(): Promise<SyncManifestResponse> {
   return request<SyncManifestResponse>("/api/v1/sync/manifest");
 }
+
+// ── Global Chat History ───────────────────────────────────────
+
+export type GlobalMessageItem = {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+  slide_id: string | null;
+  filename: string;
+  page_num: number | null;
+};
+
+export async function fetchGlobalMessages(): Promise<GlobalMessageItem[]> {
+  return request<GlobalMessageItem[]>("/api/v1/chat/global");
+}
+
+export async function deleteGlobalMessages(): Promise<void> {
+  await request<{ ok: boolean }>("/api/v1/chat/global", { method: "DELETE" });
+}

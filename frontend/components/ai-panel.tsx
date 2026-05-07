@@ -10,7 +10,7 @@ import { StructuredContent } from "@/components/structured-content";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type { ChatMessage } from "@/hooks/useChat";
 import type { BatchProgress, GenerationProgress } from "@/hooks/useSlideGeneration";
-import { getAssetUrl, type SlideExplanation, type SlideExtract } from "@/lib/api";
+import { getAssetUrl, type GlobalMessageItem, type SlideExplanation, type SlideExtract } from "@/lib/api";
 
 type AIPanelProps = {
   batchProgress?: BatchProgress | null;
@@ -42,6 +42,10 @@ type AIPanelProps = {
   /** Map slide ID → page number for display */
   slidePageMap?: Record<string, number>;
   sessionId?: string;
+  globalMessages?: GlobalMessageItem[];
+  globalLoading?: boolean;
+  onLoadGlobalMessages?: () => void;
+  onClearGlobalMessages?: () => void;
 };
 
 const TABS = [
@@ -173,6 +177,10 @@ export function AIPanel({
   onJumpToSlide,
   slidePageMap,
   sessionId,
+  globalMessages,
+  globalLoading,
+  onLoadGlobalMessages,
+  onClearGlobalMessages,
 }: AIPanelProps) {
   const [tab, setTab] = useState<TabKey>("explain");
   const explanationRef = useRef<HTMLDivElement>(null);
@@ -220,6 +228,13 @@ export function AIPanel({
     setTranslation("");
     translationSlideRef.current = null;
   }, [currentSlideId]);
+
+  // Load global messages when switching to global mode
+  useEffect(() => {
+    if (mode === "global") {
+      onLoadGlobalMessages?.();
+    }
+  }, [mode]);
 
   // Task 4: Compute which tabs have content for badge indicators
   const tabHasContent: Record<TabKey, boolean> = {
@@ -578,7 +593,38 @@ ${extractText}`,
         <div key="chat" className="animate-fade-slide-in flex min-h-0 flex-1 flex-col">
           {/* Messages area */}
           <div className="min-h-0 flex-1 overflow-auto px-2 py-3">
-            {slideMessages.length === 0 ? (
+            {mode === "global" ? (
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {globalLoading && (
+                  <p className="text-xs text-gray-400 text-center">加载中…</p>
+                )}
+                {(globalMessages ?? []).map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div className="max-w-[85%] space-y-1">
+                      <span className="block text-[10px] text-gray-400 px-1">
+                        {msg.filename}
+                        {msg.page_num != null ? ` · P${msg.page_num}` : ""}
+                      </span>
+                      <div
+                        className={`rounded-lg px-3 py-2 text-sm ${
+                          msg.role === "user"
+                            ? "bg-blue-500 text-white"
+                            : "bg-white text-gray-800 border border-gray-200"
+                        }`}
+                      >
+                        {msg.content}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {!globalLoading && (globalMessages ?? []).length === 0 && (
+                  <p className="text-xs text-gray-400 text-center">暂无记录</p>
+                )}
+              </div>
+            ) : slideMessages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
                 <span className="text-2xl opacity-40">💬</span>
                 <p className="text-[13px] text-[var(--tx-5)]">暂无问答记录</p>
@@ -661,6 +707,15 @@ ${extractText}`,
                   type="button"
                 >
                   清空
+                </button>
+              )}
+              {mode === "global" && (
+                <button
+                  onClick={() => onClearGlobalMessages?.()}
+                  className="ml-auto text-xs text-red-400 hover:text-red-600 px-2 py-1"
+                  type="button"
+                >
+                  清空全部记录
                 </button>
               )}
             </div>
