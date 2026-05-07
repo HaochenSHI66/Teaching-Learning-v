@@ -143,14 +143,21 @@ export function useChat(): ChatState & ChatActions {
     try {
       const msgs = await fetchGlobalMessages();
       setGlobalMessages(msgs);
+    } catch {
+      // silently keep empty list; network errors are non-critical for history
     } finally {
       setGlobalLoading(false);
     }
   }, []);
 
   const clearGlobalMessages = useCallback(async () => {
-    await deleteGlobalMessages();
-    setGlobalMessages([]);
+    try {
+      await deleteGlobalMessages();
+      setGlobalMessages([]);
+    } catch {
+      // ignore; optimistically clear anyway
+      setGlobalMessages([]);
+    }
   }, []);
 
   return {

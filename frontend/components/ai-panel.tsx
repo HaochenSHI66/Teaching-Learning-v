@@ -230,9 +230,12 @@ export function AIPanel({
   }, [currentSlideId]);
 
   // Load global messages when switching to global mode
+  const onLoadGlobalMessagesRef = useRef(onLoadGlobalMessages);
+  useEffect(() => { onLoadGlobalMessagesRef.current = onLoadGlobalMessages; });
+
   useEffect(() => {
     if (mode === "global") {
-      onLoadGlobalMessages?.();
+      onLoadGlobalMessagesRef.current?.();
     }
   }, [mode]);
 
@@ -596,23 +599,23 @@ ${extractText}`,
             {mode === "global" ? (
               <div className="flex-1 overflow-y-auto p-3 space-y-3">
                 {globalLoading && (
-                  <p className="text-xs text-gray-400 text-center">加载中…</p>
+                  <p className="text-xs text-[var(--tx-5)] text-center">加载中…</p>
                 )}
-                {(globalMessages ?? []).map((msg) => (
+                {[...(globalMessages ?? [])].reverse().map((msg) => (
                   <div
                     key={msg.id}
                     className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     <div className="max-w-[85%] space-y-1">
-                      <span className="block text-[10px] text-gray-400 px-1">
+                      <span className="block text-[10px] text-[var(--tx-5)] px-1">
                         {msg.filename}
                         {msg.page_num != null ? ` · P${msg.page_num}` : ""}
                       </span>
                       <div
                         className={`rounded-lg px-3 py-2 text-sm ${
                           msg.role === "user"
-                            ? "bg-blue-500 text-white"
-                            : "bg-white text-gray-800 border border-gray-200"
+                            ? "bg-[var(--sf-5)] text-[var(--tx-2)]"
+                            : "border border-[var(--bd-2)] bg-[var(--sf-1)] text-[var(--tx-3)]"
                         }`}
                       >
                         {msg.content}
@@ -621,7 +624,7 @@ ${extractText}`,
                   </div>
                 ))}
                 {!globalLoading && (globalMessages ?? []).length === 0 && (
-                  <p className="text-xs text-gray-400 text-center">暂无记录</p>
+                  <p className="text-xs text-[var(--tx-5)] text-center">暂无记录</p>
                 )}
               </div>
             ) : slideMessages.length === 0 ? (
@@ -700,7 +703,7 @@ ${extractText}`,
                 </svg>
                 {loading ? "处理中…" : "框选"}
               </button>
-              {slideMessages.length > 0 && (
+              {mode !== "global" && slideMessages.length > 0 && (
                 <button
                   className="ml-auto rounded-full border border-[var(--bd-2)] bg-[var(--sf-2)] px-2 py-0.5 text-[11px] text-[var(--tx-5)] transition-colors hover:bg-[var(--sf-3)]"
                   onClick={onClearSlideMessages}
