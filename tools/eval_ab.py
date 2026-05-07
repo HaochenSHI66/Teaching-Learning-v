@@ -169,7 +169,7 @@ def paired_pvalue(a: list[float], b: list[float]) -> tuple[float, str]:
     try:
         p = _ttest_rel_stdlib(a, b)
         return p, "stdlib paired t-test"
-    except Exception:
+    except (ValueError, ZeroDivisionError, ArithmeticError):
         p = _permutation_test(a, b)
         return p, "permutation test"
 
@@ -190,8 +190,8 @@ DIM_LABELS = {
 }
 
 
-def load_rubric(path: Path) -> dict[tuple[str, int], dict]:
-    """Load rubric JSON. Returns {(document_id, page_num): judgment_dict}."""
+def load_rubric(path: Path) -> tuple[dict[tuple[str, int], dict], str]:
+    """Load rubric JSON. Returns ({(document_id, page_num): judgment_dict}, generated_at)."""
     data = json.loads(path.read_text(encoding="utf-8"))
     index: dict[tuple[str, int], dict] = {}
     for r in data.get("results", []):
@@ -201,18 +201,20 @@ def load_rubric(path: Path) -> dict[tuple[str, int], dict]:
         scores = {q: float(judgment[q]) for q in RUBRIC_DIMS if isinstance(judgment.get(q), (int, float))}
         if scores:
             index[key] = scores
-    return index
+    generated_at = data.get("generated_at", "unknown")
+    return index, generated_at
 
 
-def load_quiz(path: Path) -> dict[tuple[str, int], float]:
-    """Load quiz JSON. Returns {(document_id, page_num): accuracy}."""
+def load_quiz(path: Path) -> tuple[dict[tuple[str, int], float], str]:
+    """Load quiz JSON. Returns ({(document_id, page_num): accuracy}, generated_at)."""
     data = json.loads(path.read_text(encoding="utf-8"))
     index: dict[tuple[str, int], float] = {}
     for r in data.get("results", []):
         key = (r["document_id"], r["page_num"])
         if isinstance(r.get("accuracy"), (int, float)):
             index[key] = float(r["accuracy"])
-    return index
+    generated_at = data.get("generated_at", "unknown")
+    return index, generated_at
 
 
 # ---------------------------------------------------------------------------
@@ -233,10 +235,10 @@ def _sig_label(p: float) -> str:
 
 def _fmt_p(p: float) -> str:
     if math.isnan(p):
-        return "N/A    "
+        return "   N/A  "
     if p < 0.0005:
-        return f"{p:.3e}"
-    return f"{p:.3f}   "
+        return f"{p:.2e}".rjust(8)
+    return f"{p:.4f}".rjust(8)
 
 
 def _fmt_delta(d: float) -> str:
@@ -248,8 +250,8 @@ def _fmt_delta(d: float) -> str:
 # ---------------------------------------------------------------------------
 
 def run_rubric_ab(v1_path: Path, v2_path: Path) -> None:
-    v1_data = load_rubric(v1_path)
-    v2_data = load_rubric(v2_path)
+    v1_data, v1_generated = load_rubric(v1_path)
+    v2_data, v2_generated = load_rubric(v2_path)
 
     common_keys = sorted(set(v1_data) & set(v2_data))
     n_matched = len(common_keys)
@@ -258,8 +260,8 @@ def run_rubric_ab(v1_path: Path, v2_path: Path) -> None:
 
     print()
     print("A/B Test Report")
-    print(f"V1: {v1_path.name} (n={n_matched} matched slides)")
-    print(f"V2: {v2_path.name}")
+    print(f"V1: {v1_path.name}  generated: {v1_generated}")
+    print(f"V2: {v2_path.name}  generated: {v2_generated}")
     print()
     print(f"Matched slides: {n_matched} / {n_v1} V1 slides, {n_matched} / {n_v2} V2 slides")
     print()
@@ -283,8 +285,12 @@ def run_rubric_ab(v1_path: Path, v2_path: Path) -> None:
     # Determine test method (check once)
     _, method = paired_pvalue([1.0], [1.0]) if n_matched >= 2 else (float("nan"), "n/a")
     # Actually call with real data to get method
-    first_dim = next(q for q in RUBRIC_DIMS if len(dim_v1[q]) >= 2)
-    _, method = paired_pvalue(dim_v1[first_dim], dim_v2[first_dim])
+    try:
+        first_dim = next(q for q in RUBRIC_DIMS if len(dim_v1[q]) >= 2)
+        _, method = paired_pvalue(dim_v1[first_dim], dim_v2[first_dim])
+    except StopIteration:
+        print("Error: no dimension has ≥2 paired samples. Cannot run test.", file=sys.stderr)
+        sys.exit(1)
 
     col_w = 16
     hdr = f"{'Dimension':<{col_w}}  {'V1 mean':>7}  {'V2 mean':>7}  {'Δ':>6}  {'p-value':>9}  Sig?"
@@ -367,8 +373,8 @@ def run_rubric_ab(v1_path: Path, v2_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def run_quiz_ab(v1_path: Path, v2_path: Path) -> None:
-    v1_data = load_quiz(v1_path)
-    v2_data = load_quiz(v2_path)
+    v1_data, v1_generated = load_quiz(v1_path)
+    v2_data, v2_generated = load_quiz(v2_path)
 
     common_keys = sorted(set(v1_data) & set(v2_data))
     n_matched = len(common_keys)
@@ -377,8 +383,8 @@ def run_quiz_ab(v1_path: Path, v2_path: Path) -> None:
 
     print()
     print("A/B Test Report (quiz accuracy)")
-    print(f"V1: {v1_path.name} (n={n_matched} matched slides)")
-    print(f"V2: {v2_path.name}")
+    print(f"V1: {v1_path.name}  generated: {v1_generated}")
+    print(f"V2: {v2_path.name}  generated: {v2_generated}")
     print()
     print(f"Matched slides: {n_matched} / {n_v1} V1 slides, {n_matched} / {n_v2} V2 slides")
     print()
