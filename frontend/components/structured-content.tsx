@@ -235,7 +235,7 @@ export function StructuredContent({
             key={index}
             className={`rounded-xl transition-colors duration-150 ${
               highlightIndex === index
-                ? "bg-blue-50 border-l-[3px] border-blue-400 pl-2 -ml-2"
+                ? "bg-blue-50 dark:bg-blue-900/20 border-l-[3px] border-blue-400 pl-2 -ml-2"
                 : ""
             }`}
           >

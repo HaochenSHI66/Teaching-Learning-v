@@ -36,6 +36,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [draftRoi, setDraftRoi] = useState<RoiBox | null>(null);
+  const dragMovedRef = useRef(false);
   const isMobile = useIsMobile();
 
   const swipeHandlers = useSwipeNavigation({
@@ -310,6 +311,7 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
                 onHoverItem(band);
               }
               if (!dragStart) return;
+              dragMovedRef.current = true;
               const point = toRelative(event.clientX, event.clientY);
               if (point) updateDraft(dragStart, point);
             }}
@@ -318,10 +320,12 @@ export function SlideViewer({ slides, currentIndex, roi, onSelect, onRoiChange, 
               const point = toRelative(event.clientX, event.clientY);
               const start = dragStart;
               setDragStart(null);
-              if (!point) { setDraftRoi(null); return; }
+              if (!point) { setDraftRoi(null); dragMovedRef.current = false; return; }
               commitDrag(start, point);
+              // dragMovedRef stays true so the subsequent onClick can detect and swallow the drag-end click
             }}
             onClick={(e) => {
+              if (dragMovedRef.current) { dragMovedRef.current = false; return; }
               if (!itemCount || !onLockItem) return;
               const rect = e.currentTarget.getBoundingClientRect();
               const relY = e.clientY - rect.top;
