@@ -194,8 +194,8 @@ def generate_questions(
     gateway: ModelGateway,
     image_path: Path,
     explanation: str,
-) -> dict | None:
-    """Step 1: generate 5 quiz questions. Returns parsed dict or None on failure."""
+) -> list[dict] | None:
+    """Step 1: generate 5 quiz questions. Returns list of 5 questions or None on failure."""
     full_prompt = QUESTION_GEN_PROMPT + f"\n\nExplanation:\n{explanation}"
 
     for attempt in range(2):
@@ -205,19 +205,27 @@ def generate_questions(
                 slide_image_path=image_path,
             )
             questions = result.get("questions", [])
-            if len(questions) != 5:
+
+            # Validate: must have exactly 5 questions
+            if len(questions) < 5:
                 print(
-                    f"  [WARN] Expected 5 questions, got {len(questions)}", file=sys.stderr
+                    f"  [WARN] only {len(questions)} questions generated (expected 5), skipping",
+                    file=sys.stderr
                 )
-            # Validate each question has required fields
-            for q in questions:
-                for field in ("q", "A", "B", "C", "D", "answer"):
-                    if field not in q:
-                        print(
-                            f"  [WARN] Question missing field '{field}': {q}",
-                            file=sys.stderr,
-                        )
-            return result
+                return None
+
+            # Validate: each question must have all required fields
+            required_keys = {"q", "A", "B", "C", "D", "answer"}
+            for i, q in enumerate(questions[:5]):
+                if not required_keys.issubset(q.keys()):
+                    missing = required_keys - q.keys()
+                    print(
+                        f"  [WARN] question {i+1} missing fields {missing}, skipping",
+                        file=sys.stderr,
+                    )
+                    return None
+
+            return questions[:5]
         except json.JSONDecodeError:
             if attempt == 0:
                 print("  [WARN] Question gen returned invalid JSON, retrying…", file=sys.stderr)
@@ -235,8 +243,8 @@ def answer_questions(
     image_path: Path,
     explanation: str,
     questions: list[dict],
-) -> list[str] | None:
-    """Step 2: answer 5 questions. Returns list of 5 answer letters or None."""
+) -> list[str | None] | None:
+    """Step 2: answer 5 questions. Returns list of 5 answer letters or None on failure."""
     # Format questions as readable text
     lines = []
     for i, q in enumerate(questions, 1):
@@ -259,14 +267,14 @@ def answer_questions(
                 slide_image_path=image_path,
             )
             answers = result.get("answers", [])
-            if len(answers) != 5:
-                print(
-                    f"  [WARN] Expected 5 answers, got {len(answers)}", file=sys.stderr
-                )
-                # Pad or truncate to 5
-                answers = (answers + ["?"] * 5)[:5]
-            # Normalize to uppercase
-            answers = [str(a).strip().upper()[:1] if a else "?" for a in answers]
+
+            # Normalize to uppercase, take first 5
+            answers = [str(a).strip().upper() for a in answers[:5]]
+
+            # Pad with None (not "?") so scoring can distinguish wrong vs missing
+            while len(answers) < 5:
+                answers.append(None)
+
             return answers
         except json.JSONDecodeError:
             if attempt == 0:
@@ -280,13 +288,15 @@ def answer_questions(
     return None
 
 
-def score_answers(questions: list[dict], answers: list[str]) -> tuple[int, int]:
-    """Return (correct_count, total) by comparing answers to ground truth."""
+def score_answers(questions: list[dict], answers: list[str | None]) -> tuple[int, int]:
+    """Return (correct_count, total) by comparing answers to ground truth.
+    None answers are counted as incorrect."""
     total = min(len(questions), len(answers))
     correct = 0
     for q, a in zip(questions, answers):
         gt = str(q.get("answer", "")).strip().upper()[:1]
-        if gt and a == gt:
+        # None means missing/unanswered, always incorrect
+        if a is not None and gt and a == gt:
             correct += 1
     return correct, total
 
@@ -420,9 +430,9 @@ def main() -> None:
 
         # Step 1: generate questions
         print("gen-q", end=" ", flush=True)
-        q_result = generate_questions(gateway, image_path, explanation)
+        questions = generate_questions(gateway, image_path, explanation)
 
-        if not q_result or not q_result.get("questions"):
+        if not questions:
             print("FAILED (question gen)")
             result = {
                 "exp_id": row["exp_id"],
@@ -437,8 +447,6 @@ def main() -> None:
             results.append(result)
             doc_results.setdefault(filename, []).append(result)
             continue
-
-        questions = q_result["questions"]
 
         # Step 2: answer questions
         print("ans", end=" ", flush=True)
