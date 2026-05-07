@@ -578,7 +578,7 @@ FastAPI route ordering: `GET /global` and `DELETE /global` are safe to append af
 
   ```bash
   curl -s https://api.deepseek.com/models \
-    -H "Authorization: Bearer sk-8e828c0fc18b4868874e81f9fa9a90de" | python3 -m json.tool | grep '"id"'
+    -H "Authorization: Bearer $DEEPSEEK_API_KEY" | python3 -m json.tool | grep '"id"'
   ```
 
   Find the correct model ID for DeepSeek V4 Flash. If `deepseek-v4-flash` does not appear, use the closest available fast model (e.g., `deepseek-chat`).
@@ -587,14 +587,14 @@ FastAPI route ordering: `GET /global` and `DELETE /global` are safe to append af
 
   Change from:
   ```
-  TEXT_API_KEY=sk-d04aa8eecfa448dba5bf9f79f3ee1900
+  TEXT_API_KEY=$DASHSCOPE_API_KEY
   TEXT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
   TEXT_MODEL=qwen-plus-latest
   ```
 
   To:
   ```
-  TEXT_API_KEY=sk-8e828c0fc18b4868874e81f9fa9a90de
+  TEXT_API_KEY=$DEEPSEEK_API_KEY
   TEXT_BASE_URL=https://api.deepseek.com
   TEXT_MODEL=deepseek-v4-flash
   ```

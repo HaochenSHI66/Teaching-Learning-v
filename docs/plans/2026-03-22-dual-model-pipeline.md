@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11, FastAPI, httpx, DashScope OpenAI-compatible API (`https://dashscope.aliyuncs.com/compatible-mode/v1`)
 
-**API Key:** `sk-d04aa8eecfa448dba5bf9f79f3ee1900`
+**API Key:** `$DASHSCOPE_API_KEY`
 **Vision Model:** `qwen3-vl-flash`
 **Text Model:** `qwen3.5-plus`
 **Base URL:** `https://dashscope.aliyuncs.com/compatible-mode/v1`
@@ -41,17 +41,17 @@
 ```env
 # Dual-model pipeline configuration
 # Vision model: reads slide images, outputs structured extraction
-VISION_API_KEY=sk-d04aa8eecfa448dba5bf9f79f3ee1900
+VISION_API_KEY=$DASHSCOPE_API_KEY
 VISION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 VISION_MODEL=qwen3-vl-flash
 
 # Text model: generates full Chinese explanation from extraction
-TEXT_API_KEY=sk-d04aa8eecfa448dba5bf9f79f3ee1900
+TEXT_API_KEY=$DASHSCOPE_API_KEY
 TEXT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 TEXT_MODEL=qwen3.5-plus
 
 # Legacy single-model config (still used for ROI and chat)
-API_KEY=sk-d04aa8eecfa448dba5bf9f79f3ee1900
+API_KEY=$DASHSCOPE_API_KEY
 BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 MODEL=qwen3-vl-flash
 

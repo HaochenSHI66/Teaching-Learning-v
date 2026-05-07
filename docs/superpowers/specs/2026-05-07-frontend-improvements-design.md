@@ -111,7 +111,7 @@ Note: join is on `slide` table (not `slideexplanation`) because `m.slide_id` is 
 
 **Change:** Update `backend/.env`:
 ```
-TEXT_API_KEY=sk-8e828c0fc18b4868874e81f9fa9a90de
+TEXT_API_KEY=$DEEPSEEK_API_KEY
 TEXT_BASE_URL=https://api.deepseek.com
 TEXT_MODEL=deepseek-v4-flash
 ```
