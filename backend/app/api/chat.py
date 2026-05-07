@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from app.middleware.rate_limit import rate_limit
 from PIL import Image
+from pydantic import BaseModel
+from sqlalchemy import text
 from sqlmodel import Session
 from sqlmodel import select
 
@@ -25,6 +27,17 @@ from app.services.chat_prompts import extract_page_numbers
 from app.services.retrieval import retrieve_related_slides
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+
+class GlobalMessageItem(BaseModel):
+    id: str
+    session_id: str
+    role: str
+    content: str
+    created_at: str
+    slide_id: str | None
+    filename: str
+    page_num: int | None
 
 
 def _get_slide_extract_payload(session: Session, slide_id: str) -> dict:
@@ -452,3 +465,63 @@ def explain_roi(
         used_slide_ids=[slide.id],
         roi_bbox=payload.roi,
     )
+
+
+@router.get("/global", response_model=list[GlobalMessageItem])
+def get_global_messages(
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> list[GlobalMessageItem]:
+    rows = session.execute(
+        text(
+            """
+            SELECT m.id, m.session_id, m.role, m.content,
+                   m.created_at, m.slide_id,
+                   d.filename,
+                   s.page_num
+            FROM message m
+            JOIN learningsession ls ON m.session_id = ls.id
+            JOIN document d ON ls.document_id = d.id
+            LEFT JOIN slide s ON m.slide_id = s.id
+            WHERE d.user_id = :uid
+            ORDER BY m.created_at DESC
+            LIMIT 200
+            """
+        ),
+        {"uid": current_user.id},
+    ).fetchall()
+    return [
+        GlobalMessageItem(
+            id=r[0],
+            session_id=r[1],
+            role=r[2],
+            content=r[3],
+            created_at=str(r[4]),
+            slide_id=r[5],
+            filename=r[6],
+            page_num=r[7],
+        )
+        for r in rows
+    ]
+
+
+@router.delete("/global")
+def delete_global_messages(
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    session.execute(
+        text(
+            """
+            DELETE FROM message
+            WHERE session_id IN (
+                SELECT ls.id FROM learningsession ls
+                JOIN document d ON ls.document_id = d.id
+                WHERE d.user_id = :uid
+            )
+            """
+        ),
+        {"uid": current_user.id},
+    )
+    session.commit()
+    return {"ok": True}
